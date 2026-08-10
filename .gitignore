@@ -1,0 +1,11 @@
+node_modules/
+.env
+data/*.json
+logs/*.log
+.env
+node_modules/
+data/
+logs/
+*.bak
+*.before-metric-help
+.envy
