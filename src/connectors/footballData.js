@@ -23,6 +23,7 @@ export async function getUpcomingMatches(token, horizonHours = 24) {
       id: String(m.id),
       competitionCode: m.competition?.code || "",
       competition: m.competition?.name || "Unknown",
+      country: m.area?.name || m.competition?.area?.name || null,
       seasonStart: m.season?.startDate,
       matchday: m.matchday,
       utcDate: m.utcDate,

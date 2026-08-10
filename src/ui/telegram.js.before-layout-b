@@ -79,34 +79,38 @@ function gateLine(name, value, threshold, unit = "") {
 }
 
 export function cardText(x) {
-  const b = x.best;
-  const p = x.consensusProbability;
-
-  const lines = [
-    `<b>${x.country ? esc(x.country) + " · " : ""}${esc(x.competition)}</b> · ${localDate(x.utcDate)}`,
-    `<b>${esc(x.home)} — ${esc(x.away)}</b>`
+  const p=x.consensusProbability;
+  const lines=[
+    `<b>${esc(x.home)} — ${esc(x.away)}</b>`,
+    `${x.country ? esc(x.country) + " · " : ""}${esc(x.competition)} · ${localDate(x.utcDate)}`,
+    "",
+    `Статус: <b>${x.category}</b>`,
+    `Тип матча: ${esc(x.classification)}`,
+    `DQ: <b>${x.dataQuality}/100</b> — данные`,
+    `Stab: <b>${x.stability}/100</b> — устойчивость`,
+    `Cons: <b>${x.consensusScore}/100</b> — согласие`,
+    `MAI: <b>${x.marketAgreement ?? "N/A"}</b> — рынок`,
+    `SCI: <b>${x.sci?.score ?? "N/A"}</b> — контекст`
   ];
-
-  if (b) {
-    lines.push(
-      "",
-      `🎯 <b>${esc(b.market)} — ${esc(b.label)} @${b.odds}</b>${b.bookmaker ? " · " + esc(b.bookmaker) : ""}`,
-      `Model <b>${(b.probability*100).toFixed(1)}%</b> │ Fair <b>${b.fairOdds.toFixed(2)}</b>`,
-      `Edge <b>+${b.edge.toFixed(1)} п.п.</b> │ EV <b>+${b.ev.toFixed(1)}%</b>`,
-      "",
-      `<b>${x.category}</b> · FDS <b>${b.fds}/100</b>`
-    );
-  } else {
-    lines.push("", `<b>${x.category}</b>`);
-  }
-
-  if (b) {
+  if(p) lines.push("",`Модель 1X2: П1 ${(p.home*100).toFixed(1)}% · X ${(p.draw*100).toFixed(1)}% · П2 ${(p.away*100).toFixed(1)}%`);
+  if(x.best) lines.push(
+    "",
+    `Лучший рынок: <b>${esc(x.best.market)} — ${esc(x.best.label)}</b>`,
+    `Коэффициент: <b>${x.best.odds}</b> (${esc(x.best.bookmaker)})`,
+    `Model: <b>${(x.best.probability*100).toFixed(1)}%</b>`,
+    `Fair Odds: <b>${x.best.fairOdds.toFixed(2)}</b>`,
+    `Edge: <b>${x.best.edge.toFixed(1)} п.п.</b>`,
+    `EV: <b>${x.best.ev.toFixed(1)}%</b>`,
+    `Conf: <b>${x.best.confidence}/100</b> — уверенность`,
+    `FDS: <b>${x.best.fds}/100</b> — итог`
+  );
+  if (x.best) {
     const gates = [
-      { name:"Edge", value:b.edge, threshold:4, unit:" п.п." },
-      { name:"EV", value:b.ev, threshold:5, unit:"%" },
-      { name:"Confidence", value:b.confidence, threshold:70, unit:"" },
-      { name:"Data Quality", value:x.dataQuality, threshold:70, unit:"" },
-      { name:"Stability", value:x.stability, threshold:70, unit:"" }
+      { name: "Edge", value: x.best.edge, threshold: 4, unit: " п.п." },
+      { name: "EV", value: x.best.ev, threshold: 5, unit: "%" },
+      { name: "Confidence", value: x.best.confidence, threshold: 70, unit: "" },
+      { name: "Data Quality", value: x.dataQuality, threshold: 70, unit: "" },
+      { name: "Stability", value: x.stability, threshold: 70, unit: "" }
     ];
 
     const failed = gates.filter(g => g.value < g.threshold);
@@ -114,73 +118,67 @@ export function cardText(x) {
     lines.push(
       "",
       "<b>VALUE Gates</b>",
-      ...gates.map(g =>
-        gateLine(
-          g.name,
-          Number(g.value.toFixed ? g.value.toFixed(1) : g.value),
-          g.threshold,
-          g.unit
-        )
-      )
+      ...gates.map(g => gateLine(g.name, Number(g.value.toFixed ? g.value.toFixed(1) : g.value), g.threshold, g.unit)),
+      "",
+      `Пройдено условий: <b>${gates.length - failed.length}/${gates.length}</b>`
     );
 
     if (failed.length) {
       const worst = failed
-        .map(g => ({...g, gap:g.threshold-g.value}))
-        .sort((a,b)=>b.gap-a.gap)[0];
-
-      const short =
-        worst.name === "Data Quality" ? "DQ" :
-        worst.name === "Confidence" ? "Conf" :
-        worst.name === "Stability" ? "Stab" :
-        worst.name;
+        .map(g => ({ ...g, gap: g.threshold - g.value }))
+        .sort((a,b) => b.gap - a.gap)[0];
 
       lines.push(
-        "",
-        `Пройдено <b>${gates.length-failed.length}/${gates.length}</b> · Блокер: 🔴 <b>${short}</b> −${worst.gap.toFixed(1)}${worst.unit}`
+        `Главный блокер: 🔴 <b>${worst.name}</b> — не хватает ${worst.gap.toFixed(1)}${worst.unit}`
       );
-    } else {
-      lines.push("", `Пройдено <b>5/5</b> · Все gates выполнены ✅`);
     }
 
-    if (b.probability >= 0.90 && x.dataQuality < 70) {
+    if (x.best.probability >= 0.90 && x.dataQuality < 70) {
       lines.push(
         "",
-        "⚠️ <b>Sanity check:</b> высокая вероятность при низком DQ"
+        "⚠️ <b>Probability sanity check</b>",
+        "Очень высокая модельная вероятность при низком Data Quality. Требуется дополнительная проверка."
       );
     }
   }
 
+  lines.push("",`Решение: ${esc(x.reason)}`);
+  if(x.redFlags.length) lines.push(`Red Flags: ${esc(x.redFlags.join("; "))}`);
+  lines.push("","Модели:",...x.models.map(m=>`• ${esc(m.name)} (${m.quality}): ${esc(m.explanation)}`));
   return lines.join("\n");
 }
 
+
 export function metricKeyboard(x){
-  const id = x.id;
+  const b = x.best || {};
+
+  const gate = (name, value, threshold, code) => ({
+    text: `${Number(value) >= threshold ? "🟢" : "🔴"} ${name} ${Number.isFinite(Number(value)) ? Number(value).toFixed(0) : "?"}`,
+    callback_data: `metric:${code}:${x.id}`
+  });
 
   return kb([
     [
-      {text:"Edge",callback_data:`metric:Edge:${id}`},
-      {text:"EV",callback_data:`metric:EV:${id}`},
-      {text:"Conf",callback_data:`metric:Conf:${id}`},
-      {text:"DQ",callback_data:`metric:DQ:${id}`},
-      {text:"Stab",callback_data:`metric:Stab:${id}`}
+      gate("Edge", b.edge, 4, "Edge"),
+      gate("EV", b.ev, 5, "EV"),
+      gate("Conf", b.confidence, 70, "Conf"),
+      gate("DQ", x.dataQuality, 70, "DQ"),
+      gate("Stab", x.stability, 70, "Stab")
     ],
     [
-      {text:"📊 Модель",callback_data:`metric:Model:${id}`},
-      {text:"⚠️ Риски",callback_data:`metric:Risks:${id}`},
-      {text:"📖 Метрики",callback_data:`metric:All:${id}`}
+      {text:`Cons ${x.consensusScore ?? "?"}`,callback_data:`metric:Cons:${x.id}`},
+      {text:`MAI ${x.marketAgreement ?? "?"}`,callback_data:`metric:MAI:${x.id}`},
+      {text:`SCI ${x.sci?.score ?? "?"}`,callback_data:`metric:SCI:${x.id}`}
+    ],
+    [
+      {text:`Model ${Number.isFinite(b.probability) ? (b.probability*100).toFixed(1)+"%" : "?"}`,callback_data:`metric:Model:${x.id}`},
+      {text:`Fair ${Number.isFinite(b.fairOdds) ? b.fairOdds.toFixed(2) : "?"}`,callback_data:`metric:Fair:${x.id}`}
+    ],
+    [
+      {text:`FDS ${b.fds ?? "?"}`,callback_data:`metric:FDS:${x.id}`}
     ],
     [
       {text:"⬅️ Dashboard",callback_data:"dashboard"}
-    ]
-  ]);
-}
-
-export function detailKeyboard(matchId){
-  return kb([
-    [
-      {text:"⬅️ Карточка",callback_data:`card:${matchId}`},
-      {text:"🏠 Dashboard",callback_data:"dashboard"}
     ]
   ]);
 }
@@ -192,49 +190,6 @@ export function metricText(code,x){
   const fp = b.fdsParts || {};
   const sv = x.stabilityV2 || {};
   const sci = x.sci || {};
-
-  if (code === "Risks") {
-    const flags = x.redFlags || [];
-    return [
-      `<b>⚠️ Риски — ${esc(x.home)} — ${esc(x.away)}</b>`,
-      "",
-      `Статус: <b>${x.category}</b>`,
-      `DQ: <b>${x.dataQuality}/100</b>`,
-      `FDS: <b>${b.fds ?? "N/A"}/100</b>`,
-      "",
-      flags.length
-        ? flags.map(r => `🔴 ${esc(r)}`).join("\n")
-        : "🟢 Критических Red Flags нет.",
-      "",
-      b.probability >= 0.90 && x.dataQuality < 70
-        ? "⚠️ Высокая модельная вероятность при низком качестве данных."
-        : ""
-    ].filter(Boolean).join("\n");
-  }
-
-  if (code === "All") {
-    return [
-      `<b>📖 Метрики — ${esc(x.home)} — ${esc(x.away)}</b>`,
-      "",
-      `DQ: <b>${x.dataQuality}/100</b> — качество данных`,
-      `Stability: <b>${x.stability}/100</b> — устойчивость`,
-      `Consensus: <b>${x.consensusScore}/100</b> — согласие моделей`,
-      `MAI: <b>${x.marketAgreement ?? "N/A"}</b> — согласие рынка`,
-      `SCI: <b>${x.sci?.score ?? "N/A"}</b> — календарь/нагрузка`,
-      "",
-      `Model: <b>${Number.isFinite(b.probability) ? (b.probability*100).toFixed(1)+"%" : "N/A"}</b>`,
-      `Fair: <b>${Number.isFinite(b.fairOdds) ? b.fairOdds.toFixed(2) : "N/A"}</b>`,
-      `Edge: <b>${Number.isFinite(b.edge) ? b.edge.toFixed(1)+" п.п." : "N/A"}</b>`,
-      `EV: <b>${Number.isFinite(b.ev) ? b.ev.toFixed(1)+"%" : "N/A"}</b>`,
-      `Confidence: <b>${b.confidence ?? "N/A"}/100</b>`,
-      `FDS: <b>${b.fds ?? "N/A"}/100</b>`,
-      "",
-      "<b>Модели</b>",
-      ...(x.models || []).map(m =>
-        `• ${esc(m.name)} (${m.quality}/100): ${esc(m.explanation)}`
-      )
-    ].join("\n");
-  }
 
   const pct = v => Number.isFinite(v) ? (v*100).toFixed(1) : "N/A";
   const n1 = v => Number.isFinite(v) ? Number(v).toFixed(1) : "N/A";

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { getUpcomingMatches, getCompetitionContext } from "./connectors/footballData.js";
 import { getOddsForCompetition, matchOddsEvent, extractMarkets } from "./connectors/odds.js";
 import { analyseFixture } from "./engine/analyse.js";
-import { dashboardText, dashboardKeyboard, listText, listKeyboard, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard } from "./ui/telegram.js";
+import { dashboardText, dashboardKeyboard, listText, listKeyboard, cardText, backKeyboard, metricKeyboard, metricText } from "./ui/telegram.js";
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const DATA=path.join(ROOT,"data");
@@ -85,24 +85,21 @@ async function callback(q){
     const [,code,matchId] = q.data.split(":");
     const x = state.results.find(y=>y.id===matchId);
     if(!x)return;
-    return tg("editMessageText",{
+    return tg("sendMessage",{
       chat_id:id,
-      message_id:q.message.message_id,
       text:metricText(code,x),
       parse_mode:"HTML",
-      reply_markup:detailKeyboard(matchId)
+      reply_markup:{
+        inline_keyboard:[[
+          {text:"⬅️ Назад к матчу",callback_data:`card:${matchId}`}
+        ]]
+      }
     });
   }
 
   if(q.data.startsWith("card:")){
     const x=state.results.find(y=>y.id===q.data.split(":")[1]);if(!x)return;
-    return tg("editMessageText",{
-      chat_id:id,
-      message_id:q.message.message_id,
-      text:cardText(x),
-      parse_mode:"HTML",
-      reply_markup:metricKeyboard(x)
-    });
+    return tg("sendMessage",{chat_id:id,text:cardText(x),parse_mode:"HTML",reply_markup:metricKeyboard(x)});
   }
 }
 async function message(m){
