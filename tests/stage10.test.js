@@ -65,14 +65,15 @@ function apiFixturePayload() {
 
 async function testCentralCompetitionMapping() {
   assert.equal(THE_ODDS_API_SPORT_KEYS.PL, "soccer_epl");
+  assert.equal(THE_ODDS_API_SPORT_KEYS.CLI, "soccer_conmebol_copa_libertadores");
   assert.equal(ODDS_API_IO_LEAGUE_SLUGS.PL, "england-premier-league");
   assert.equal(marketSupportClass("PL"), "SUPPORTED_BOTH");
-  assert.equal(marketSupportClass("CLI"), "UNSUPPORTED");
-  assert.equal(competitionMarketSupport("CLI").primary, false);
+  assert.equal(marketSupportClass("CLI"), "SUPPORTED_PRIMARY");
+  assert.equal(competitionMarketSupport("CLI").primary, true);
   const audit = auditCompetitionCoverage([fixture("a", "PL"), fixture("b", "CLI"), fixture("c", "CLI")]);
-  assert.equal(audit.supported, 1);
-  assert.equal(audit.unsupported, 2);
-  assert.deepEqual(audit.unsupportedTop.map(row => row.code), ["CLI"]);
+  assert.equal(audit.supported, 3);
+  assert.equal(audit.unsupported, 0);
+  assert.deepEqual(audit.unsupportedTop.map(row => row.code), []);
 }
 
 async function testUnsupportedCompetitionPreciseWaitReason() {
@@ -81,19 +82,19 @@ async function testUnsupportedCompetitionPreciseWaitReason() {
     request: async () => { throw new Error("should not call unsupported remote"); },
     config: config(tmp),
     sportKey: undefined,
-    fixtures: [fixture("cli-1", "CLI")],
+    fixtures: [fixture("unknown-1", "UNKNOWN")],
     marketCache: createMarketCache(tmp),
     now: new Date("2026-08-20T10:00:00Z")
   });
-  assert.equal(result.diagnostics["cli-1"].reason, "MARKET_UNSUPPORTED_COMPETITION");
+  assert.equal(result.diagnostics["unknown-1"].reason, "MARKET_UNSUPPORTED_COMPETITION");
   const reasons = blockerReasons({
-    id: "cli-1",
+    id: "unknown-1",
     category: "wait",
     odds: null,
     dataQuality: 80,
     confidence: 80,
     diagnostics: {
-      market: result.diagnostics["cli-1"],
+      market: result.diagnostics["unknown-1"],
       dataQualityV2: { scoreNormalized: 80 },
       risk: { score: 90, redFlags: [] },
       sanityWarnings: []

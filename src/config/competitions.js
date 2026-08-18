@@ -5,6 +5,7 @@ export const THE_ODDS_API_SPORT_KEYS = Object.freeze({
   SA: "soccer_italy_serie_a",
   FL1: "soccer_france_ligue_one",
   CL: "soccer_uefa_champs_league",
+  CLI: "soccer_conmebol_copa_libertadores",
   EL: "soccer_uefa_europa_league",
   DED: "soccer_netherlands_eredivisie",
   PPL: "soccer_portugal_primeira_liga",
