@@ -46,6 +46,7 @@ export function loadConfig() {
     oddsFreshMinutes,
     oddsStaleMinutes,
     oddsRevisionThreshold: Math.max(0.001, numberFromEnv("ODDS_REVISION_THRESHOLD", 0.02)),
+    closingWindowMinutes: Math.max(1, numberFromEnv("CLOSING_WINDOW_MINUTES", 30)),
     marketMatchMinConfidence: Math.max(0.5, Math.min(1, numberFromEnv("MARKET_MATCH_MIN_CONFIDENCE", 0.7))),
     minEdgePercent: numberFromEnv("MIN_EDGE_PERCENT", 4),
     minDataQuality: numberFromEnv("MIN_DATA_QUALITY", 65),

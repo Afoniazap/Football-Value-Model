@@ -1,6 +1,7 @@
 import { loadConfig } from "./config/env.js";
 import { MODEL_VERSION, SPORT_KEYS } from "./config/constants.js";
 import { fetchCompetitionContext, fetchFixtures } from "./providers/footballData.js";
+import { fetchFinishedResults } from "./providers/results/footballDataResults.js";
 import { fetchApiFootballFixtureIntel } from "./providers/apiFootball.js";
 import { buildModel } from "./model/probability.js";
 import { classify } from "./decision/classify.js";
@@ -77,6 +78,10 @@ function providerErrorMessages(results) {
 
 function createAnalysisId(date = new Date()) {
   return `${date.toISOString().replace(/[-:.TZ]/g, "")}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function dateOnly(date) {
+  return date.toISOString().slice(0, 10);
 }
 
 function applyMarketFreshnessGuard(classified, oddsEvent) {
@@ -291,6 +296,40 @@ export async function main() {
         items: processed,
         revisionThreshold: config.oddsRevisionThreshold
       });
+      historyStore.appendOfficialValueSignals({
+        analysisId,
+        analysedAt: analysedAt.toISOString(),
+        items: processed,
+        modelVersion: MODEL_VERSION
+      });
+      historyStore.lockSignalsAtKickoff({ now: analysedAt.toISOString() });
+
+      const resultsFrom = dateOnly(new Date(analysedAt.getTime() - 3 * 24 * 3600_000));
+      const resultsTo = dateOnly(analysedAt);
+      const resultsResult = await fetchFinishedResults({
+        request,
+        token: config.footballDataToken,
+        dateFrom: resultsFrom,
+        dateTo: resultsTo
+      });
+      providerResults.push(resultsResult);
+      for (const result of resultsResult.data || []) {
+        const signal = historyStore.readOfficialSignals().find(row => row.fixtureId === result.fixtureId);
+        if (signal) {
+          historyStore.settleOfficialSignal({
+            signalId: signal.signalId,
+            result,
+            settledAt: analysedAt.toISOString(),
+            marketQuotes: marketCache.readQuotes(),
+            closingWindowMinutes: config.closingWindowMinutes
+          });
+        }
+        historyStore.appendShadowResultAudit({
+          fixtureId: result.fixtureId,
+          actualResult: result.result,
+          finishedAt: result.finishedAt || analysedAt.toISOString()
+        });
+      }
 
       console.log(
         `Обновлено ${processed.length} матчей | VALUE ${stateRef.current.value.length} | Near ${stateRef.current.near.length} | WAIT ${stateRef.current.wait.length} | NO BET ${stateRef.current.rejected.length}`
@@ -304,7 +343,15 @@ export async function main() {
     }
   }
 
-  const ui = createTelegramUi({ config, tg, stateRef, refreshData, shadowStats: historyStore.shadowStats });
+  const ui = createTelegramUi({
+    config,
+    tg,
+    stateRef,
+    refreshData,
+    shadowStats: historyStore.shadowStats,
+    auditStats: historyStore.auditCumulative,
+    dailyAudit: historyStore.auditDaily
+  });
   let offset = 0;
 
   console.log("FVM v1.0 CLEAN запускается...");

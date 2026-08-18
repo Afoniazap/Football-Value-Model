@@ -1,5 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
+import { calculateClv, findClosingQuote } from "../audit/clv.js";
+import { cumulativeStatistics, dailyAudit } from "../audit/statistics.js";
+import { settleSignal } from "../audit/settlement.js";
 import { scoreFinishedShadow, shadowSummary } from "../shadow/scoring.js";
 
 function ensureDir(file) {
@@ -29,6 +32,10 @@ function readJsonl(file) {
 function signalId(item) {
   const selection = item.candidate?.side || "unknown";
   return `${item.id}:h2h:${selection}:1X2`;
+}
+
+function eventId(signalId, type, identity) {
+  return `${signalId}:${type}:${identity}`;
 }
 
 function oddsRevisionChanged(previous, item, revisionThreshold = 0.02) {
@@ -76,6 +83,9 @@ export function createHistoryStore(root) {
   const historyDir = path.join(root, "data", "history");
   const analysesFile = path.join(historyDir, "analyses.jsonl");
   const signalsFile = path.join(historyDir, "signals.jsonl");
+  const officialSignalsFile = path.join(historyDir, "official-signals.jsonl");
+  const signalEventsFile = path.join(historyDir, "signal-events.jsonl");
+  const settlementsFile = path.join(historyDir, "settlements.jsonl");
   const shadowSignalsFile = path.join(historyDir, "shadow-signals.jsonl");
   const shadowResultsFile = path.join(historyDir, "shadow-results.jsonl");
 
@@ -132,6 +142,105 @@ export function createHistoryStore(root) {
         }
       });
     }
+  }
+
+  function appendLifecycleEvent(event) {
+    const existing = new Set(readJsonl(signalEventsFile).map(row => row.eventId));
+    if (existing.has(event.eventId)) return null;
+    appendJsonl(signalEventsFile, event);
+    return event;
+  }
+
+  function officialSignalFromItem({ analysisId, issuedAt, item, modelVersion }) {
+    const market = item.diagnostics?.market || {};
+    return {
+      signalId: signalId(item),
+      fixtureId: item.id,
+      competition: item.competition,
+      kickoff: item.utcDate,
+      market: "h2h",
+      selection: item.candidate.side,
+      line: "1X2",
+      issuedAt,
+      analysisId,
+      modelVersion,
+      productionModel: "BASELINE_MODEL_V04",
+      modelProbability: item.candidate.probability,
+      fairOdds: item.candidate.fairOdds,
+      officialOdds: item.candidate.odds,
+      officialBookmaker: item.bookmaker,
+      marketSource: market.source || null,
+      marketFreshness: market.freshness || null,
+      marketObservedAt: market.observedAt || null,
+      edge: item.candidate.edge,
+      EV: item.candidate.ev,
+      DQ: item.diagnostics?.dataQualityV2 || null,
+      DQComponents: item.diagnostics?.dataQualityV2?.components || null,
+      Risk: item.diagnostics?.risk || null,
+      redFlags: item.diagnostics?.risk?.redFlags || [],
+      Confidence: item.confidence,
+      baselineProbabilities: item.model ? {
+        home: item.model.home,
+        draw: item.model.draw,
+        away: item.model.away
+      } : null,
+      challengerProbabilities: item.shadow?.challenger?.probabilities || null,
+      providerHealth: item.diagnostics?.providerHealth || null
+    };
+  }
+
+  function appendOfficialValueSignals({ analysisId, analysedAt, items, modelVersion }) {
+    const existing = new Set(readJsonl(officialSignalsFile).map(row => row.signalId));
+    const issued = [];
+    for (const item of items.filter(row => row.category === "value" && row.candidate)) {
+      const snapshot = officialSignalFromItem({ analysisId, issuedAt: analysedAt, item, modelVersion });
+      appendLifecycleEvent({
+        eventId: eventId(snapshot.signalId, "DETECTED", analysisId),
+        signalId: snapshot.signalId,
+        fixtureId: snapshot.fixtureId,
+        type: "DETECTED",
+        at: analysedAt,
+        category: item.category
+      });
+      if (existing.has(snapshot.signalId)) {
+        appendLifecycleEvent({
+          eventId: eventId(snapshot.signalId, "UPDATED", analysisId),
+          signalId: snapshot.signalId,
+          fixtureId: snapshot.fixtureId,
+          type: "UPDATED",
+          at: analysedAt,
+          latestOdds: item.candidate.odds,
+          latestCategory: item.category
+        });
+        continue;
+      }
+      appendJsonl(officialSignalsFile, snapshot);
+      existing.add(snapshot.signalId);
+      issued.push(snapshot);
+      appendLifecycleEvent({
+        eventId: eventId(snapshot.signalId, "ISSUED", snapshot.issuedAt),
+        signalId: snapshot.signalId,
+        fixtureId: snapshot.fixtureId,
+        type: "ISSUED",
+        at: snapshot.issuedAt,
+        immutable: true
+      });
+    }
+
+    for (const item of items.filter(row => row.category !== "value" && row.candidate)) {
+      const id = signalId(item);
+      if (existing.has(id)) {
+        appendLifecycleEvent({
+          eventId: eventId(id, "DOWNGRADED", analysisId),
+          signalId: id,
+          fixtureId: item.id,
+          type: "DOWNGRADED",
+          at: analysedAt,
+          latestCategory: item.category
+        });
+      }
+    }
+    return issued;
   }
 
   function appendShadowSignals({ analysisId, analysedAt, items, revisionThreshold = 0.02 }) {
@@ -204,6 +313,18 @@ export function createHistoryStore(root) {
     return readJsonl(shadowSignalsFile);
   }
 
+  function readOfficialSignals() {
+    return readJsonl(officialSignalsFile);
+  }
+
+  function readSettlements() {
+    return readJsonl(settlementsFile);
+  }
+
+  function readSignalEvents() {
+    return readJsonl(signalEventsFile);
+  }
+
   function shadowStats() {
     return shadowSummary(readShadowSignals());
   }
@@ -227,15 +348,104 @@ export function createHistoryStore(root) {
     return audit;
   }
 
+  function lockSignalsAtKickoff({ now = new Date().toISOString(), latestBySignalId = {} } = {}) {
+    const existingEvents = new Set(readSignalEvents().map(row => row.eventId));
+    const locked = [];
+    for (const signal of readOfficialSignals()) {
+      if (new Date(signal.kickoff).getTime() > new Date(now).getTime()) continue;
+      const id = eventId(signal.signalId, "KICKOFF_LOCKED", signal.kickoff);
+      if (existingEvents.has(id)) continue;
+      const latest = latestBySignalId[signal.signalId] || {};
+      const latestObservedAt = latest.marketObservedAt;
+      const latestIsPreKickoff = latestObservedAt &&
+        new Date(latestObservedAt).getTime() < new Date(signal.kickoff).getTime();
+      const observedAt = latestIsPreKickoff ? latestObservedAt : signal.marketObservedAt;
+      const event = {
+        eventId: id,
+        signalId: signal.signalId,
+        fixtureId: signal.fixtureId,
+        type: "KICKOFF_LOCKED",
+        at: signal.kickoff,
+        latestPreKickoffOdds: latestIsPreKickoff ? latest.latestOdds ?? signal.officialOdds : signal.officialOdds,
+        bestSeenOdds: latestIsPreKickoff ? latest.bestSeenOdds ?? signal.officialOdds : signal.officialOdds,
+        lastMarketObservation: observedAt,
+        modelProbabilityLatest: latestIsPreKickoff ? latest.modelProbability ?? signal.modelProbability : signal.modelProbability,
+        categoryLatest: latestIsPreKickoff ? latest.category ?? "value" : "value"
+      };
+      appendJsonl(signalEventsFile, event);
+      locked.push(event);
+    }
+    return locked;
+  }
+
+  function settleOfficialSignal({ signalId: id, result, settledAt = new Date().toISOString(), marketQuotes = [], closingWindowMinutes = 30 }) {
+    const signal = readOfficialSignals().find(row => row.signalId === id);
+    if (!signal) return null;
+    const existing = readSettlements().find(row => row.signalId === id);
+    if (existing) return existing;
+
+    const settlement = settleSignal(signal, result, 1);
+    if (!settlement || settlement.status === "UNSUPPORTED") return null;
+    const closing = findClosingQuote({ signal, marketQuotes, closingWindowMinutes });
+    const clv = calculateClv({ signal, closing });
+    const row = {
+      ...settlement,
+      settledAt,
+      finishedAt: result.finishedAt || null,
+      resultFetchedAt: result.resultFetchedAt || settledAt,
+      clv
+    };
+    appendJsonl(settlementsFile, row);
+    appendLifecycleEvent({
+      eventId: eventId(id, "SETTLED", result.resultFetchedAt || settledAt),
+      signalId: id,
+      fixtureId: signal.fixtureId,
+      type: "SETTLED",
+      at: settledAt,
+      status: row.status,
+      netUnits: row.netUnits
+    });
+    return row;
+  }
+
+  function auditDaily(date) {
+    return dailyAudit({
+      date,
+      signals: readOfficialSignals(),
+      settlements: readSettlements(),
+      shadowResults: readJsonl(shadowResultsFile)
+    });
+  }
+
+  function auditCumulative() {
+    return cumulativeStatistics({
+      signals: readOfficialSignals(),
+      settlements: readSettlements(),
+      shadowResults: readJsonl(shadowResultsFile)
+    });
+  }
+
   return {
     appendAnalysis,
     appendSignals,
     appendShadowSignals,
     appendShadowResultAudit,
+    appendOfficialValueSignals,
+    appendLifecycleEvent,
+    lockSignalsAtKickoff,
+    settleOfficialSignal,
     readShadowSignals,
+    readOfficialSignals,
+    readSettlements,
+    readSignalEvents,
     shadowStats,
+    auditDaily,
+    auditCumulative,
     analysesFile,
     signalsFile,
+    officialSignalsFile,
+    signalEventsFile,
+    settlementsFile,
     shadowSignalsFile,
     shadowResultsFile
   };

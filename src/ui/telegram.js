@@ -38,11 +38,27 @@ function mainKeyboard(state) {
     [
       { text: "Pipeline", callback_data: "pipeline" },
       { text: "Обновить", callback_data: "refresh" }
+    ],
+    [
+      { text: "Stats", callback_data: "stats" },
+      { text: "Daily Audit", callback_data: "daily_audit" }
+    ],
+    [
+      { text: "CLV", callback_data: "clv" },
+      { text: "Shadow Stats", callback_data: "shadow_stats" }
     ]
   ]);
 }
 
-export function createTelegramUi({ config, tg, stateRef, refreshData, shadowStats = null }) {
+export function createTelegramUi({
+  config,
+  tg,
+  stateRef,
+  refreshData,
+  shadowStats = null,
+  auditStats = null,
+  dailyAudit = null
+}) {
   const deniedLog = path.join(config.root, "logs", "denied-access.log");
 
   function isAllowed(chatId) {
@@ -70,6 +86,7 @@ export function createTelegramUi({ config, tg, stateRef, refreshData, shadowStat
     const state = stateRef.current;
     const modelled = state.value.length + state.near.length + state.rejected.length;
     const shadow = typeof shadowStats === "function" ? shadowStats() : null;
+    const audit = typeof auditStats === "function" ? auditStats() : null;
     const shadowLines = shadow
       ? [
           "",
@@ -84,6 +101,17 @@ export function createTelegramUi({ config, tg, stateRef, refreshData, shadowStat
             ? `Agreement: <b>${((shadow.topPickAgreementRate || 0) * 100).toFixed(1)}%</b>`
             : "Agreement: <b>N/A</b>"
         ].filter(Boolean)
+      : [];
+    const auditLines = audit
+      ? [
+          "",
+          "Official Audit:",
+          `Bets: <b>${audit.overall.officialBets}</b>`,
+          `Settled: <b>${audit.overall.settledBets}</b>`,
+          `W-L-P: <b>${audit.overall.win}-${audit.overall.loss}-${audit.overall.push}</b>`,
+          `Units: <b>${audit.overall.netUnits.toFixed(2)}</b>`,
+          `ROI: <b>${audit.overall.roi === null ? "N/A" : `${(audit.overall.roi * 100).toFixed(1)}%`}</b>`
+        ]
       : [];
     const marketCache = state.sourceHealth?.["market.cache"]?.meta || {};
     const primaryOdds = Object.entries(state.sourceHealth || {})
@@ -115,6 +143,7 @@ export function createTelegramUi({ config, tg, stateRef, refreshData, shadowStat
       state.errors.length
         ? `Ошибок источников: <b>${state.errors.length}</b>`
         : "Источники: без критических ошибок",
+      ...auditLines,
       ...marketLines,
       ...shadowLines,
       "",
@@ -391,6 +420,69 @@ export function createTelegramUi({ config, tg, stateRef, refreshData, shadowStat
     });
   }
 
+  function formatPercent(value) {
+    return value === null || value === undefined ? "N/A" : `${(value * 100).toFixed(1)}%`;
+  }
+
+  async function showAuditScreen(chatId, kind) {
+    const audit = typeof auditStats === "function" ? auditStats() : null;
+    const daily = typeof dailyAudit === "function" ? dailyAudit() : null;
+    const shadow = typeof shadowStats === "function" ? shadowStats() : null;
+    let title = "Statistics";
+    let lines = [];
+
+    if (kind === "stats") {
+      title = "Statistics";
+      lines = audit ? [
+        `Official bets: <b>${audit.overall.officialBets}</b>`,
+        `Settled: <b>${audit.overall.settledBets}</b>`,
+        `W-L-P: <b>${audit.overall.win}-${audit.overall.loss}-${audit.overall.push}</b>`,
+        `Units: <b>${audit.overall.netUnits.toFixed(2)}</b>`,
+        `ROI: <b>${formatPercent(audit.overall.roi)}</b>`
+      ] : ["No audit data."];
+    }
+
+    if (kind === "daily") {
+      title = "Daily Audit";
+      lines = daily ? [
+        `Date Kyiv: <b>${esc(daily.dateKyiv)}</b>`,
+        `Issued: <b>${daily.officialValueIssued}</b>`,
+        `Settled: <b>${daily.settled}</b>`,
+        `Pending: <b>${daily.pending}</b>`,
+        `Units: <b>${daily.betting.netUnits.toFixed(2)}</b>`,
+        `ROI: <b>${formatPercent(daily.betting.roi)}</b>`
+      ] : ["No daily audit data."];
+    }
+
+    if (kind === "clv") {
+      title = "CLV";
+      lines = [
+        "CLV foundation is active.",
+        "Headline CLV waits for valid pre-kickoff closing odds.",
+        "LOW-quality CLV is not mixed into headline metrics."
+      ];
+    }
+
+    if (kind === "shadow_stats") {
+      title = "Shadow Stats";
+      lines = shadow ? [
+        `Sample: <b>${shadow.sampleSize}/300</b>`,
+        `Baseline Brier: <b>${shadow.baseline.brier?.toFixed?.(4) ?? "N/A"}</b>`,
+        `Challenger Brier: <b>${shadow.challenger.brier?.toFixed?.(4) ?? "N/A"}</b>`,
+        `Baseline LogLoss: <b>${shadow.baseline.logLoss?.toFixed?.(4) ?? "N/A"}</b>`,
+        `Challenger LogLoss: <b>${shadow.challenger.logLoss?.toFixed?.(4) ?? "N/A"}</b>`,
+        `Strong disagreement: <b>${shadow.strongDisagreementCount}</b>`
+      ] : ["No shadow stats."];
+    }
+
+    return tg("sendMessage", {
+      chat_id: chatId,
+      text: [`<b>${title}</b>`, "", ...lines].join("\n"),
+      parse_mode: "HTML",
+      reply_markup: keyboard([[{ text: "Dashboard", callback_data: "dashboard" }]])
+    });
+  }
+
   async function handleCallback(query) {
     const chatId = query.message?.chat?.id;
     if (!chatId) return;
@@ -408,6 +500,10 @@ export function createTelegramUi({ config, tg, stateRef, refreshData, shadowStat
     await tg("answerCallbackQuery", { callback_query_id: query.id });
 
     if (query.data === "dashboard") return sendDashboard(chatId, query.message.message_id);
+    if (query.data === "stats") return showAuditScreen(chatId, "stats");
+    if (query.data === "daily_audit") return showAuditScreen(chatId, "daily");
+    if (query.data === "clv") return showAuditScreen(chatId, "clv");
+    if (query.data === "shadow_stats") return showAuditScreen(chatId, "shadow_stats");
     if (query.data === "refresh") {
       await refreshData();
       return sendDashboard(chatId, query.message.message_id);
