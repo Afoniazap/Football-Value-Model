@@ -1,19 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { providerResult, SourceStatus } from "../providerResult.js";
+import { ODDS_API_IO_LEAGUE_SLUGS } from "../../config/competitions.js";
 
 export const ODDS_API_IO_SOURCE = "ODDS_API_IO";
 
 const BASE_URL = "https://api.odds-api.io/v3";
-const LEAGUE_SLUGS = {
-  PL: "england-premier-league",
-  PD: "spain-la-liga",
-  BL1: "germany-bundesliga",
-  SA: "italy-serie-a",
-  FL1: "france-ligue-1",
-  CL: "uefa-champions-league"
-};
-
 function readJson(file) {
   if (!fs.existsSync(file)) return null;
   return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -59,7 +51,7 @@ function kickoffScore(fixtureUtcDate, eventDate, toleranceMinutes) {
 }
 
 function leagueScore(fixture, event) {
-  const expected = LEAGUE_SLUGS[fixture.competitionCode];
+  const expected = ODDS_API_IO_LEAGUE_SLUGS[fixture.competitionCode];
   const actual = event.league?.slug || event.league_slug || "";
   if (!expected || !actual) return 0.7;
   return expected === actual ? 1 : 0.4;
@@ -238,7 +230,7 @@ export async function oddsProviderOddsApiIo({
     return { ...result, events: [], requestsUsed: 0 };
   }
 
-  const supportedFixtures = fixtures.filter(fixture => LEAGUE_SLUGS[fixture.competitionCode]);
+  const supportedFixtures = fixtures.filter(fixture => ODDS_API_IO_LEAGUE_SLUGS[fixture.competitionCode]);
   if (!supportedFixtures.length) {
     const result = providerResult({
       status: SourceStatus.NA,
@@ -252,7 +244,7 @@ export async function oddsProviderOddsApiIo({
   const rawDir = path.join(root, "data", "market", "odds-api-io-raw");
   const eventsByLeague = new Map();
   for (const fixture of supportedFixtures) {
-    const slug = LEAGUE_SLUGS[fixture.competitionCode];
+    const slug = ODDS_API_IO_LEAGUE_SLUGS[fixture.competitionCode];
     if (!eventsByLeague.has(slug)) eventsByLeague.set(slug, []);
     eventsByLeague.get(slug).push(fixture);
   }

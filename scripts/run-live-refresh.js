@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { fetchCompetitionContext, fetchFixtures } from "../src/providers/footballData.js";
 import { fetchFinishedResults } from "../src/providers/results/footballDataResults.js";
-import { fetchApiFootballFixtureIntel } from "../src/providers/apiFootball.js";
+import { createApiFootballIntelCache, fetchApiFootballFixtureIntel } from "../src/providers/apiFootball.js";
 import { createLivePreMatchContext } from "../src/shadow/liveContext.js";
 import { buildModel } from "../src/model/probability.js";
 import { classify } from "../src/decision/classify.js";
@@ -118,9 +118,13 @@ export async function runLiveRefresh({ commit = true } = {}) {
   timings.markets = Date.now() - stageStarted;
 
   const apiFootballByFixture = {};
+  const apiFootballIntelCache = createApiFootballIntelCache(config.root, {
+    now: analysedAt,
+    ttlMinutes: config.refreshMinutes
+  });
   stageStarted = Date.now();
   for (const fixture of fixtures) {
-    const apiFootballResult = await fetchApiFootballFixtureIntel({ request, apiFootballKey: config.apiFootballKey, fixture });
+    const apiFootballResult = await fetchApiFootballFixtureIntel({ request, apiFootballKey: config.apiFootballKey, fixture, intelCache: apiFootballIntelCache });
     providerResults.push(apiFootballResult);
     apiFootballByFixture[fixture.id] = apiFootballResult;
   }
@@ -239,9 +243,9 @@ export async function runLiveRefresh({ commit = true } = {}) {
     officialNewSignals,
     signalRevisions,
     settlements,
+    requestCounts: { httpHosts: requestCounts },
     timings
   });
-  telemetry.requestCounts.httpHosts = requestCounts;
   telemetry.systemReadiness = readinessState({ config, providerHealth: sourceHealth, marketCoverage: telemetry.coverage.market });
   if (commit) refreshTelemetry.appendRefresh(telemetry);
   return telemetry;
@@ -254,6 +258,7 @@ if (isCli) {
     systemReadiness: telemetry.systemReadiness,
     fixturesFetched: telemetry.fixturesFetched,
     fixturesInsideExactHorizon: telemetry.fixturesInsideExactHorizon,
+    competitionCoverage: telemetry.competitionCoverage,
     market: telemetry.market,
     coverage: telemetry.coverage,
     dqDistribution: telemetry.dqDistribution,
@@ -262,6 +267,7 @@ if (isCli) {
     topBlockers: telemetry.blockers.top.slice(0, 10),
     providerHealth: telemetry.providerHealth,
     requestCounts: telemetry.requestCounts,
+    requestBudget: telemetry.requestBudget,
     durationMs: telemetry.durationMs,
     timings: telemetry.timings,
     errors: telemetry.errors

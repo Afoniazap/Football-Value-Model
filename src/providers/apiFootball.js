@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { providerResult, SourceStatus } from "./providerResult.js";
 
 const API_FOOTBALL_BASE_URL = "https://v3.football.api-sports.io";
@@ -8,6 +10,43 @@ function apiFootballSource(fixture) {
 
 function fixtureDate(fixture) {
   return new Date(fixture.utcDate).toISOString().slice(0, 10);
+}
+
+function stableParams(params = {}) {
+  return Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("&");
+}
+
+function readJson(file) {
+  if (!fs.existsSync(file)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function writeJson(file, payload) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(payload, null, 2), "utf8");
+}
+
+function cacheFresh(payload, now, ttlMinutes) {
+  if (!payload?.fetchedAt) return false;
+  const ageMinutes = (new Date(now).getTime() - new Date(payload.fetchedAt).getTime()) / 60_000;
+  return Number.isFinite(ageMinutes) && ageMinutes <= ttlMinutes;
+}
+
+function mappingValid(mapping, fixture) {
+  return mapping &&
+    String(mapping.fixtureId) === String(fixture.id) &&
+    mapping.kickoff === fixture.utcDate &&
+    mapping.teams?.home === fixture.home &&
+    mapping.teams?.away === fixture.away &&
+    Number(mapping.matchConfidence) >= 0.72;
 }
 
 function hasApiErrors(payload) {
@@ -106,7 +145,87 @@ function matchFixture(fixture, candidates) {
   return best;
 }
 
-async function apiFootballRequest(request, apiFootballKey, endpoint, params = {}) {
+export function createApiFootballIntelCache(root, {
+  now = new Date(),
+  ttlMinutes = 30
+} = {}) {
+  const dir = path.join(root, "data", "api-football");
+  const mappingFile = path.join(dir, "fixture-mapping.json");
+  const memory = new Map();
+  const counters = { requestsUsed: 0, cacheHits: 0, mappingHits: 0 };
+
+  function rawFile(endpoint, params) {
+    const safe = `${endpoint}-${stableParams(params)}`.replaceAll(/[^a-zA-Z0-9_.=-]+/g, "_");
+    return path.join(dir, "raw", `${safe}.json`);
+  }
+
+  function readMappings() {
+    return readJson(mappingFile) || {};
+  }
+
+  function getMapping(fixture) {
+    const mapping = readMappings()[fixture.id];
+    if (!mappingValid(mapping, fixture)) return null;
+    counters.mappingHits += 1;
+    return mapping;
+  }
+
+  function setMapping(fixture, match) {
+    if (!match || match.confidence < 0.72) return null;
+    const mappings = readMappings();
+    const row = {
+      fixtureId: String(fixture.id),
+      provider: "API_FOOTBALL",
+      externalFixtureId: String(match.fixture.fixture?.id),
+      matchConfidence: match.confidence,
+      kickoff: fixture.utcDate,
+      teams: { home: fixture.home, away: fixture.away },
+      resolvedAt: new Date(now).toISOString()
+    };
+    mappings[fixture.id] = row;
+    writeJson(mappingFile, mappings);
+    return row;
+  }
+
+  async function getOrFetch({ request, apiFootballKey, endpoint, params }) {
+    const key = `${endpoint}?${stableParams(params)}`;
+    if (memory.has(key)) {
+      counters.cacheHits += 1;
+      return memory.get(key);
+    }
+    const file = rawFile(endpoint, params);
+    const cached = readJson(file);
+    if (cacheFresh(cached, now, ttlMinutes)) {
+      counters.cacheHits += 1;
+      memory.set(key, cached.data);
+      return cached.data;
+    }
+    const payload = await apiFootballRequest(request, apiFootballKey, endpoint, params, null);
+    counters.requestsUsed += 1;
+    writeJson(file, {
+      fetchedAt: new Date(now).toISOString(),
+      endpoint,
+      params,
+      data: payload
+    });
+    memory.set(key, payload);
+    return payload;
+  }
+
+  return {
+    dir,
+    mappingFile,
+    counters,
+    getMapping,
+    setMapping,
+    getOrFetch
+  };
+}
+
+async function apiFootballRequest(request, apiFootballKey, endpoint, params = {}, intelCache = null) {
+  if (intelCache) {
+    return intelCache.getOrFetch({ request, apiFootballKey, endpoint, params });
+  }
   const url = new URL(`${API_FOOTBALL_BASE_URL}/${endpoint}`);
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && value !== "") {
@@ -129,7 +248,7 @@ async function apiFootballRequest(request, apiFootballKey, endpoint, params = {}
   return payload;
 }
 
-export async function fetchApiFootballFixtureIntel({ request, apiFootballKey, fixture }) {
+export async function fetchApiFootballFixtureIntel({ request, apiFootballKey, fixture, intelCache = null }) {
   const source = apiFootballSource(fixture);
 
   if (!apiFootballKey) {
@@ -147,11 +266,22 @@ export async function fetchApiFootballFixtureIntel({ request, apiFootballKey, fi
   }
 
   try {
-    const fixturesPayload = await apiFootballRequest(request, apiFootballKey, "fixtures", {
-      date: fixtureDate(fixture),
-      timezone: "UTC"
-    });
-    const match = matchFixture(fixture, fixturesPayload.response || []);
+    let match = null;
+    const cachedMapping = intelCache?.getMapping(fixture);
+    if (cachedMapping) {
+      match = {
+        fixture: { fixture: { id: Number(cachedMapping.externalFixtureId) } },
+        confidence: cachedMapping.matchConfidence,
+        components: { cached: true }
+      };
+    } else {
+      const fixturesPayload = await apiFootballRequest(request, apiFootballKey, "fixtures", {
+        date: fixtureDate(fixture),
+        timezone: "UTC"
+      }, intelCache);
+      match = matchFixture(fixture, fixturesPayload.response || []);
+      if (match) intelCache?.setMapping(fixture, match);
+    }
 
     if (!match) {
       return providerResult({
@@ -179,7 +309,7 @@ export async function fetchApiFootballFixtureIntel({ request, apiFootballKey, fi
     try {
       const injuriesPayload = await apiFootballRequest(request, apiFootballKey, "injuries", {
         fixture: apiFixtureId
-      });
+      }, intelCache);
       injuries = injuriesPayload.response || [];
       endpointResults.push({ endpoint: "injuries", status: SourceStatus.OK, count: injuries.length });
     } catch (error) {
@@ -195,9 +325,14 @@ export async function fetchApiFootballFixtureIntel({ request, apiFootballKey, fi
     try {
       const lineupsPayload = await apiFootballRequest(request, apiFootballKey, "fixtures/lineups", {
         fixture: apiFixtureId
-      });
+      }, intelCache);
       lineups = lineupsPayload.response || [];
-      endpointResults.push({ endpoint: "lineups", status: SourceStatus.OK, count: lineups.length });
+      endpointResults.push({
+        endpoint: "lineups",
+        status: SourceStatus.OK,
+        count: lineups.length,
+        note: lineups.length ? "PUBLISHED" : "NOT_PUBLISHED"
+      });
     } catch (error) {
       const classified = classifyApiFootballError(error);
       endpointResults.push({
@@ -229,7 +364,10 @@ export async function fetchApiFootballFixtureIntel({ request, apiFootballKey, fi
         apiFixtureId,
         matchConfidence: match.confidence,
         matchComponents: match.components,
-        endpoints: endpointResults
+        endpoints: endpointResults,
+        requestsUsed: intelCache?.counters.requestsUsed || null,
+        cacheHits: intelCache?.counters.cacheHits || 0,
+        mappingHits: intelCache?.counters.mappingHits || 0
       }
     });
   } catch (error) {
@@ -247,7 +385,12 @@ export async function fetchApiFootballFixtureIntel({ request, apiFootballKey, fi
         code: classified.code,
         message: classified.message
       },
-      meta: { date: fixtureDate(fixture) }
+      meta: {
+        date: fixtureDate(fixture),
+        requestsUsed: intelCache?.counters.requestsUsed || null,
+        cacheHits: intelCache?.counters.cacheHits || 0,
+        mappingHits: intelCache?.counters.mappingHits || 0
+      }
     });
   }
 }

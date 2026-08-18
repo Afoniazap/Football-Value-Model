@@ -4,6 +4,8 @@ import { blockerSummary } from "./blockers.js";
 import { dqDistribution, refreshCoverage, riskDistribution } from "./coverage.js";
 import { providerErrors } from "./operationalErrors.js";
 import { readinessState } from "./readiness.js";
+import { projectRequestBudget } from "./requestBudget.js";
+import { auditCompetitionCoverage } from "../config/competitions.js";
 
 function appendJsonl(file, row) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -37,6 +39,7 @@ export function buildRefreshTelemetry({
   officialNewSignals = 0,
   signalRevisions = 0,
   settlements = 0,
+  requestCounts = {},
   timings = {}
 }) {
   const durationMs = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
@@ -49,6 +52,7 @@ export function buildRefreshTelemetry({
     NO_BET: processed.filter(item => item.category === "rejected").length
   };
   const marketUsage = marketAggregateMeta.usageCounts || {};
+  const competitionCoverage = auditCompetitionCoverage(horizonAudit?.accepted || []);
 
   return {
     refreshId,
@@ -63,7 +67,8 @@ export function buildRefreshTelemetry({
       actualHorizonSpanHours: horizonAudit?.actualHorizonSpanHours || 0,
       violations: horizonAudit?.rejected || []
     },
-    competitions: [...new Set(processed.map(item => item.competitionCode).filter(Boolean))],
+    competitions: competitionCoverage.rows.map(row => row.code),
+    competitionCoverage,
     contextsFetched: Object.values(contexts).filter(Boolean).length,
     contextsFailed: providerResults.filter(result => result?.source?.startsWith("football-data.context.") && result.error).length,
     baselineModelsCalculated: processed.filter(item => item.model).length,
@@ -88,8 +93,18 @@ export function buildRefreshTelemetry({
     requestCounts: {
       oddsApiIo: marketAggregateMeta.oddsApiIoRequestsUsed || 0,
       apiFootballOdds: marketAggregateMeta.secondaryRequestsUsed || 0,
-      marketTotal: (marketAggregateMeta.oddsApiIoRequestsUsed || 0) + (marketAggregateMeta.secondaryRequestsUsed || 0)
+      marketTotal: (marketAggregateMeta.oddsApiIoRequestsUsed || 0) + (marketAggregateMeta.secondaryRequestsUsed || 0),
+      ...requestCounts
     },
+    requestBudget: projectRequestBudget({
+      requestCounts: {
+        ...requestCounts,
+        oddsApiIo: marketAggregateMeta.oddsApiIoRequestsUsed || 0,
+        apiFootball: providerResults.filter(result => result?.source?.startsWith("api-football.")).reduce((max, result) =>
+          Math.max(max, result.meta?.requestsUsed || 0), 0)
+      },
+      refreshMinutes: config.refreshMinutes
+    }),
     timings,
     errors: providerErrors(providerResults, refreshId),
     warnings: []

@@ -3,6 +3,7 @@ import { bestH2H, matchOddsEvent } from "../../market/oddsMatching.js";
 import { oddsProviderPrimary } from "./primaryOdds.js";
 import { oddsProviderOddsApiIo } from "./oddsApiIo.js";
 import { oddsProviderSecondary } from "./secondaryOdds.js";
+import { auditCompetitionCoverage, marketSupportClass } from "../../config/competitions.js";
 
 function providerResultLike(result) {
   return {
@@ -93,6 +94,7 @@ export async function aggregateMarket({
   });
   const byFixtureId = {};
   const diagnostics = {};
+  const competitionCoverage = auditCompetitionCoverage(fixtures);
   const providerResults = [
     providerResultLike(primary),
     providerResultLike(oddsApiIo),
@@ -141,6 +143,7 @@ export async function aggregateMarket({
       : primaryEventForDiagnostics && secondaryEventForDiagnostics
         ? agreement(primaryEventForDiagnostics, secondaryEventForDiagnostics)
         : null;
+    const supportClass = marketSupportClass(fixture.competitionCode);
 
     if (primaryMatch.event && primary.status === SourceStatus.OK) {
       const event = attachMarketMeta(primaryMatch.event, {
@@ -237,6 +240,8 @@ export async function aggregateMarket({
 
     diagnostics[fixture.id] = {
       source: "NONE",
+      reason: supportClass === "UNSUPPORTED" ? "MARKET_UNSUPPORTED_COMPETITION" : "MARKET_NO_QUOTES",
+      support: supportClass,
       primaryStatus: primary.status,
       oddsApiIoStatus: oddsApiIo.status,
       secondaryStatus: secondary.status,
@@ -289,6 +294,7 @@ export async function aggregateMarket({
       fixturesSuccessfullyMatched: matchedCount,
       fixturesRejectedByMatching: rejectedByMatching,
       marketCoveragePercent: fixtures.length ? (matchedCount / fixtures.length) * 100 : 0,
+      competitionCoverage,
       usageCounts,
       cache: marketCache.summary(now, config),
       primaryBackoff: primary.status === SourceStatus.QUOTA

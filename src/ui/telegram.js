@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { UI_TIME_ZONE } from "../config/constants.js";
 import { healthLines } from "../diagnostics/sourceHealth.js";
 import { summarizeLatestTelemetry } from "../diagnostics/refreshTelemetry.js";
+import { formatKyivDate } from "./time.js";
+import { UI_LABELS } from "./labels.js";
 
 export function esc(value = "") {
   return String(value)
@@ -15,25 +16,14 @@ function keyboard(rows) {
   return { inline_keyboard: rows };
 }
 
-function formatKyivDate(value) {
-  return new Intl.DateTimeFormat("ru-RU", {
-    timeZone: UI_TIME_ZONE,
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(new Date(value));
-}
-
 function mainKeyboard(state) {
   return keyboard([
     [
-      { text: `VALUE (${state.value.length})`, callback_data: "list:value" },
-      { text: `Near (${state.near.length})`, callback_data: "list:near" }
+      { text: `${UI_LABELS.value} (${state.value.length})`, callback_data: "list:value" },
+      { text: `${UI_LABELS.near} (${state.near.length})`, callback_data: "list:near" }
     ],
     [
-      { text: `WAIT (${state.wait.length})`, callback_data: "list:wait" },
+      { text: `${UI_LABELS.wait} (${state.wait.length})`, callback_data: "list:wait" },
       { text: "Все матчи", callback_data: "list:fixtures" }
     ],
     [
@@ -41,11 +31,11 @@ function mainKeyboard(state) {
       { text: "Обновить", callback_data: "refresh" }
     ],
     [
-      { text: "Stats", callback_data: "stats" },
-      { text: "Sources", callback_data: "sources_overview" }
+      { text: UI_LABELS.statistics, callback_data: "stats" },
+      { text: UI_LABELS.sources, callback_data: "sources_overview" }
     ],
     [
-      { text: "Why no VALUE?", callback_data: "blockers" },
+      { text: UI_LABELS.whyNoValue, callback_data: "blockers" },
       { text: "Shadow", callback_data: "shadow_stats" }
     ]
   ]);
@@ -100,6 +90,10 @@ export function createTelegramUi({
         "24h:",
         `Matches <b>${telemetry.fixturesInsideExactHorizon}</b>`,
         `Markets <b>${telemetry.coverage.market.numerator}/${telemetry.coverage.market.denominator}</b> (${telemetry.coverage.market.percent}%)`,
+        `Market competitions <b>${telemetry.competitionCoverage.supported}/${telemetry.competitionCoverage.total}</b> supported`,
+        telemetry.competitionCoverage.unsupportedTop.length
+          ? `Unsupported <b>${esc(telemetry.competitionCoverage.unsupportedTop.map(row => `${row.code} ${row.count}`).join(", "))}</b>`
+          : "Unsupported <b>none</b>",
         "",
         `VALUE <b>${telemetry.categories.VALUE}</b>`,
         `NEAR <b>${telemetry.categories.NEAR}</b>`,

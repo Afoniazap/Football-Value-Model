@@ -1,16 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { providerResult, SourceStatus } from "../providerResult.js";
+import { API_FOOTBALL_LEAGUE_IDS } from "../../config/competitions.js";
 
 export const API_FOOTBALL_SOURCE = "API_FOOTBALL";
-
-const API_FOOTBALL_LEAGUES = {
-  PL: 39,
-  PD: 140,
-  BL1: 78,
-  SA: 135,
-  FL1: 61
-};
 
 function dateOnly(value) {
   return new Date(value).toISOString().slice(0, 10);
@@ -156,7 +149,7 @@ function normalizeEvents(payload) {
 function groupedFixtureRequests(fixtures) {
   const groups = new Map();
   for (const fixture of fixtures) {
-    const league = API_FOOTBALL_LEAGUES[fixture.competitionCode];
+    const league = API_FOOTBALL_LEAGUE_IDS[fixture.competitionCode];
     if (!league) continue;
     const date = dateOnly(fixture.utcDate);
     const season = seasonFromKickoff(fixture.utcDate);

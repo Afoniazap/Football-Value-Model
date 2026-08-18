@@ -10,8 +10,12 @@ export function blockerReasons(item, config) {
   const sanity = item.diagnostics?.sanityWarnings || [];
   const candidate = item.candidate;
 
-  if (!item.odds && market.source === "NONE") reasons.add("NO_MARKET");
-  if (market.freshness === "STALE") reasons.add("STALE_MARKET");
+  if (!item.odds && market.reason === "MARKET_UNSUPPORTED_COMPETITION") reasons.add("MARKET_UNSUPPORTED_COMPETITION");
+  else if (!item.odds && market.reason === "MARKET_NO_QUOTES") reasons.add("MARKET_NO_QUOTES");
+  else if (!item.odds && market.primaryStatus === "QUOTA") reasons.add("MARKET_PROVIDER_QUOTA");
+  else if (!item.odds && [market.primaryDiagnostic, market.oddsApiIoDiagnostic, market.secondaryDiagnostic].includes("MATCH_LOW_CONFIDENCE")) reasons.add("MARKET_EVENT_NOT_MATCHED");
+  else if (!item.odds && market.source === "NONE") reasons.add("NO_MARKET");
+  if (market.freshness === "STALE") reasons.add("MARKET_STALE");
   if ((dq?.scoreNormalized ?? item.dataQuality ?? 0) < config.minDataQuality) reasons.add("LOW_DQ");
   if ((item.confidence ?? 0) < 70) reasons.add("LOW_CONFIDENCE");
   if (!candidate || candidate.edge < config.minEdgePercent) reasons.add("LOW_EDGE");
@@ -26,7 +30,11 @@ export function blockerReasons(item, config) {
 export function blockerSummary(processed = [], config) {
   const counts = {
     NO_MARKET: 0,
-    STALE_MARKET: 0,
+    MARKET_UNSUPPORTED_COMPETITION: 0,
+    MARKET_PROVIDER_QUOTA: 0,
+    MARKET_EVENT_NOT_MATCHED: 0,
+    MARKET_NO_QUOTES: 0,
+    MARKET_STALE: 0,
     LOW_DQ: 0,
     LOW_CONFIDENCE: 0,
     LOW_EDGE: 0,

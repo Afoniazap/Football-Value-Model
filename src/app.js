@@ -2,7 +2,7 @@ import { loadConfig } from "./config/env.js";
 import { MODEL_VERSION, SPORT_KEYS } from "./config/constants.js";
 import { fetchCompetitionContext, fetchFixtures } from "./providers/footballData.js";
 import { fetchFinishedResults } from "./providers/results/footballDataResults.js";
-import { fetchApiFootballFixtureIntel } from "./providers/apiFootball.js";
+import { createApiFootballIntelCache, fetchApiFootballFixtureIntel } from "./providers/apiFootball.js";
 import { buildModel } from "./model/probability.js";
 import { classify } from "./decision/classify.js";
 import { calculateDataQuality } from "./quality/dataQuality.js";
@@ -206,12 +206,17 @@ export async function main() {
       timings.markets = Date.now() - stageStarted;
 
       const apiFootballByFixture = {};
+      const apiFootballIntelCache = createApiFootballIntelCache(config.root, {
+        now: analysedAt,
+        ttlMinutes: config.refreshMinutes
+      });
       stageStarted = Date.now();
       for (const fixture of fixtures) {
         const apiFootballResult = await fetchApiFootballFixtureIntel({
           request,
           apiFootballKey: config.apiFootballKey,
-          fixture
+          fixture,
+          intelCache: apiFootballIntelCache
         });
         providerResults.push(apiFootballResult);
         apiFootballByFixture[fixture.id] = apiFootballResult;
