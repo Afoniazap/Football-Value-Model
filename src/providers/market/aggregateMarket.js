@@ -1,6 +1,7 @@
 import { SourceStatus } from "../providerResult.js";
 import { bestH2H, matchOddsEvent } from "../../market/oddsMatching.js";
 import { oddsProviderPrimary } from "./primaryOdds.js";
+import { oddsProviderOddsApiIo } from "./oddsApiIo.js";
 import { oddsProviderSecondary } from "./secondaryOdds.js";
 
 function providerResultLike(result) {
@@ -45,6 +46,18 @@ function agreement(primaryEvent, secondaryEvent) {
   return rows;
 }
 
+function appendProviderOdds({ marketCache, fixture, event, source, observedAt, confidence, config }) {
+  if (!event) return;
+  marketCache.appendFixtureOdds({
+    fixture,
+    oddsEvent: event,
+    source,
+    observedAt,
+    matchingConfidence: confidence,
+    revisionThreshold: config.oddsRevisionThreshold
+  });
+}
+
 export async function aggregateMarket({
   request,
   config,
@@ -59,6 +72,17 @@ export async function aggregateMarket({
     oddsRegion: config.oddsRegion,
     sportKey
   });
+  const oddsApiIo = await oddsProviderOddsApiIo({
+    request,
+    oddsApiIoKey: config.oddsApiIoKey,
+    oddsApiIoBookmakers: config.oddsApiIoBookmakers,
+    fixtures,
+    root: config.root,
+    now,
+    cacheMinutes: config.oddsApiIoCacheMinutes,
+    kickoffToleranceMinutes: config.oddsApiIoKickoffToleranceMinutes,
+    minConfidence: config.marketMatchMinConfidence
+  });
   const secondary = await oddsProviderSecondary({
     request,
     apiFootballKey: config.apiFootballKey,
@@ -71,6 +95,7 @@ export async function aggregateMarket({
   const diagnostics = {};
   const providerResults = [
     providerResultLike(primary),
+    providerResultLike(oddsApiIo),
     providerResultLike(secondary)
   ];
 
@@ -78,6 +103,11 @@ export async function aggregateMarket({
     const primaryMatch = matchOddsEvent(
       { ...fixture, sportKey },
       primary.events,
+      config.marketMatchMinConfidence
+    );
+    const oddsApiIoMatch = matchOddsEvent(
+      { ...fixture, sportKey: "football" },
+      oddsApiIo.events,
       config.marketMatchMinConfidence
     );
     const secondaryMatch = matchOddsEvent(
@@ -92,6 +122,13 @@ export async function aggregateMarket({
       observedAt: primary.fetchedAt,
       matchingConfidence: primaryMatch.confidence
     }) : null;
+    const oddsApiIoEventForDiagnostics = oddsApiIoMatch.event ? attachMarketMeta(oddsApiIoMatch.event, {
+      source: "ODDS_API_IO",
+      sourcePriority: "ODDS_API_IO",
+      freshness: "FRESH",
+      observedAt: oddsApiIo.fetchedAt,
+      matchingConfidence: oddsApiIoMatch.confidence
+    }) : null;
     const secondaryEventForDiagnostics = secondaryMatch.event ? attachMarketMeta(secondaryMatch.event, {
       source: "API_FOOTBALL",
       sourcePriority: "SECONDARY",
@@ -99,9 +136,11 @@ export async function aggregateMarket({
       observedAt: secondary.fetchedAt,
       matchingConfidence: secondaryMatch.confidence
     }) : null;
-    const marketAgreement = primaryEventForDiagnostics && secondaryEventForDiagnostics
-      ? agreement(primaryEventForDiagnostics, secondaryEventForDiagnostics)
-      : null;
+    const marketAgreement = primaryEventForDiagnostics && oddsApiIoEventForDiagnostics
+      ? agreement(primaryEventForDiagnostics, oddsApiIoEventForDiagnostics)
+      : primaryEventForDiagnostics && secondaryEventForDiagnostics
+        ? agreement(primaryEventForDiagnostics, secondaryEventForDiagnostics)
+        : null;
 
     if (primaryMatch.event && primary.status === SourceStatus.OK) {
       const event = attachMarketMeta(primaryMatch.event, {
@@ -115,28 +154,42 @@ export async function aggregateMarket({
       diagnostics[fixture.id] = {
         source: "PRIMARY",
         confidence: primaryMatch.confidence,
+        oddsApiIoStatus: oddsApiIo.status,
+        oddsApiIoConfidence: oddsApiIoMatch.confidence,
         secondaryStatus: secondary.status,
         secondaryConfidence: secondaryMatch.confidence,
         marketAgreement
       };
-      marketCache.appendFixtureOdds({
-        fixture,
-        oddsEvent: event,
-        source: primary.source,
-        observedAt: primary.fetchedAt,
-        matchingConfidence: primaryMatch.confidence,
-        revisionThreshold: config.oddsRevisionThreshold
+      appendProviderOdds({ marketCache, fixture, event, source: primary.source, observedAt: primary.fetchedAt, confidence: primaryMatch.confidence, config });
+      appendProviderOdds({ marketCache, fixture, event: oddsApiIoEventForDiagnostics, source: "ODDS_API_IO", observedAt: oddsApiIo.fetchedAt, confidence: oddsApiIoMatch.confidence, config });
+      appendProviderOdds({ marketCache, fixture, event: secondaryEventForDiagnostics, source: "API_FOOTBALL", observedAt: secondary.fetchedAt, confidence: secondaryMatch.confidence, config });
+      continue;
+    }
+
+    if (oddsApiIoMatch.event && providerAvailable(oddsApiIo)) {
+      const event = attachMarketMeta(oddsApiIoMatch.event, {
+        source: "ODDS_API_IO",
+        sourcePriority: "ODDS_API_IO",
+        freshness: "FRESH",
+        observedAt: oddsApiIo.fetchedAt,
+        matchingConfidence: oddsApiIoMatch.confidence,
+        fallbackReason: `primary:${primary.status}`
       });
-      if (secondaryEventForDiagnostics) {
-        marketCache.appendFixtureOdds({
-          fixture,
-          oddsEvent: secondaryEventForDiagnostics,
-          source: "API_FOOTBALL",
-          observedAt: secondary.fetchedAt,
-          matchingConfidence: secondaryMatch.confidence,
-          revisionThreshold: config.oddsRevisionThreshold
-        });
-      }
+      byFixtureId[fixture.id] = event;
+      diagnostics[fixture.id] = {
+        source: "ODDS_API_IO",
+        confidence: oddsApiIoMatch.confidence,
+        primaryStatus: primary.status,
+        primaryDiagnostic: primaryMatch.diagnostic,
+        oddsApiIoStatus: oddsApiIo.status,
+        oddsApiIoDiagnostic: oddsApiIoMatch.diagnostic,
+        secondaryStatus: secondary.status,
+        secondaryDiagnostic: secondaryMatch.diagnostic,
+        fallbackReason: `primary:${primary.status}`,
+        marketAgreement
+      };
+      appendProviderOdds({ marketCache, fixture, event, source: "ODDS_API_IO", observedAt: oddsApiIo.fetchedAt, confidence: oddsApiIoMatch.confidence, config });
+      appendProviderOdds({ marketCache, fixture, event: secondaryEventForDiagnostics, source: "API_FOOTBALL", observedAt: secondary.fetchedAt, confidence: secondaryMatch.confidence, config });
       continue;
     }
 
@@ -155,17 +208,12 @@ export async function aggregateMarket({
         confidence: secondaryMatch.confidence,
         primaryStatus: primary.status,
         primaryDiagnostic: primaryMatch.diagnostic,
+        oddsApiIoStatus: oddsApiIo.status,
+        oddsApiIoDiagnostic: oddsApiIoMatch.diagnostic,
         fallbackReason: `primary:${primary.status}`,
         marketAgreement
       };
-      marketCache.appendFixtureOdds({
-        fixture,
-        oddsEvent: event,
-        source: "API_FOOTBALL",
-        observedAt: secondary.fetchedAt,
-        matchingConfidence: secondaryMatch.confidence,
-        revisionThreshold: config.oddsRevisionThreshold
-      });
+      appendProviderOdds({ marketCache, fixture, event, source: "API_FOOTBALL", observedAt: secondary.fetchedAt, confidence: secondaryMatch.confidence, config });
       continue;
     }
 
@@ -177,8 +225,10 @@ export async function aggregateMarket({
         freshness: cached.marketMeta.freshness,
         observedAt: cached.marketMeta.observedAt,
         primaryStatus: primary.status,
+        oddsApiIoStatus: oddsApiIo.status,
         secondaryStatus: secondary.status,
         primaryDiagnostic: primaryMatch.diagnostic,
+        oddsApiIoDiagnostic: oddsApiIoMatch.diagnostic,
         secondaryDiagnostic: secondaryMatch.diagnostic,
         fallbackReason: "providers_unavailable_or_unmatched"
       };
@@ -188,8 +238,10 @@ export async function aggregateMarket({
     diagnostics[fixture.id] = {
       source: "NONE",
       primaryStatus: primary.status,
+      oddsApiIoStatus: oddsApiIo.status,
       secondaryStatus: secondary.status,
       primaryDiagnostic: primaryMatch.diagnostic,
+      oddsApiIoDiagnostic: oddsApiIoMatch.diagnostic,
       secondaryDiagnostic: secondaryMatch.diagnostic
     };
   }
@@ -207,14 +259,18 @@ export async function aggregateMarket({
     return acc;
   }, {});
   const matchedCount = Object.values(diagnostics).filter(item =>
-    ["PRIMARY", "SECONDARY", "CACHE"].includes(item.source)
+    ["PRIMARY", "ODDS_API_IO", "SECONDARY", "CACHE"].includes(item.source)
   ).length;
   const rejectedByMatching = Object.values(diagnostics).filter(item =>
-    item.primaryDiagnostic === "MATCH_LOW_CONFIDENCE" || item.secondaryDiagnostic === "MATCH_LOW_CONFIDENCE"
+    item.primaryDiagnostic === "MATCH_LOW_CONFIDENCE" ||
+    item.oddsApiIoDiagnostic === "MATCH_LOW_CONFIDENCE" ||
+    item.secondaryDiagnostic === "MATCH_LOW_CONFIDENCE"
   ).length;
 
   return {
-    status: primary.status === SourceStatus.OK ? SourceStatus.OK : primary.status,
+    status: [primary.status, oddsApiIo.status, secondary.status].includes(SourceStatus.OK)
+      ? SourceStatus.OK
+      : primary.status,
     source: "market.aggregate",
     fetchedAt: new Date(now).toISOString(),
     byFixtureId,
@@ -222,6 +278,11 @@ export async function aggregateMarket({
     providerResults,
     meta: {
       primaryStatus: primary.status,
+      oddsApiIoStatus: oddsApiIo.status,
+      oddsApiIoRequestsUsed: oddsApiIo.requestsUsed || 0,
+      oddsApiIoEventsReceived: oddsApiIo.meta?.eventsReceived || 0,
+      oddsApiIoMatchedFixtures: oddsApiIo.meta?.matchedFixtures || 0,
+      oddsApiIoCoveragePercent: oddsApiIo.meta?.coveragePercent || 0,
       secondaryStatus: secondary.status,
       secondaryRequestsUsed: secondary.requestsUsed || 0,
       secondaryFixturesReceived: secondary.meta?.fixturesReceived || 0,

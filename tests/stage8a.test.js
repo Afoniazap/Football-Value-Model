@@ -5,6 +5,7 @@ import path from "node:path";
 import { calculateClv } from "../src/audit/clv.js";
 import { aggregateMarket } from "../src/providers/market/aggregateMarket.js";
 import { createMarketCache } from "../src/providers/market/marketCache.js";
+import { matchOddsApiIoEvent, oddsProviderOddsApiIo } from "../src/providers/market/oddsApiIo.js";
 import { oddsProviderSecondary } from "../src/providers/market/secondaryOdds.js";
 
 function root() {
@@ -69,27 +70,79 @@ function apiFootballPayload(home = "Arsenal", away = "Chelsea") {
   };
 }
 
-function config(tmp) {
+function config(tmp, overrides = {}) {
   return {
     root: tmp,
     oddsApiKey: "primary-key",
     oddsRegion: "eu",
+    oddsApiIoKey: "",
+    oddsApiIoBookmakers: "",
+    oddsApiIoCacheMinutes: 10,
+    oddsApiIoKickoffToleranceMinutes: 180,
     apiFootballKey: "secondary-key",
     apiFootballOddsCacheMinutes: 180,
     oddsFreshMinutes: 15,
     oddsStaleMinutes: 60,
     oddsRevisionThreshold: 0.02,
-    marketMatchMinConfidence: 0.7
+    marketMatchMinConfidence: 0.7,
+    ...overrides
   };
 }
 
-function createRequest({ primary = "quota", secondary = "ok", secondaryPayload = apiFootballPayload(), calls }) {
+function oddsApiIoEvents(count = 1) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `oddsio-${index + 1}`,
+    date: "2026-08-20T14:00:00Z",
+    home: count === 1 ? "Arsenal FC" : `Home ${index + 1} FC`,
+    away: count === 1 ? "Chelsea FC" : `Away ${index + 1} FC`,
+    league: { name: "Premier League", slug: "england-premier-league" }
+  }));
+}
+
+function oddsApiIoOdds(ids = ["oddsio-1"]) {
+  return ids.map((id, index) => ({
+    id,
+    date: "2026-08-20T14:00:00Z",
+    home: ids.length === 1 ? "Arsenal FC" : `Home ${index + 1} FC`,
+    away: ids.length === 1 ? "Chelsea FC" : `Away ${index + 1} FC`,
+    league: { name: "Premier League", slug: "england-premier-league" },
+    bookmakers: [{
+      title: "OddsIoBook",
+      markets: [
+        { name: "ML", odds: [{ home: 2.12, draw: 3.25, away: 3.55 }] },
+        { name: "ML HT", odds: [{ home: 3.1, draw: 2.2, away: 3.3 }] },
+        { name: "Total", odds: [{ name: "Over 2.5", price: 1.91 }, { name: "Under 2.5", price: 1.89 }] },
+        { name: "Spread", odds: [{ hdp: -0.5, home: "2.05", away: "1.80" }] },
+        { name: "Totals", odds: [{ hdp: 2.5, over: "1.91", under: "1.89" }] }
+      ]
+    }]
+  }));
+}
+
+function createRequest({
+  primary = "quota",
+  secondary = "ok",
+  oddsApiIo = "na",
+  secondaryPayload = apiFootballPayload(),
+  oddsApiIoEventPayload = oddsApiIoEvents(),
+  calls
+}) {
   return async url => {
     const value = String(url);
     if (value.includes("the-odds-api")) {
       if (primary === "ok") return [primaryEvent()];
       if (primary === "error") throw new Error("500: primary error");
       throw new Error("OUT_OF_USAGE_CREDITS");
+    }
+    if (value.includes("odds-api.io")) {
+      calls.oddsApiIo = (calls.oddsApiIo || 0) + 1;
+      if (oddsApiIo === "quota") throw new Error("429: quota");
+      if (oddsApiIo === "error") throw new Error("500: odds-api.io error");
+      if (value.includes("/events")) return oddsApiIoEventPayload;
+      if (value.includes("/odds/multi")) {
+        const ids = new URL(value).searchParams.get("eventIds").split(",");
+        return oddsApiIoOdds(ids);
+      }
     }
     if (value.includes("api-sports")) {
       calls.secondary += 1;
@@ -98,6 +151,129 @@ function createRequest({ primary = "quota", secondary = "ok", secondaryPayload =
     }
     return [];
   };
+}
+
+async function testOddsApiIoNormalizationAndBatching() {
+  const tmp = root();
+  const calls = { secondary: 0, oddsApiIo: 0 };
+  const fixtures = Array.from({ length: 11 }, (_, index) => ({
+    ...fixture(`fixture-${index + 1}`),
+    home: `Home ${index + 1} FC`,
+    away: `Away ${index + 1} FC`
+  }));
+  const result = await oddsProviderOddsApiIo({
+    request: createRequest({ oddsApiIo: "ok", oddsApiIoEventPayload: oddsApiIoEvents(11), calls }),
+    oddsApiIoKey: "odds-api-io-key",
+    oddsApiIoBookmakers: "OddsIoBook",
+    fixtures,
+    root: tmp,
+    now: new Date("2026-08-20T10:00:00Z"),
+    cacheMinutes: 10
+  });
+  assert.equal(result.status, "OK");
+  assert.equal(result.meta.eventRequests, 1);
+  assert.equal(result.meta.oddsBatchRequests, 2);
+  assert.equal(result.meta.requestsUsed, 3);
+  assert.equal(result.events.length, 11);
+  assert.equal(result.events[0].source, "ODDS_API_IO");
+  assert.equal(result.events[0].externalEventId, "oddsio-1");
+  assert.deepEqual(result.events[0].bookmakers[0].markets.map(market => market.key), ["h2h", "spreads", "totals"]);
+  assert.equal(result.events[0].bookmakers[0].markets.filter(market => market.key === "h2h").length, 1);
+  assert.equal(calls.oddsApiIo, 3);
+}
+
+function testOddsApiIoEventMatchingRequiresTeamsAndTime() {
+  const f = fixture();
+  const good = matchOddsApiIoEvent(f, oddsApiIoEvents(), { minConfidence: 0.7, kickoffToleranceMinutes: 180 });
+  const late = matchOddsApiIoEvent(f, [{ ...oddsApiIoEvents()[0], date: "2026-08-21T14:00:00Z" }], { minConfidence: 0.7, kickoffToleranceMinutes: 180 });
+  const wrongTeam = matchOddsApiIoEvent(f, [{ ...oddsApiIoEvents()[0], home: "Liverpool FC" }], { minConfidence: 0.7, kickoffToleranceMinutes: 180 });
+  assert.ok(good.event);
+  assert.equal(late.event, null);
+  assert.equal(late.diagnostic, "MATCH_NOT_FOUND");
+  assert.equal(wrongTeam.event, null);
+}
+
+async function testNoOddsApiIoKeyIsNA() {
+  const result = await oddsProviderOddsApiIo({
+    request: async () => { throw new Error("should not request without key"); },
+    oddsApiIoKey: "",
+    fixtures: [fixture()],
+    root: root()
+  });
+  assert.equal(result.status, "N/A");
+  assert.equal(result.meta.reason, "NOT_CONFIGURED");
+  assert.equal(result.requestsUsed, 0);
+}
+
+async function testOddsApiIoRequiresConfiguredBookmakersForOdds() {
+  const tmp = root();
+  const calls = { secondary: 0, oddsApiIo: 0 };
+  const result = await oddsProviderOddsApiIo({
+    request: createRequest({ oddsApiIo: "ok", calls }),
+    oddsApiIoKey: "odds-api-io-key",
+    oddsApiIoBookmakers: "",
+    fixtures: [fixture()],
+    root: tmp,
+    now: new Date("2026-08-20T10:00:00Z"),
+    cacheMinutes: 10
+  });
+  assert.equal(result.status, "N/A");
+  assert.equal(result.error.code, "BOOKMAKERS_NOT_CONFIGURED");
+  assert.equal(result.meta.reason, "BOOKMAKERS_NOT_CONFIGURED");
+  assert.equal(result.meta.eventRequests, 1);
+  assert.equal(result.meta.oddsBatchRequests, 0);
+  assert.equal(calls.oddsApiIo, 1);
+}
+
+async function testOddsApiIoInvalidBookmakerIsUnavailable() {
+  const tmp = root();
+  let calls = 0;
+  const result = await oddsProviderOddsApiIo({
+    request: async url => {
+      calls += 1;
+      const value = String(url);
+      if (value.includes("/events")) return oddsApiIoEvents();
+      if (value.includes("/odds/multi")) throw new Error("400: GGbet is not a valid bookmaker, use /v3/bookmakers to get a list of valid bookmakers");
+      return [];
+    },
+    oddsApiIoKey: "odds-api-io-key",
+    oddsApiIoBookmakers: "GGbet,Bet365",
+    fixtures: [fixture()],
+    root: tmp,
+    now: new Date("2026-08-20T10:00:00Z"),
+    cacheMinutes: 10
+  });
+  assert.equal(result.status, "N/A");
+  assert.equal(result.error.code, "BOOKMAKER_INVALID");
+  assert.equal(result.meta.reason, "BOOKMAKER_INVALID");
+  assert.equal(result.meta.requestsUsed, 2);
+  assert.equal(result.meta.oddsBatchRequests, 1);
+  assert.equal(calls, 2);
+}
+
+async function testOddsApiIoBookmakerSelectionMismatchIsUnavailable() {
+  const tmp = root();
+  const result = await oddsProviderOddsApiIo({
+    request: async url => {
+      const value = String(url);
+      if (value.includes("/events")) return oddsApiIoEvents();
+      if (value.includes("/odds/multi")) {
+        throw new Error("403: Access denied. You're allowed max 2 bookmakers. Allowed: bet365 NJ, GG.bet.");
+      }
+      return [];
+    },
+    oddsApiIoKey: "odds-api-io-key",
+    oddsApiIoBookmakers: "Bet365,GG.bet",
+    fixtures: [fixture()],
+    root: tmp,
+    now: new Date("2026-08-20T10:00:00Z"),
+    cacheMinutes: 10
+  });
+  assert.equal(result.status, "N/A");
+  assert.equal(result.error.code, "BOOKMAKER_SELECTION_MISMATCH");
+  assert.equal(result.meta.reason, "BOOKMAKER_SELECTION_MISMATCH");
+  assert.equal(result.meta.requestsUsed, 2);
+  assert.equal(result.meta.oddsBatchRequests, 1);
 }
 
 async function testSecondaryFallbackAndProvenance() {
@@ -187,6 +363,64 @@ async function testPrimaryWinsAndAgreementDiagnosticOnly() {
   assert.equal(result.meta.usageCounts.PRIMARY, 1);
 }
 
+async function testPrimaryQuotaFallsBackToOddsApiIo() {
+  const tmp = root();
+  const calls = { secondary: 0, oddsApiIo: 0 };
+  const result = await aggregateMarket({
+    request: createRequest({ primary: "quota", oddsApiIo: "ok", calls }),
+    config: config(tmp, { oddsApiIoKey: "odds-api-io-key", oddsApiIoBookmakers: "OddsIoBook" }),
+    sportKey: "soccer_epl",
+    fixtures: [fixture()],
+    marketCache: createMarketCache(tmp),
+    now: new Date("2026-08-20T10:05:00Z")
+  });
+  const event = result.byFixtureId["fixture-1"];
+  assert.equal(event.marketMeta.source, "ODDS_API_IO");
+  assert.equal(event.marketMeta.sourcePriority, "ODDS_API_IO");
+  assert.equal(event.marketMeta.fallbackReason, "primary:QUOTA");
+  assert.equal(event.externalEventId, "oddsio-1");
+  assert.equal(result.meta.usageCounts.ODDS_API_IO, 1);
+  assert.equal(result.meta.oddsApiIoRequestsUsed, 2);
+  assert.equal(result.meta.oddsApiIoMatchedFixtures, 1);
+}
+
+async function testOddsApiIoQuotaFallsBackToApiFootball() {
+  const tmp = root();
+  const calls = { secondary: 0, oddsApiIo: 0 };
+  const result = await aggregateMarket({
+    request: createRequest({ primary: "quota", oddsApiIo: "quota", calls }),
+    config: config(tmp, { oddsApiIoKey: "odds-api-io-key", oddsApiIoBookmakers: "OddsIoBook" }),
+    sportKey: "soccer_epl",
+    fixtures: [fixture()],
+    marketCache: createMarketCache(tmp),
+    now: new Date("2026-08-20T10:05:00Z")
+  });
+  const event = result.byFixtureId["fixture-1"];
+  assert.equal(event.marketMeta.source, "API_FOOTBALL");
+  assert.equal(event.marketMeta.sourcePriority, "SECONDARY");
+  assert.equal(result.meta.oddsApiIoStatus, "QUOTA");
+  assert.equal(result.meta.usageCounts.SECONDARY, 1);
+  assert.equal(calls.secondary, 1);
+}
+
+async function testOddsApiIoProvenanceAndCacheRevision() {
+  const tmp = root();
+  const calls = { secondary: 0, oddsApiIo: 0 };
+  const cache = createMarketCache(tmp);
+  await aggregateMarket({
+    request: createRequest({ primary: "ok", oddsApiIo: "ok", calls }),
+    config: config(tmp, { oddsApiIoKey: "odds-api-io-key", oddsApiIoBookmakers: "OddsIoBook" }),
+    sportKey: "soccer_epl",
+    fixtures: [fixture()],
+    marketCache: cache,
+    now: new Date("2026-08-20T10:05:00Z")
+  });
+  const rows = cache.readQuotes().filter(row => row.source === "ODDS_API_IO");
+  assert.equal(rows.length, 3);
+  assert.ok(rows.every(row => row.bookmaker === "OddsIoBook"));
+  assert.ok(rows.every(row => row.observedAt));
+}
+
 async function testConflictingFixtureIdentityRejected() {
   const tmp = root();
   const calls = { secondary: 0 };
@@ -258,7 +492,16 @@ function testClvSourcePreserved() {
 await testSecondaryFallbackAndProvenance();
 await testSecondaryRawCacheReused();
 await testApiFootballPlanErrorIsUnavailable();
+await testOddsApiIoNormalizationAndBatching();
+testOddsApiIoEventMatchingRequiresTeamsAndTime();
+await testNoOddsApiIoKeyIsNA();
+await testOddsApiIoRequiresConfiguredBookmakersForOdds();
+await testOddsApiIoInvalidBookmakerIsUnavailable();
+await testOddsApiIoBookmakerSelectionMismatchIsUnavailable();
 await testPrimaryWinsAndAgreementDiagnosticOnly();
+await testPrimaryQuotaFallsBackToOddsApiIo();
+await testOddsApiIoQuotaFallsBackToApiFootball();
+await testOddsApiIoProvenanceAndCacheRevision();
 await testConflictingFixtureIdentityRejected();
 await testBothUnavailableFallsBackToFreshCache();
 testClvSourcePreserved();

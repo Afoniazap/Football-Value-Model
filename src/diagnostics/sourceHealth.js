@@ -63,6 +63,7 @@ export function healthLines(sourceHealth = {}) {
   return [
     `football-data: ${football}`,
     `odds: ${odds}`,
+    `odds-api.io: ${sourceHealth["odds-api-io"]?.status || SourceStatus.NA}`,
     `odds secondary: ${sourceHealth["odds.secondary"]?.status || SourceStatus.NA}`,
     `market cache: ${sourceHealth["market.cache"]?.status || SourceStatus.NA}`,
     `API-Football: ${sourceHealth["api-football"]?.status || SourceStatus.NA}`,
