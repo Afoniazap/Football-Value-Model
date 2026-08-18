@@ -141,6 +141,35 @@ async function testSecondaryRawCacheReused() {
   assert.equal(calls.secondary, 1);
 }
 
+async function testApiFootballPlanErrorIsUnavailable() {
+  const tmp = root();
+  const calls = { secondary: 0 };
+  const result = await oddsProviderSecondary({
+    request: createRequest({
+      primary: "quota",
+      secondaryPayload: {
+        get: "odds",
+        errors: { plan: "Free plans do not have access to this season, try from 2022 to 2024." },
+        results: 0,
+        response: []
+      },
+      calls
+    }),
+    apiFootballKey: config(tmp).apiFootballKey,
+    fixtures: [fixture()],
+    root: tmp,
+    now: new Date("2026-08-20T10:00:00Z"),
+    cacheMinutes: 180
+  });
+  assert.equal(result.status, "N/A");
+  assert.equal(result.error.code, "PLAN_SEASON_WINDOW");
+  assert.equal(result.meta.reason, "PLAN_SEASON_WINDOW");
+  assert.equal(result.meta.errors[0].reason, "PLAN_SEASON_WINDOW");
+  assert.equal(result.events.length, 0);
+  assert.equal(result.meta.errors[0].apiErrors[0].code, "plan");
+  assert.equal(calls.secondary, 1);
+}
+
 async function testPrimaryWinsAndAgreementDiagnosticOnly() {
   const tmp = root();
   const calls = { secondary: 0 };
@@ -228,6 +257,7 @@ function testClvSourcePreserved() {
 
 await testSecondaryFallbackAndProvenance();
 await testSecondaryRawCacheReused();
+await testApiFootballPlanErrorIsUnavailable();
 await testPrimaryWinsAndAgreementDiagnosticOnly();
 await testConflictingFixtureIdentityRejected();
 await testBothUnavailableFallsBackToFreshCache();

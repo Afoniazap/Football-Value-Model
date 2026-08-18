@@ -44,8 +44,40 @@ function classifySecondaryError(error) {
   if (message.includes("429") || message.toLowerCase().includes("rate") || message.toLowerCase().includes("quota")) {
     return SourceStatus.QUOTA;
   }
-  if (message.includes("No API_FOOTBALL_KEY")) return SourceStatus.NA;
+  if (message.includes("No API_FOOTBALL_KEY") || message.toLowerCase().includes("free plan")) return SourceStatus.NA;
   return SourceStatus.ERROR;
+}
+
+function classifyApiFootballOddsError(errors) {
+  const text = errors.map(error => error.message).join(" ").toLowerCase();
+  if (text.includes("free plans do not have access to this season")) {
+    return {
+      status: SourceStatus.NA,
+      code: "PLAN_SEASON_WINDOW"
+    };
+  }
+  if (errors.some(error => error.code === "requests") || text.includes("quota") || text.includes("rate")) {
+    return {
+      status: SourceStatus.QUOTA,
+      code: "QUOTA"
+    };
+  }
+  return {
+    status: SourceStatus.NA,
+    code: "API_ODDS_UNAVAILABLE"
+  };
+}
+
+function apiErrors(payload) {
+  const errors = payload?.errors;
+  if (!errors || Array.isArray(errors) && errors.length === 0) return [];
+  if (typeof errors === "string") return errors ? [{ code: "api", message: errors }] : [];
+  if (Array.isArray(errors)) {
+    return errors.map((message, index) => ({ code: String(index), message: String(message) }));
+  }
+  return Object.entries(errors)
+    .filter(([, message]) => String(message || "").trim())
+    .map(([code, message]) => ({ code, message: String(message) }));
 }
 
 function betKey(name = "") {
@@ -187,11 +219,26 @@ export async function oddsProviderSecondary({
         continue;
       }
     }
-    events.push(...normalizeEvents(payload.data || payload));
+    const data = payload.data || payload;
+    const responseErrors = apiErrors(data);
+    if (responseErrors.length) {
+      const classified = classifyApiFootballOddsError(responseErrors);
+      errors.push({
+        league: group.league,
+        season: group.season,
+        date: group.date,
+        status: classified.status,
+        reason: classified.code,
+        apiErrors: responseErrors,
+        message: responseErrors.map(error => `${error.code}: ${error.message}`).join("; ")
+      });
+      continue;
+    }
+    events.push(...normalizeEvents(data));
   }
 
   const status = errors.length === groups.length && groups.length
-    ? classifySecondaryError(new Error(errors[0].message))
+    ? errors[0].status || classifySecondaryError(new Error(errors[0].message))
     : errors.length
       ? SourceStatus.PARTIAL
       : events.length
@@ -202,9 +249,10 @@ export async function oddsProviderSecondary({
     status,
     source: "odds.secondary",
     data: events,
-    error: errors.length ? { code: status, message: `${errors.length} API-Football odds request(s) failed` } : null,
+    error: errors.length ? { code: errors[0]?.reason || status, message: `${errors.length} API-Football odds request(s) failed` } : null,
     meta: {
       provider: API_FOOTBALL_SOURCE,
+      reason: errors[0]?.reason || null,
       requestsUsed,
       cacheHits,
       requestGroups: groups.length,
