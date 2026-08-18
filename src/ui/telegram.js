@@ -42,7 +42,7 @@ function mainKeyboard(state) {
   ]);
 }
 
-export function createTelegramUi({ config, tg, stateRef, refreshData }) {
+export function createTelegramUi({ config, tg, stateRef, refreshData, shadowStats = null }) {
   const deniedLog = path.join(config.root, "logs", "denied-access.log");
 
   function isAllowed(chatId) {
@@ -69,6 +69,22 @@ export function createTelegramUi({ config, tg, stateRef, refreshData }) {
   function dashboardText() {
     const state = stateRef.current;
     const modelled = state.value.length + state.near.length + state.rejected.length;
+    const shadow = typeof shadowStats === "function" ? shadowStats() : null;
+    const shadowLines = shadow
+      ? [
+          "",
+          `🧪 Shadow sample: <b>${shadow.sampleSize}</b>`,
+          shadow.sampleSize < 300
+            ? "Shadow: <b>insufficient sample</b>"
+            : `Baseline Brier: <b>${shadow.baseline.brier?.toFixed?.(4) ?? "N/A"}</b>`,
+          shadow.sampleSize >= 300
+            ? `Challenger Brier: <b>${shadow.challenger.brier?.toFixed?.(4) ?? "N/A"}</b>`
+            : "",
+          shadow.sampleSize
+            ? `Agreement: <b>${((shadow.topPickAgreementRate || 0) * 100).toFixed(1)}%</b>`
+            : "Agreement: <b>N/A</b>"
+        ].filter(Boolean)
+      : [];
     const oddsMode = config.oddsApiKey ? "реальные коэффициенты" : "без Odds API";
 
     return [
@@ -88,6 +104,7 @@ export function createTelegramUi({ config, tg, stateRef, refreshData }) {
       state.errors.length
         ? `Ошибок источников: <b>${state.errors.length}</b>`
         : "Источники: без критических ошибок",
+      ...shadowLines,
       "",
       "<i>Это предварительное ядро 1X2. Полные xG, составы и Tactical Engine еще не подключены.</i>"
     ].join("\n");
@@ -241,6 +258,47 @@ export function createTelegramUi({ config, tg, stateRef, refreshData }) {
         : ["Sanity warnings нет."];
     }
 
+    if (kind === "shadow") {
+      title = "Shadow";
+      const shadow = item.shadow;
+      if (!shadow || shadow.shadowStatus !== "OK") {
+        lines = [
+          `shadowStatus: <b>${esc(shadow?.shadowStatus || "N/A")}</b>`,
+          esc(shadow?.reason || "No challenger probability.")
+        ];
+      } else {
+        const bp = shadow.baseline.probabilities;
+        const cp = shadow.challenger.probabilities;
+        const d = shadow.differences;
+        const bm = shadow.baseline.market.selected;
+        const cm = shadow.challenger.market.selected;
+        lines = [
+          "OFFICIAL = <b>BASELINE</b>",
+          `shadowStatus: <b>${esc(shadow.shadowStatus)}</b>`,
+          "",
+          "Baseline:",
+          `P1 ${(bp.home * 100).toFixed(1)}% / X ${(bp.draw * 100).toFixed(1)}% / P2 ${(bp.away * 100).toFixed(1)}%`,
+          "Challenger:",
+          `P1 ${(cp.home * 100).toFixed(1)}% / X ${(cp.draw * 100).toFixed(1)}% / P2 ${(cp.away * 100).toFixed(1)}%`,
+          "Difference:",
+          `P1 ${((cp.home - bp.home) * 100).toFixed(1)} pp / X ${((cp.draw - bp.draw) * 100).toFixed(1)} pp / P2 ${((cp.away - bp.away) * 100).toFixed(1)} pp`,
+          "",
+          `Top picks: Baseline ${esc(shadow.baseline.topPick?.side || "N/A")} / Challenger ${esc(shadow.challenger.topPick?.side || "N/A")}`,
+          `Agreement: <b>${esc(shadow.disagreementStatus)}</b> (${(d.maxProbabilityDifference * 100).toFixed(1)} pp)`,
+          "",
+          "Market:",
+          bm
+            ? `Baseline ${esc(bm.side)} Edge ${bm.edge.toFixed(1)} pp / EV ${bm.ev.toFixed(1)}%`
+            : "Baseline Edge/EV: N/A",
+          cm
+            ? `Challenger ${esc(cm.side)} Edge ${cm.edge.toFixed(1)} pp / EV ${cm.ev.toFixed(1)}%`
+            : "Challenger Edge/EV: N/A",
+          `baselineCategory: <b>${esc(shadow.baseline.category)}</b>`,
+          `challengerShadowCategory: <b>${esc(shadow.challenger.shadowCategory)}</b>`
+        ];
+      }
+    }
+
     return tg("sendMessage", {
       chat_id: chatId,
       text: [`<b>${title}</b>`, "", `<b>${esc(item.home)} - ${esc(item.away)}</b>`, "", ...lines].join("\n"),
@@ -262,6 +320,7 @@ export function createTelegramUi({ config, tg, stateRef, refreshData }) {
       `Начало: ${formatKyivDate(item.utcDate)}`,
       "",
       `Статус: <b>${item.category.toUpperCase()}</b>`,
+      "OFFICIAL = <b>BASELINE</b>",
       `Baseline DQ: <b>${item.dataQuality}/100</b>`,
       dq ? `DQ v2: <b>${dq.scoreNormalized}/100</b>` : "DQ v2: нет данных",
       risk ? `Risk: <b>${risk.score}/100</b>` : "Risk: нет данных",
@@ -314,6 +373,7 @@ export function createTelegramUi({ config, tg, stateRef, refreshData }) {
           { text: "Sources", callback_data: `sources:${item.id}` },
           { text: "Sanity", callback_data: `sanity:${item.id}` }
         ],
+        [{ text: "🧪 Shadow", callback_data: `shadow:${item.id}` }],
         [{ text: "Dashboard", callback_data: "dashboard" }]
       ])
     });
@@ -366,6 +426,7 @@ export function createTelegramUi({ config, tg, stateRef, refreshData }) {
     if (query.data.startsWith("risk:")) return showDiagnostics(chatId, query.data.split(":")[1], "risk");
     if (query.data.startsWith("sources:")) return showDiagnostics(chatId, query.data.split(":")[1], "sources");
     if (query.data.startsWith("sanity:")) return showDiagnostics(chatId, query.data.split(":")[1], "sanity");
+    if (query.data.startsWith("shadow:")) return showDiagnostics(chatId, query.data.split(":")[1], "shadow");
   }
 
   async function handleMessage(message) {

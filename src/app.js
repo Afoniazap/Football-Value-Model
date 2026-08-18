@@ -13,6 +13,8 @@ import { createCacheStore } from "./storage/cache.js";
 import { createHistoryStore } from "./storage/history.js";
 import { createSourceHealth } from "./diagnostics/sourceHealth.js";
 import { createTelegramUi } from "./ui/telegram.js";
+import { createLivePreMatchContext } from "./shadow/liveContext.js";
+import { buildShadowComparison } from "./shadow/comparison.js";
 
 function createInitialState() {
   return {
@@ -150,7 +152,8 @@ export async function main() {
       }
 
       const processed = fixtures.map(fixture => {
-        const modelled = buildModel(fixture, contexts[fixture.competitionCode]);
+        const fixtureContext = createLivePreMatchContext(contexts[fixture.competitionCode]);
+        const modelled = buildModel(fixture, fixtureContext);
         const oddsEvent = findOddsEvent(
           fixture,
           oddsByCode[fixture.competitionCode] || []
@@ -165,7 +168,7 @@ export async function main() {
         );
         const dataQualityV2 = calculateDataQuality({
           fixture,
-          context: contexts[fixture.competitionCode],
+          context: fixtureContext,
           oddsEvent,
           apiFootballResult
         });
@@ -181,9 +184,19 @@ export async function main() {
           minDataQuality: config.minDataQuality
         });
         const marketQuality = oddsEvent ? 100 : 0;
+        const providerHealth = createSourceHealth(fixtureProviders);
+        const shadow = buildShadowComparison({
+          fixture,
+          context: fixtureContext,
+          baseline: classified,
+          oddsEvent,
+          config,
+          providerHealth
+        });
 
         return {
           ...classified,
+          shadow,
           diagnostics: {
             dataQualityV2,
             risk,
@@ -194,7 +207,7 @@ export async function main() {
               marketQuality
             }),
             sanityWarnings,
-            providerHealth: createSourceHealth(fixtureProviders),
+            providerHealth,
             apiFootball: {
               status: apiFootballResult.status,
               meta: apiFootballResult.meta,
@@ -250,6 +263,11 @@ export async function main() {
         analysedAt: analysedAt.toISOString(),
         items: processed
       });
+      historyStore.appendShadowSignals({
+        analysisId,
+        analysedAt: analysedAt.toISOString(),
+        items: processed
+      });
 
       console.log(
         `Обновлено ${processed.length} матчей | VALUE ${stateRef.current.value.length} | Near ${stateRef.current.near.length} | WAIT ${stateRef.current.wait.length} | NO BET ${stateRef.current.rejected.length}`
@@ -263,7 +281,7 @@ export async function main() {
     }
   }
 
-  const ui = createTelegramUi({ config, tg, stateRef, refreshData });
+  const ui = createTelegramUi({ config, tg, stateRef, refreshData, shadowStats: historyStore.shadowStats });
   let offset = 0;
 
   console.log("FVM v1.0 CLEAN запускается...");
