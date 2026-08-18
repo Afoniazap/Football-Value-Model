@@ -43,6 +43,7 @@ export function loadConfig() {
     apiFootballKey: process.env.API_FOOTBALL_KEY?.trim() || "",
     oddsApiKey: process.env.THE_ODDS_API_KEY?.trim() || "",
     oddsRegion: process.env.ODDS_REGION?.trim() || "eu",
+    apiFootballOddsCacheMinutes: Math.max(5, numberFromEnv("API_FOOTBALL_ODDS_CACHE_MINUTES", 180)),
     oddsFreshMinutes,
     oddsStaleMinutes,
     oddsRevisionThreshold: Math.max(0.001, numberFromEnv("ODDS_REVISION_THRESHOLD", 0.02)),
