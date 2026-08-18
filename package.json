@@ -1,0 +1,17 @@
+{
+  "name": "fvm-telegram-bot",
+  "version": "0.4.0",
+  "private": true,
+  "description": "Football Value Model Telegram Bot",
+  "type": "module",
+  "scripts": {
+    "start": "node src/bot.js",
+    "dev": "node --watch src/bot.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7"
+  }
+}
