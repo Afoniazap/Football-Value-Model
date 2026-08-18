@@ -2,9 +2,7 @@ import { loadConfig } from "./config/env.js";
 import { MODEL_VERSION, SPORT_KEYS } from "./config/constants.js";
 import { fetchCompetitionContext, fetchFixtures } from "./providers/footballData.js";
 import { fetchApiFootballFixtureIntel } from "./providers/apiFootball.js";
-import { fetchOddsForSport } from "./providers/odds.js";
 import { buildModel } from "./model/probability.js";
-import { findOddsEvent } from "./market/oddsMatching.js";
 import { classify } from "./decision/classify.js";
 import { calculateDataQuality } from "./quality/dataQuality.js";
 import { calculateRisk, calculateDecisionConfidenceV2 } from "./risk/riskScore.js";
@@ -15,6 +13,8 @@ import { createSourceHealth } from "./diagnostics/sourceHealth.js";
 import { createTelegramUi } from "./ui/telegram.js";
 import { createLivePreMatchContext } from "./shadow/liveContext.js";
 import { buildShadowComparison } from "./shadow/comparison.js";
+import { aggregateMarket } from "./providers/market/aggregateMarket.js";
+import { createMarketCache } from "./providers/market/marketCache.js";
 
 function createInitialState() {
   return {
@@ -79,6 +79,16 @@ function createAnalysisId(date = new Date()) {
   return `${date.toISOString().replace(/[-:.TZ]/g, "")}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function applyMarketFreshnessGuard(classified, oddsEvent) {
+  const freshness = oddsEvent?.marketMeta?.freshness;
+  if (freshness !== "STALE") return classified;
+  return {
+    ...classified,
+    category: "wait",
+    reason: "Market odds are STALE; official VALUE requires fresh market data."
+  };
+}
+
 export async function main() {
   let config;
   try {
@@ -92,6 +102,7 @@ export async function main() {
   const tg = createTelegramRequest(config, request);
   const cacheStore = createCacheStore(config.root, createInitialState());
   const historyStore = createHistoryStore(config.root);
+  const marketCache = createMarketCache(config.root);
   const stateRef = { current: cacheStore.loadCache() };
 
   async function refreshData() {
@@ -127,17 +138,21 @@ export async function main() {
         contexts[code] = contextResult.data;
       }
 
-      const oddsByCode = {};
+      const marketByFixtureId = {};
+      const marketDiagnosticsByFixtureId = {};
       for (const code of competitionCodes) {
         const sportKey = SPORT_KEYS[code];
-        const oddsResult = await fetchOddsForSport({
+        const marketResult = await aggregateMarket({
           request,
-          oddsApiKey: config.oddsApiKey,
-          oddsRegion: config.oddsRegion,
-          sportKey
+          config,
+          sportKey,
+          fixtures: fixtures.filter(fixture => fixture.competitionCode === code),
+          marketCache,
+          now: analysedAt
         });
-        providerResults.push(oddsResult);
-        oddsByCode[code] = oddsResult.data || [];
+        providerResults.push(...marketResult.providerResults);
+        Object.assign(marketByFixtureId, marketResult.byFixtureId);
+        Object.assign(marketDiagnosticsByFixtureId, marketResult.diagnostics);
       }
 
       const apiFootballByFixture = {};
@@ -154,16 +169,15 @@ export async function main() {
       const processed = fixtures.map(fixture => {
         const fixtureContext = createLivePreMatchContext(contexts[fixture.competitionCode]);
         const modelled = buildModel(fixture, fixtureContext);
-        const oddsEvent = findOddsEvent(
-          fixture,
-          oddsByCode[fixture.competitionCode] || []
-        );
-        const classified = classify(modelled, oddsEvent, config);
+        const oddsEvent = marketByFixtureId[fixture.id] || null;
+        const classified = applyMarketFreshnessGuard(classify(modelled, oddsEvent, config), oddsEvent);
         const apiFootballResult = apiFootballByFixture[fixture.id];
         const fixtureProviders = providerResults.filter(result =>
           result.source === "football-data.fixtures" ||
           result.source === `football-data.context.${fixture.competitionCode}` ||
           result.source === `odds.${SPORT_KEYS[fixture.competitionCode]}` ||
+          result.source === "odds.secondary" ||
+          result.source === "market.cache" ||
           result.source === `api-football.${fixture.id}`
         );
         const dataQualityV2 = calculateDataQuality({
@@ -208,6 +222,13 @@ export async function main() {
             }),
             sanityWarnings,
             providerHealth,
+            market: {
+              ...marketDiagnosticsByFixtureId[fixture.id],
+              source: oddsEvent?.marketMeta?.source || marketDiagnosticsByFixtureId[fixture.id]?.source || "NONE",
+              freshness: oddsEvent?.marketMeta?.freshness || "N/A",
+              observedAt: oddsEvent?.marketMeta?.observedAt || null,
+              matchingConfidence: oddsEvent?.marketMeta?.matchingConfidence || marketDiagnosticsByFixtureId[fixture.id]?.confidence || null
+            },
             apiFootball: {
               status: apiFootballResult.status,
               meta: apiFootballResult.meta,
@@ -261,12 +282,14 @@ export async function main() {
       historyStore.appendSignals({
         analysisId,
         analysedAt: analysedAt.toISOString(),
-        items: processed
+        items: processed,
+        revisionThreshold: config.oddsRevisionThreshold
       });
       historyStore.appendShadowSignals({
         analysisId,
         analysedAt: analysedAt.toISOString(),
-        items: processed
+        items: processed,
+        revisionThreshold: config.oddsRevisionThreshold
       });
 
       console.log(

@@ -29,6 +29,13 @@ export function loadConfig() {
     throw new Error("Заполните ALLOWED_CHAT_IDS в файле .env");
   }
 
+  const oddsFreshMinutes = Math.max(1, numberFromEnv("ODDS_FRESH_MINUTES", 15));
+  const oddsStaleMinutes = Math.max(1, numberFromEnv("ODDS_STALE_MINUTES", 60));
+
+  if (oddsFreshMinutes >= oddsStaleMinutes) {
+    throw new Error("ODDS_FRESH_MINUTES must be lower than ODDS_STALE_MINUTES");
+  }
+
   return {
     root: ROOT,
     telegramToken: requireSecret("TELEGRAM_BOT_TOKEN"),
@@ -36,6 +43,10 @@ export function loadConfig() {
     apiFootballKey: process.env.API_FOOTBALL_KEY?.trim() || "",
     oddsApiKey: process.env.THE_ODDS_API_KEY?.trim() || "",
     oddsRegion: process.env.ODDS_REGION?.trim() || "eu",
+    oddsFreshMinutes,
+    oddsStaleMinutes,
+    oddsRevisionThreshold: Math.max(0.001, numberFromEnv("ODDS_REVISION_THRESHOLD", 0.02)),
+    marketMatchMinConfidence: Math.max(0.5, Math.min(1, numberFromEnv("MARKET_MATCH_MIN_CONFIDENCE", 0.7))),
     minEdgePercent: numberFromEnv("MIN_EDGE_PERCENT", 4),
     minDataQuality: numberFromEnv("MIN_DATA_QUALITY", 65),
     refreshMinutes: Math.max(5, numberFromEnv("REFRESH_MINUTES", 30)),

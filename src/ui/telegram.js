@@ -85,6 +85,17 @@ export function createTelegramUi({ config, tg, stateRef, refreshData, shadowStat
             : "Agreement: <b>N/A</b>"
         ].filter(Boolean)
       : [];
+    const marketCache = state.sourceHealth?.["market.cache"]?.meta || {};
+    const primaryOdds = Object.entries(state.sourceHealth || {})
+      .find(([source]) => source.startsWith("odds.") && source !== "odds.secondary")?.[1];
+    const marketLines = [
+      "",
+      "Market:",
+      `Primary <b>${esc(primaryOdds?.status || "N/A")}</b>`,
+      `Cache FRESH <b>${marketCache.fresh || 0}</b>`,
+      `STALE <b>${marketCache.stale || 0}</b>`,
+      `EXPIRED <b>${marketCache.expired || 0}</b>`
+    ];
     const oddsMode = config.oddsApiKey ? "реальные коэффициенты" : "без Odds API";
 
     return [
@@ -104,6 +115,7 @@ export function createTelegramUi({ config, tg, stateRef, refreshData, shadowStat
       state.errors.length
         ? `Ошибок источников: <b>${state.errors.length}</b>`
         : "Источники: без критических ошибок",
+      ...marketLines,
       ...shadowLines,
       "",
       "<i>Это предварительное ядро 1X2. Полные xG, составы и Tactical Engine еще не подключены.</i>"

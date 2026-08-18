@@ -31,9 +31,11 @@ function signalId(item) {
   return `${item.id}:h2h:${selection}:1X2`;
 }
 
-function oddsRevisionChanged(previous, item) {
-  if (!previous?.candidate || !item.candidate) return true;
-  return Math.abs(Number(previous.candidate.odds) - Number(item.candidate.odds)) >= 0.01;
+function oddsRevisionChanged(previous, item, revisionThreshold = 0.02) {
+  if (!previous || !item.candidate) return true;
+  const previousOdds = Number(previous.latestOdds ?? previous.bookmakerOdds);
+  if (!Number.isFinite(previousOdds)) return true;
+  return Math.abs(previousOdds - Number(item.candidate.odds)) >= revisionThreshold;
 }
 
 function shadowSignalId(item, selection) {
@@ -48,11 +50,11 @@ function probabilityChanged(previous, baselineProbability, challengerProbability
   );
 }
 
-function oddsChanged(previous, marketOdds) {
+function oddsChanged(previous, marketOdds, revisionThreshold = 0.02) {
   if (!previous) return true;
   if (previous.marketOdds === null && marketOdds === null) return false;
   if (previous.marketOdds === null || marketOdds === null) return true;
-  return Math.abs(Number(previous.marketOdds) - Number(marketOdds)) >= 0.01;
+  return Math.abs(Number(previous.marketOdds) - Number(marketOdds)) >= revisionThreshold;
 }
 
 function bestSeenOdds(previous, marketOdds) {
@@ -81,7 +83,7 @@ export function createHistoryStore(root) {
     appendJsonl(analysesFile, snapshot);
   }
 
-  function appendSignals({ analysisId, analysedAt, items }) {
+  function appendSignals({ analysisId, analysedAt, items, revisionThreshold = 0.02 }) {
     const existing = readJsonl(signalsFile);
     const latestById = new Map();
     for (const row of existing) latestById.set(row.signalId, row);
@@ -90,7 +92,8 @@ export function createHistoryStore(root) {
       if (!item.candidate) continue;
       const id = signalId(item);
       const previous = latestById.get(id);
-      if (previous && !oddsRevisionChanged(previous, item)) continue;
+      if (previous && !oddsRevisionChanged(previous, item, revisionThreshold)) continue;
+      const market = item.diagnostics?.market || {};
 
       appendJsonl(signalsFile, {
         signalId: id,
@@ -109,6 +112,12 @@ export function createHistoryStore(root) {
         modelProbability: item.candidate.probability,
         fairOdds: item.candidate.fairOdds,
         bookmakerOdds: item.candidate.odds,
+        firstSeenOdds: previous?.firstSeenOdds ?? item.candidate.odds,
+        latestOdds: item.candidate.odds,
+        bestSeenOdds: bestSeenOdds(previous, item.candidate.odds),
+        marketSource: market.source || null,
+        marketFreshness: market.freshness || null,
+        marketObservedAt: market.observedAt || null,
         edge: item.candidate.edge,
         ev: item.candidate.ev,
         bookmaker: item.bookmaker,
@@ -125,7 +134,7 @@ export function createHistoryStore(root) {
     }
   }
 
-  function appendShadowSignals({ analysisId, analysedAt, items }) {
+  function appendShadowSignals({ analysisId, analysedAt, items, revisionThreshold = 0.02 }) {
     const existing = readJsonl(shadowSignalsFile);
     const latestById = new Map();
     for (const row of existing) latestById.set(row.signalId, row);
@@ -144,7 +153,7 @@ export function createHistoryStore(root) {
         const challengerProbability = shadow.challenger.probabilities;
 
         if (previous &&
-          !oddsChanged(previous, marketOdds) &&
+          !oddsChanged(previous, marketOdds, revisionThreshold) &&
           !probabilityChanged(previous, baselineProbability, challengerProbability) &&
           previous.baselineCategory === item.category &&
           previous.challengerShadowCategory === shadow.challenger.shadowCategory) {
@@ -161,6 +170,9 @@ export function createHistoryStore(root) {
           market: "h2h",
           selection: side,
           marketOdds,
+          marketSource: item.diagnostics?.market?.source || null,
+          marketFreshness: item.diagnostics?.market?.freshness || null,
+          marketObservedAt: item.diagnostics?.market?.observedAt || null,
           firstSeenOdds: previous?.firstSeenOdds ?? marketOdds,
           latestOdds: marketOdds,
           bestSeenOdds: bestSeenOdds(previous, marketOdds),
