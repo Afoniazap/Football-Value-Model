@@ -184,10 +184,77 @@ export function createTelegramUi({ config, tg, stateRef, refreshData }) {
     });
   }
 
+  function findItem(id) {
+    return stateRef.current.fixtures.find(x => x.id === id);
+  }
+
+  async function showDiagnostics(chatId, id, kind) {
+    const item = findItem(id);
+    if (!item) return;
+
+    const diagnostics = item.diagnostics || {};
+    let title = "Diagnostics";
+    let lines = [];
+
+    if (kind === "dq") {
+      const dq = diagnostics.dataQualityV2;
+      title = "Data Quality";
+      lines = dq ? [
+        `DQ: <b>${dq.scoreNormalized}/100</b>`,
+        `Raw: <b>${dq.rawScore}/${dq.availableMax}</b>`,
+        "",
+        ...dq.components.map(part =>
+          `${esc(part.name)}: <b>${part.score}/${part.max}</b> (${esc(part.status)})${part.note ? ` - ${esc(part.note)}` : ""}`
+        )
+      ] : ["Нет данных DQ."];
+    }
+
+    if (kind === "risk") {
+      const risk = diagnostics.risk;
+      title = "Risk";
+      lines = risk ? [
+        `Risk: <b>${risk.score}/100</b>`,
+        `Model Agreement: <b>${risk.modelAgreement}/100</b>`,
+        "",
+        ...(risk.redFlags.length
+          ? risk.redFlags.map(flag => `${esc(flag.severity)} ${esc(flag.code)}: ${esc(flag.message)}`)
+          : ["Red flags нет."])
+      ] : ["Нет данных Risk."];
+    }
+
+    if (kind === "sources") {
+      title = "Sources";
+      const providerHealth = diagnostics.providerHealth || stateRef.current.sourceHealth || {};
+      lines = Object.entries(providerHealth).map(([source, health]) =>
+        `${esc(source)}: <b>${esc(health.status)}</b>` +
+        `${health.coverageCount !== null && health.coverageCount !== undefined ? ` | coverage ${health.coverageCount}` : ""}` +
+        `${health.meta?.reason ? ` | ${esc(health.meta.reason)}` : ""}`
+      );
+      if (!lines.length) lines = ["Нет данных источников."];
+    }
+
+    if (kind === "sanity") {
+      title = "Sanity";
+      const warnings = diagnostics.sanityWarnings || [];
+      lines = warnings.length
+        ? warnings.map(warning => `${esc(warning.code)} / ${esc(warning.reason)}: ${esc(warning.message)}`)
+        : ["Sanity warnings нет."];
+    }
+
+    return tg("sendMessage", {
+      chat_id: chatId,
+      text: [`<b>${title}</b>`, "", `<b>${esc(item.home)} - ${esc(item.away)}</b>`, "", ...lines].join("\n"),
+      parse_mode: "HTML",
+      reply_markup: keyboard([[{ text: "Dashboard", callback_data: "dashboard" }]])
+    });
+  }
+
   async function showCard(chatId, id) {
     const state = stateRef.current;
     const item = state.fixtures.find(x => x.id === id);
     if (!item) return;
+    const dq = item.diagnostics?.dataQualityV2;
+    const risk = item.diagnostics?.risk;
 
     const lines = [
       `<b>${esc(item.home)} - ${esc(item.away)}</b>`,
@@ -195,7 +262,13 @@ export function createTelegramUi({ config, tg, stateRef, refreshData }) {
       `Начало: ${formatKyivDate(item.utcDate)}`,
       "",
       `Статус: <b>${item.category.toUpperCase()}</b>`,
-      `Data Quality: <b>${item.dataQuality}/100</b>`
+      `Baseline DQ: <b>${item.dataQuality}/100</b>`,
+      dq ? `DQ v2: <b>${dq.scoreNormalized}/100</b>` : "DQ v2: нет данных",
+      risk ? `Risk: <b>${risk.score}/100</b>` : "Risk: нет данных",
+      risk ? `Model Agreement: <b>${risk.modelAgreement}/100</b>` : "Model Agreement: нет данных",
+      item.diagnostics?.decisionConfidenceV2 !== undefined
+        ? `Decision Confidence v2: <b>${item.diagnostics.decisionConfidenceV2}/100</b>`
+        : "Decision Confidence v2: нет данных"
     ];
 
     if (item.model) {
@@ -232,7 +305,17 @@ export function createTelegramUi({ config, tg, stateRef, refreshData }) {
       chat_id: chatId,
       text: lines.join("\n"),
       parse_mode: "HTML",
-      reply_markup: keyboard([[{ text: "Dashboard", callback_data: "dashboard" }]])
+      reply_markup: keyboard([
+        [
+          { text: "DQ", callback_data: `dq:${item.id}` },
+          { text: "Risk", callback_data: `risk:${item.id}` }
+        ],
+        [
+          { text: "Sources", callback_data: `sources:${item.id}` },
+          { text: "Sanity", callback_data: `sanity:${item.id}` }
+        ],
+        [{ text: "Dashboard", callback_data: "dashboard" }]
+      ])
     });
   }
 
@@ -279,6 +362,10 @@ export function createTelegramUi({ config, tg, stateRef, refreshData }) {
     }
     if (query.data.startsWith("list:")) return showList(chatId, query.data.split(":")[1]);
     if (query.data.startsWith("card:")) return showCard(chatId, query.data.split(":")[1]);
+    if (query.data.startsWith("dq:")) return showDiagnostics(chatId, query.data.split(":")[1], "dq");
+    if (query.data.startsWith("risk:")) return showDiagnostics(chatId, query.data.split(":")[1], "risk");
+    if (query.data.startsWith("sources:")) return showDiagnostics(chatId, query.data.split(":")[1], "sources");
+    if (query.data.startsWith("sanity:")) return showDiagnostics(chatId, query.data.split(":")[1], "sanity");
   }
 
   async function handleMessage(message) {

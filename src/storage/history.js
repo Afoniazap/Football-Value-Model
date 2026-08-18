@@ -76,7 +76,14 @@ export function createHistoryStore(root) {
         ev: item.candidate.ev,
         bookmaker: item.bookmaker,
         confidence: item.confidence,
-        dataQuality: item.dataQuality
+        dataQuality: item.dataQuality,
+        diagnostics: {
+          dataQualityV2: item.diagnostics?.dataQualityV2,
+          risk: item.diagnostics?.risk,
+          decisionConfidenceV2: item.diagnostics?.decisionConfidenceV2,
+          sanityWarnings: item.diagnostics?.sanityWarnings,
+          providerHealth: item.diagnostics?.providerHealth
+        }
       });
     }
   }

@@ -1,10 +1,14 @@
 import { loadConfig } from "./config/env.js";
 import { MODEL_VERSION, SPORT_KEYS } from "./config/constants.js";
 import { fetchCompetitionContext, fetchFixtures } from "./providers/footballData.js";
+import { fetchApiFootballFixtureIntel } from "./providers/apiFootball.js";
 import { fetchOddsForSport } from "./providers/odds.js";
 import { buildModel } from "./model/probability.js";
 import { findOddsEvent } from "./market/oddsMatching.js";
 import { classify } from "./decision/classify.js";
+import { calculateDataQuality } from "./quality/dataQuality.js";
+import { calculateRisk, calculateDecisionConfidenceV2 } from "./risk/riskScore.js";
+import { runSanityChecks } from "./model/sanityChecks.js";
 import { createCacheStore } from "./storage/cache.js";
 import { createHistoryStore } from "./storage/history.js";
 import { createSourceHealth } from "./diagnostics/sourceHealth.js";
@@ -134,13 +138,71 @@ export async function main() {
         oddsByCode[code] = oddsResult.data || [];
       }
 
+      const apiFootballByFixture = {};
+      for (const fixture of fixtures) {
+        const apiFootballResult = await fetchApiFootballFixtureIntel({
+          request,
+          apiFootballKey: config.apiFootballKey,
+          fixture
+        });
+        providerResults.push(apiFootballResult);
+        apiFootballByFixture[fixture.id] = apiFootballResult;
+      }
+
       const processed = fixtures.map(fixture => {
         const modelled = buildModel(fixture, contexts[fixture.competitionCode]);
         const oddsEvent = findOddsEvent(
           fixture,
           oddsByCode[fixture.competitionCode] || []
         );
-        return classify(modelled, oddsEvent, config);
+        const classified = classify(modelled, oddsEvent, config);
+        const apiFootballResult = apiFootballByFixture[fixture.id];
+        const fixtureProviders = providerResults.filter(result =>
+          result.source === "football-data.fixtures" ||
+          result.source === `football-data.context.${fixture.competitionCode}` ||
+          result.source === `odds.${SPORT_KEYS[fixture.competitionCode]}` ||
+          result.source === `api-football.${fixture.id}`
+        );
+        const dataQualityV2 = calculateDataQuality({
+          fixture,
+          context: contexts[fixture.competitionCode],
+          oddsEvent,
+          apiFootballResult
+        });
+        const risk = calculateRisk({
+          item: classified,
+          oddsEvent,
+          apiFootballResult,
+          providerStatuses: fixtureProviders
+        });
+        const sanityWarnings = runSanityChecks({
+          item: classified,
+          dataQuality: dataQualityV2,
+          minDataQuality: config.minDataQuality
+        });
+        const marketQuality = oddsEvent ? 100 : 0;
+
+        return {
+          ...classified,
+          diagnostics: {
+            dataQualityV2,
+            risk,
+            decisionConfidenceV2: calculateDecisionConfidenceV2({
+              dataQuality: dataQualityV2,
+              risk,
+              modelAgreement: risk.modelAgreement,
+              marketQuality
+            }),
+            sanityWarnings,
+            providerHealth: createSourceHealth(fixtureProviders),
+            apiFootball: {
+              status: apiFootballResult.status,
+              meta: apiFootballResult.meta,
+              injuryCount: apiFootballResult.data?.injuries?.length || 0,
+              lineupsCount: apiFootballResult.data?.lineups?.length || 0
+            }
+          }
+        };
       });
 
       stateRef.current = {
@@ -163,6 +225,24 @@ export async function main() {
         horizonEnd,
         fixtures: processed.length,
         providerStatuses: stateRef.current.sourceHealth,
+        dataQuality: processed.map(item => ({
+          fixtureId: item.id,
+          scoreNormalized: item.diagnostics?.dataQualityV2?.scoreNormalized,
+          rawScore: item.diagnostics?.dataQualityV2?.rawScore,
+          availableMax: item.diagnostics?.dataQualityV2?.availableMax,
+          components: item.diagnostics?.dataQualityV2?.components
+        })),
+        riskScore: processed.map(item => ({
+          fixtureId: item.id,
+          score: item.diagnostics?.risk?.score,
+          modelAgreement: item.diagnostics?.risk?.modelAgreement
+        })),
+        redFlags: processed.flatMap(item =>
+          (item.diagnostics?.risk?.redFlags || []).map(flag => ({ fixtureId: item.id, ...flag }))
+        ),
+        sanityWarnings: processed.flatMap(item =>
+          (item.diagnostics?.sanityWarnings || []).map(warning => ({ fixtureId: item.id, ...warning }))
+        ),
         modelVersion: MODEL_VERSION
       });
       historyStore.appendSignals({

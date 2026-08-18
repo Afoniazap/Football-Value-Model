@@ -6,19 +6,43 @@ export function createSourceHealth(results = []) {
     bySource[result.source] = {
       status: result.status,
       fetchedAt: result.fetchedAt,
+      lastSuccessfulFetch: result.status === SourceStatus.OK ? result.fetchedAt : null,
+      coverageCount: Array.isArray(result.data) ? result.data.length : null,
       error: result.error,
       meta: result.meta || {}
     };
   }
 
-  if (!bySource["api-football"]) {
-    bySource["api-football"] = {
-      status: SourceStatus.NA,
-      fetchedAt: null,
-      error: null,
-      meta: { reason: "NOT CONNECTED" }
-    };
-  }
+  const apiFootballResults = results.filter(result => result?.source?.startsWith("api-football."));
+  const apiFootballOk = apiFootballResults.filter(result => result.status === SourceStatus.OK).length;
+  const apiFootballQuota = apiFootballResults.some(result => result.status === SourceStatus.QUOTA);
+  const apiFootballError = apiFootballResults.some(result => result.status === SourceStatus.ERROR);
+  const apiFootballPartial = apiFootballResults.some(result => result.status === SourceStatus.PARTIAL);
+  bySource["api-football"] = {
+    status: apiFootballOk
+      ? (apiFootballOk === apiFootballResults.length ? SourceStatus.OK : SourceStatus.PARTIAL)
+      : apiFootballQuota
+        ? SourceStatus.QUOTA
+        : apiFootballError
+          ? SourceStatus.ERROR
+          : apiFootballPartial
+            ? SourceStatus.PARTIAL
+            : SourceStatus.NA,
+    fetchedAt: apiFootballResults.at(-1)?.fetchedAt || null,
+    lastSuccessfulFetch: apiFootballResults.find(result => result.status === SourceStatus.OK)?.fetchedAt || null,
+    coverageCount: apiFootballOk,
+    error: apiFootballResults.find(result => result.error)?.error || null,
+    meta: apiFootballResults.length ? { fixturesChecked: apiFootballResults.length } : { reason: "NOT CONNECTED" }
+  };
+
+  bySource.xg = {
+    status: SourceStatus.NA,
+    fetchedAt: null,
+    lastSuccessfulFetch: null,
+    coverageCount: 0,
+    error: null,
+    meta: { reason: "NOT CONNECTED" }
+  };
 
   return bySource;
 }
@@ -39,6 +63,7 @@ export function healthLines(sourceHealth = {}) {
   return [
     `football-data: ${football}`,
     `odds: ${odds}`,
-    "API-Football: NOT CONNECTED"
+    `API-Football: ${sourceHealth["api-football"]?.status || SourceStatus.NA}`,
+    "xG: NOT CONNECTED"
   ];
 }

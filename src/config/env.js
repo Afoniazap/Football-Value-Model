@@ -33,6 +33,7 @@ export function loadConfig() {
     root: ROOT,
     telegramToken: requireSecret("TELEGRAM_BOT_TOKEN"),
     footballDataToken: requireSecret("FOOTBALL_DATA_TOKEN"),
+    apiFootballKey: process.env.API_FOOTBALL_KEY?.trim() || "",
     oddsApiKey: process.env.THE_ODDS_API_KEY?.trim() || "",
     oddsRegion: process.env.ODDS_REGION?.trim() || "eu",
     minEdgePercent: numberFromEnv("MIN_EDGE_PERCENT", 4),
