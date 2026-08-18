@@ -41,6 +41,8 @@ export function loadConfig() {
     telegramToken: requireSecret("TELEGRAM_BOT_TOKEN"),
     footballDataToken: requireSecret("FOOTBALL_DATA_TOKEN"),
     apiFootballKey: process.env.API_FOOTBALL_KEY?.trim() || "",
+    sportmonksApiKey: process.env.SPORTMONKS_API_KEY?.trim() || "",
+    theStatsApiKey: process.env.THESTATSAPI_KEY?.trim() || "",
     oddsApiKey: process.env.THE_ODDS_API_KEY?.trim() || "",
     oddsRegion: process.env.ODDS_REGION?.trim() || "eu",
     oddsApiIoKey: process.env.ODDS_API_IO_KEY?.trim() || "",
