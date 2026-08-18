@@ -16,6 +16,10 @@ import { createLivePreMatchContext } from "./shadow/liveContext.js";
 import { buildShadowComparison } from "./shadow/comparison.js";
 import { aggregateMarket } from "./providers/market/aggregateMarket.js";
 import { createMarketCache } from "./providers/market/marketCache.js";
+import { auditExactHorizon } from "./diagnostics/horizon.js";
+import { buildRefreshTelemetry, createRefreshTelemetry } from "./diagnostics/refreshTelemetry.js";
+import { providerErrors } from "./diagnostics/operationalErrors.js";
+import { readinessLines, readinessState, startupReadiness } from "./diagnostics/readiness.js";
 
 function createInitialState() {
   return {
@@ -71,9 +75,8 @@ function createTelegramRequest(config, request) {
 }
 
 function providerErrorMessages(results) {
-  return results
-    .filter(result => result?.error)
-    .map(result => `${result.source}: ${result.error.message}`);
+  return providerErrors(results)
+    .map(error => `${error.source}: ${error.code}: ${error.message}`);
 }
 
 function createAnalysisId(date = new Date()) {
@@ -108,31 +111,65 @@ export async function main() {
   const cacheStore = createCacheStore(config.root, createInitialState());
   const historyStore = createHistoryStore(config.root);
   const marketCache = createMarketCache(config.root);
+  const refreshTelemetry = createRefreshTelemetry(config.root);
   const stateRef = { current: cacheStore.loadCache() };
+  const bootReadiness = startupReadiness(config);
 
   async function refreshData() {
     if (stateRef.current.loading) return;
     stateRef.current.loading = true;
     stateRef.current.errors = [];
 
+    const startedAt = new Date();
     const providerResults = [];
     const analysedAt = new Date();
     const horizonStart = analysedAt.toISOString();
     const horizonEnd = new Date(analysedAt.getTime() + config.horizonHours * 3600_000).toISOString();
     const analysisId = createAnalysisId(analysedAt);
+    const timings = {};
+    let fixturesFetched = 0;
+    let horizonAudit = null;
+    let contexts = {};
+    let processed = [];
+    let officialNewSignals = 0;
+    let signalRevisions = 0;
+    let settlements = 0;
+    const marketAggregateMeta = {
+      usageCounts: {},
+      oddsApiIoRequestsUsed: 0,
+      secondaryRequestsUsed: 0
+    };
 
     try {
+      let stageStarted = Date.now();
       const fixturesResult = await fetchFixtures({
         request,
         token: config.footballDataToken,
         horizonHours: config.horizonHours
       });
+      timings.fixtures = Date.now() - stageStarted;
       providerResults.push(fixturesResult);
 
-      const fixtures = fixturesResult.data || [];
+      fixturesFetched = (fixturesResult.data || []).length;
+      horizonAudit = auditExactHorizon(fixturesResult.data || [], {
+        now: analysedAt,
+        horizonHours: config.horizonHours
+      });
+      for (const violation of horizonAudit.rejected) {
+        providerResults.push({
+          status: "ERROR",
+          source: "horizon.audit",
+          fetchedAt: analysedAt.toISOString(),
+          data: null,
+          error: { code: "HORIZON_VIOLATION", message: `Fixture ${violation.fixtureId || "unknown"} outside exact horizon` },
+          meta: violation
+        });
+      }
+
+      const fixtures = horizonAudit.accepted;
       const competitionCodes = [...new Set(fixtures.map(f => f.competitionCode).filter(Boolean))];
 
-      const contexts = {};
+      stageStarted = Date.now();
       for (const code of competitionCodes) {
         const contextResult = await fetchCompetitionContext({
           request,
@@ -142,9 +179,11 @@ export async function main() {
         providerResults.push(contextResult);
         contexts[code] = contextResult.data;
       }
+      timings.contexts = Date.now() - stageStarted;
 
       const marketByFixtureId = {};
       const marketDiagnosticsByFixtureId = {};
+      stageStarted = Date.now();
       for (const code of competitionCodes) {
         const sportKey = SPORT_KEYS[code];
         const marketResult = await aggregateMarket({
@@ -158,9 +197,16 @@ export async function main() {
         providerResults.push(...marketResult.providerResults);
         Object.assign(marketByFixtureId, marketResult.byFixtureId);
         Object.assign(marketDiagnosticsByFixtureId, marketResult.diagnostics);
+        for (const [source, count] of Object.entries(marketResult.meta?.usageCounts || {})) {
+          marketAggregateMeta.usageCounts[source] = (marketAggregateMeta.usageCounts[source] || 0) + count;
+        }
+        marketAggregateMeta.oddsApiIoRequestsUsed += marketResult.meta?.oddsApiIoRequestsUsed || 0;
+        marketAggregateMeta.secondaryRequestsUsed += marketResult.meta?.secondaryRequestsUsed || 0;
       }
+      timings.markets = Date.now() - stageStarted;
 
       const apiFootballByFixture = {};
+      stageStarted = Date.now();
       for (const fixture of fixtures) {
         const apiFootballResult = await fetchApiFootballFixtureIntel({
           request,
@@ -170,8 +216,10 @@ export async function main() {
         providerResults.push(apiFootballResult);
         apiFootballByFixture[fixture.id] = apiFootballResult;
       }
+      timings.apiFootball = Date.now() - stageStarted;
 
-      const processed = fixtures.map(fixture => {
+      stageStarted = Date.now();
+      processed = fixtures.map(fixture => {
         const fixtureContext = createLivePreMatchContext(contexts[fixture.competitionCode]);
         const modelled = buildModel(fixture, fixtureContext);
         const oddsEvent = marketByFixtureId[fixture.id] || null;
@@ -243,6 +291,7 @@ export async function main() {
           }
         };
       });
+      timings.model = Date.now() - stageStarted;
 
       stateRef.current = {
         ...stateRef.current,
@@ -256,6 +305,7 @@ export async function main() {
         sourceHealth: createSourceHealth(providerResults)
       };
 
+      stageStarted = Date.now();
       cacheStore.saveCache(stateRef.current);
       historyStore.appendAnalysis({
         analysisId,
@@ -284,6 +334,7 @@ export async function main() {
         ),
         modelVersion: MODEL_VERSION
       });
+      const signalEventsBefore = historyStore.readSignalEvents().length;
       historyStore.appendSignals({
         analysisId,
         analysedAt: analysedAt.toISOString(),
@@ -296,12 +347,13 @@ export async function main() {
         items: processed,
         revisionThreshold: config.oddsRevisionThreshold
       });
-      historyStore.appendOfficialValueSignals({
+      const issuedSignals = historyStore.appendOfficialValueSignals({
         analysisId,
         analysedAt: analysedAt.toISOString(),
         items: processed,
         modelVersion: MODEL_VERSION
       });
+      officialNewSignals = issuedSignals.length;
       historyStore.lockSignalsAtKickoff({ now: analysedAt.toISOString() });
 
       const resultsFrom = dateOnly(new Date(analysedAt.getTime() - 3 * 24 * 3600_000));
@@ -316,13 +368,14 @@ export async function main() {
       for (const result of resultsResult.data || []) {
         const signal = historyStore.readOfficialSignals().find(row => row.fixtureId === result.fixtureId);
         if (signal) {
-          historyStore.settleOfficialSignal({
+          const settled = historyStore.settleOfficialSignal({
             signalId: signal.signalId,
             result,
             settledAt: analysedAt.toISOString(),
             marketQuotes: marketCache.readQuotes(),
             closingWindowMinutes: config.closingWindowMinutes
           });
+          if (settled) settlements += 1;
         }
         historyStore.appendShadowResultAudit({
           fixtureId: result.fixtureId,
@@ -330,6 +383,34 @@ export async function main() {
           finishedAt: result.finishedAt || analysedAt.toISOString()
         });
       }
+      signalRevisions = Math.max(0, historyStore.readSignalEvents().length - signalEventsBefore - officialNewSignals);
+      timings.storage = Date.now() - stageStarted;
+
+      const telemetryRecord = buildRefreshTelemetry({
+        refreshId: analysisId,
+        startedAt: startedAt.toISOString(),
+        finishedAt: new Date().toISOString(),
+        config,
+        fixturesFetched,
+        horizonAudit,
+        contexts,
+        processed,
+        providerResults,
+        providerHealth: stateRef.current.sourceHealth,
+        marketAggregateMeta,
+        officialNewSignals,
+        signalRevisions,
+        settlements,
+        timings
+      });
+      stateRef.current.systemReadiness = readinessState({
+        config,
+        providerHealth: stateRef.current.sourceHealth,
+        marketCoverage: telemetryRecord.coverage.market
+      });
+      stateRef.current.telemetry = telemetryRecord;
+      refreshTelemetry.appendRefresh(telemetryRecord);
+      cacheStore.saveCache(stateRef.current);
 
       console.log(
         `Обновлено ${processed.length} матчей | VALUE ${stateRef.current.value.length} | Near ${stateRef.current.near.length} | WAIT ${stateRef.current.wait.length} | NO BET ${stateRef.current.rejected.length}`
@@ -337,6 +418,35 @@ export async function main() {
     } catch (error) {
       stateRef.current.errors.push(error.message);
       console.error("Refresh error:", error.message);
+      const finishedAt = new Date().toISOString();
+      const sourceHealth = createSourceHealth(providerResults);
+      stateRef.current.sourceHealth = sourceHealth;
+      stateRef.current.systemReadiness = readinessState({ config, providerHealth: sourceHealth });
+      stateRef.current.telemetry = buildRefreshTelemetry({
+        refreshId: analysisId,
+        startedAt: startedAt.toISOString(),
+        finishedAt,
+        config,
+        fixturesFetched,
+        horizonAudit: horizonAudit || { accepted: [], rejected: [] },
+        contexts,
+        processed,
+        providerResults: [
+          ...providerResults,
+          {
+            status: "ERROR",
+            source: "refresh",
+            fetchedAt: finishedAt,
+            data: null,
+            error: { code: "INTERNAL", message: error.message },
+            meta: {}
+          }
+        ],
+        providerHealth: sourceHealth,
+        marketAggregateMeta,
+        timings
+      });
+      refreshTelemetry.appendRefresh(stateRef.current.telemetry);
       cacheStore.saveCache(stateRef.current);
     } finally {
       stateRef.current.loading = false;
@@ -357,6 +467,7 @@ export async function main() {
   console.log("FVM v1.0 CLEAN запускается...");
   console.log(`Рабочая папка: ${config.root}`);
 
+  console.log(readinessLines(bootReadiness).join("\n"));
   await refreshData();
   setInterval(refreshData, config.refreshMinutes * 60_000);
 

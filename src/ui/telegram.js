@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { UI_TIME_ZONE } from "../config/constants.js";
 import { healthLines } from "../diagnostics/sourceHealth.js";
+import { summarizeLatestTelemetry } from "../diagnostics/refreshTelemetry.js";
 
 export function esc(value = "") {
   return String(value)
@@ -41,11 +42,11 @@ function mainKeyboard(state) {
     ],
     [
       { text: "Stats", callback_data: "stats" },
-      { text: "Daily Audit", callback_data: "daily_audit" }
+      { text: "Sources", callback_data: "sources_overview" }
     ],
     [
-      { text: "CLV", callback_data: "clv" },
-      { text: "Shadow Stats", callback_data: "shadow_stats" }
+      { text: "Why no VALUE?", callback_data: "blockers" },
+      { text: "Shadow", callback_data: "shadow_stats" }
     ]
   ]);
 }
@@ -84,6 +85,47 @@ export function createTelegramUi({
 
   function dashboardText() {
     const state = stateRef.current;
+    const telemetry = state.telemetry || null;
+    const system = state.systemReadiness?.status ||
+      (telemetry ? summarizeLatestTelemetry(telemetry, config).system.status : "DEGRADED");
+    if (telemetry) {
+      const audit = typeof auditStats === "function" ? auditStats() : null;
+      const shadow = typeof shadowStats === "function" ? shadowStats() : null;
+      return [
+        "<b>FVM v1.0 CLEAN</b>",
+        "",
+        state.loading ? "System: <b>REFRESHING</b>" : `System: <b>${esc(system)}</b>`,
+        `Updated: <b>${formatKyivDate(telemetry.finishedAt)}</b>`,
+        "",
+        "24h:",
+        `Matches <b>${telemetry.fixturesInsideExactHorizon}</b>`,
+        `Markets <b>${telemetry.coverage.market.numerator}/${telemetry.coverage.market.denominator}</b> (${telemetry.coverage.market.percent}%)`,
+        "",
+        `VALUE <b>${telemetry.categories.VALUE}</b>`,
+        `NEAR <b>${telemetry.categories.NEAR}</b>`,
+        `WAIT <b>${telemetry.categories.WAIT}</b>`,
+        `NO BET <b>${telemetry.categories.NO_BET}</b>`,
+        "",
+        "Data:",
+        `DQ avg <b>${telemetry.dqDistribution.average ?? "N/A"}</b>`,
+        `Market <b>${telemetry.coverage.market.percent}%</b>`,
+        `API-Football <b>${telemetry.coverage.apiFootball.numerator}/${telemetry.coverage.apiFootball.denominator}</b>`,
+        `Lineups <b>${telemetry.coverage.lineups.numerator}/${telemetry.coverage.lineups.denominator}</b>`,
+        `xG <b>${esc(telemetry.coverage.xg.status)}</b>`,
+        "",
+        "Sources:",
+        `FD <b>${esc(state.sourceHealth?.["football-data.fixtures"]?.status || "N/A")}</b>`,
+        `Odds Primary <b>${esc(Object.entries(state.sourceHealth || {}).find(([source]) => source.startsWith("odds.") && source !== "odds.secondary" && source !== "odds-api-io")?.[1]?.status || "N/A")}</b>`,
+        `Odds Secondary <b>${esc(state.sourceHealth?.["odds-api-io"]?.status || state.sourceHealth?.["odds.secondary"]?.status || "N/A")}</b>`,
+        `API-Football <b>${esc(state.sourceHealth?.["api-football"]?.status || "N/A")}</b>`,
+        `xG <b>${esc(state.sourceHealth?.xg?.status || "N/A")}</b>`,
+        "",
+        "Audit:",
+        `Bets <b>${audit?.overall?.officialBets ?? 0}</b>`,
+        `ROI <b>${audit?.overall?.roi === null || audit?.overall?.roi === undefined ? "N/A" : `${(audit.overall.roi * 100).toFixed(1)}%`}</b>`,
+        `Shadow <b>${shadow?.sampleSize ?? 0}/300</b>`
+      ].join("\n");
+    }
     const modelled = state.value.length + state.near.length + state.rejected.length;
     const shadow = typeof shadowStats === "function" ? shadowStats() : null;
     const audit = typeof auditStats === "function" ? auditStats() : null;
@@ -354,6 +396,55 @@ export function createTelegramUi({
     if (!item) return;
     const dq = item.diagnostics?.dataQualityV2;
     const risk = item.diagnostics?.risk;
+    const cleanLines = [
+      `<b>${esc(item.home)} - ${esc(item.away)}</b>`,
+      esc(item.competition),
+      `Kickoff: ${formatKyivDate(item.utcDate)}`,
+      "",
+      "MODEL:",
+      item.model
+        ? `Baseline P1 ${(item.model.home * 100).toFixed(1)}% / X ${(item.model.draw * 100).toFixed(1)}% / P2 ${(item.model.away * 100).toFixed(1)}%`
+        : "Baseline: N/A",
+      item.shadow?.challenger?.probabilities
+        ? `Challenger P1 ${(item.shadow.challenger.probabilities.home * 100).toFixed(1)}% / X ${(item.shadow.challenger.probabilities.draw * 100).toFixed(1)}% / P2 ${(item.shadow.challenger.probabilities.away * 100).toFixed(1)}%`
+        : "Challenger: N/A",
+      "",
+      "MARKET:",
+      `source <b>${esc(item.diagnostics?.market?.source || "N/A")}</b>`,
+      `bookmaker <b>${esc(item.bookmaker || "N/A")}</b>`,
+      item.candidate ? `odds <b>${item.candidate.odds}</b> | fair <b>${item.candidate.fairOdds.toFixed(2)}</b>` : "odds N/A",
+      `freshness <b>${esc(item.diagnostics?.market?.freshness || "N/A")}</b>`,
+      "",
+      "DATA QUALITY:",
+      dq ? `score <b>${dq.scoreNormalized}/100</b>` : "score N/A",
+      dq ? `missing <b>${esc(dq.components.filter(part => part.score < part.max).slice(0, 3).map(part => part.name).join(", ") || "none")}</b>` : "",
+      "",
+      "RISK:",
+      risk ? `score <b>${risk.score}/100</b>` : "score N/A",
+      risk ? `flags <b>${esc((risk.redFlags || []).slice(0, 3).map(flag => flag.code).join(", ") || "none")}</b>` : "",
+      "",
+      "DECISION:",
+      `official category <b>${esc(item.category.toUpperCase())}</b>`,
+      item.reason ? `failed gates <b>${esc(item.reason)}</b>` : "failed gates <b>none</b>"
+    ].filter(Boolean);
+
+    return tg("sendMessage", {
+      chat_id: chatId,
+      text: cleanLines.join("\n"),
+      parse_mode: "HTML",
+      reply_markup: keyboard([
+        [
+          { text: "DQ", callback_data: `dq:${item.id}` },
+          { text: "Risk", callback_data: `risk:${item.id}` }
+        ],
+        [
+          { text: "Sources", callback_data: `sources:${item.id}` },
+          { text: "Sanity", callback_data: `sanity:${item.id}` }
+        ],
+        [{ text: "Shadow", callback_data: `shadow:${item.id}` }],
+        [{ text: "Dashboard", callback_data: "dashboard" }]
+      ])
+    });
 
     const lines = [
       `<b>${esc(item.home)} - ${esc(item.away)}</b>`,
@@ -475,6 +566,29 @@ export function createTelegramUi({
       ] : ["No shadow stats."];
     }
 
+    if (kind === "sources") {
+      title = "Sources";
+      const telemetry = stateRef.current.telemetry;
+      const coverage = telemetry?.coverage || {};
+      lines = [
+        ...healthLines(stateRef.current.sourceHealth),
+        "",
+        coverage.market ? `Market: <b>${coverage.market.numerator}/${coverage.market.denominator}</b> (${coverage.market.percent}%)` : "Market: N/A",
+        coverage.apiFootball ? `API-Football: <b>${coverage.apiFootball.numerator}/${coverage.apiFootball.denominator}</b> (${coverage.apiFootball.percent}%)` : "API-Football: N/A",
+        coverage.injuries ? `Injuries: <b>${coverage.injuries.numerator}/${coverage.injuries.denominator}</b> (${coverage.injuries.percent}%)` : "Injuries: N/A",
+        coverage.lineups ? `Lineups: <b>${coverage.lineups.numerator}/${coverage.lineups.denominator}</b> (${coverage.lineups.percent}%)` : "Lineups: N/A",
+        coverage.xg ? `xG: <b>${coverage.xg.numerator}/${coverage.xg.denominator}</b> (${esc(coverage.xg.status)})` : "xG: N/A"
+      ];
+    }
+
+    if (kind === "blockers") {
+      title = "Why no VALUE?";
+      const blockers = stateRef.current.telemetry?.blockers?.top || [];
+      lines = blockers.length
+        ? blockers.map(row => `${esc(row.reason)}: <b>${row.count}</b>`)
+        : ["No blockers recorded."];
+    }
+
     return tg("sendMessage", {
       chat_id: chatId,
       text: [`<b>${title}</b>`, "", ...lines].join("\n"),
@@ -501,6 +615,8 @@ export function createTelegramUi({
 
     if (query.data === "dashboard") return sendDashboard(chatId, query.message.message_id);
     if (query.data === "stats") return showAuditScreen(chatId, "stats");
+    if (query.data === "sources_overview") return showAuditScreen(chatId, "sources");
+    if (query.data === "blockers") return showAuditScreen(chatId, "blockers");
     if (query.data === "daily_audit") return showAuditScreen(chatId, "daily");
     if (query.data === "clv") return showAuditScreen(chatId, "clv");
     if (query.data === "shadow_stats") return showAuditScreen(chatId, "shadow_stats");
