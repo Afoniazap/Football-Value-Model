@@ -1,5 +1,5 @@
 export function extremeProbabilityReport(predictions) {
-  return predictions
+  const extremeCases = predictions
     .filter(item => item.model)
     .map(item => {
       const probabilities = [
@@ -26,4 +26,32 @@ export function extremeProbabilityReport(predictions) {
       dataQuality: item.dataQuality,
       snapshotMeta: item.snapshotMeta
     }));
+
+  const wrong = extremeCases
+    .filter(item => item.predictedResult !== item.actualResult)
+    .sort((a, b) => b.probability - a.probability)
+    .slice(0, 20);
+
+  const causes = {};
+  for (const item of wrong) {
+    const components = item.components || {};
+    if (Math.abs((components.ppgH || 0) - (components.ppgA || 0)) > 1) {
+      causes.largePpgGap = (causes.largePpgGap || 0) + 1;
+    }
+    if (Math.abs((components.gdH || 0) - (components.gdA || 0)) > 1) {
+      causes.largeGoalDiffGap = (causes.largeGoalDiffGap || 0) + 1;
+    }
+    if (Math.abs((components.formH || 0) - (components.formA || 0)) > 1) {
+      causes.largeRecentFormGap = (causes.largeRecentFormGap || 0) + 1;
+    }
+    if (item.actualResult === "D") {
+      causes.drawMissed = (causes.drawMissed || 0) + 1;
+    }
+  }
+
+  return {
+    cases: extremeCases,
+    topWrong: wrong,
+    topWrongCauseCounts: causes
+  };
 }

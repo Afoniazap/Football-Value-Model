@@ -9,14 +9,21 @@ import { calibrationReport } from "./calibration.js";
 import { extremeProbabilityReport } from "./extremeAudit.js";
 import { featureAudit } from "./featureAudit.js";
 
-export function runBaselineBacktest(matches) {
+function teamHistoryCount(context, teamId) {
+  return (context.matches || [])
+    .filter(item => item.homeTeam?.id === teamId || item.awayTeam?.id === teamId)
+    .length;
+}
+
+export function runBaselineBacktest(matches, options = {}) {
+  const minimumPriorMatches = options.minimumPriorMatches ?? 5;
   const predictions = [];
   const rejected = [];
 
   const ordered = [...matches].sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate));
   for (const match of ordered) {
     const context = createPreMatchContext(match, ordered);
-    const reason = rejectionReason(match, context);
+    const reason = rejectionReason(match, context, minimumPriorMatches);
     if (reason) {
       rejected.push({ fixtureId: match.fixtureId, reason });
       continue;
@@ -39,13 +46,24 @@ export function runBaselineBacktest(matches) {
       actualResult: match.result,
       model: modelled.model,
       dataQuality: modelled.dataQuality,
-      snapshotMeta: context.meta
+      snapshotMeta: {
+        ...context.meta,
+        teamHistory: {
+          home: teamHistoryCount(context, match.homeTeamId),
+          away: teamHistoryCount(context, match.awayTeamId)
+        },
+        teamHistoryMin: Math.min(
+          teamHistoryCount(context, match.homeTeamId),
+          teamHistoryCount(context, match.awayTeamId)
+        )
+      }
     });
   }
 
   return {
     coverage: {
       competitions: [...new Set(matches.map(match => match.competition).filter(Boolean))],
+      competitionCodes: [...new Set(matches.map(match => match.competitionCode).filter(Boolean))],
       seasons: [...new Set(matches.map(match => match.season).filter(Boolean))],
       matchesAvailable: matches.length,
       matchesUsable: predictions.length,

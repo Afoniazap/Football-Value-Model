@@ -32,14 +32,39 @@ export function calibrationBins(predictions, outcomeKey) {
     bin: bin.bin,
     sampleSize: bin.sampleSize,
     meanPredicted: bin.sampleSize ? bin.predictedSum / bin.sampleSize : null,
-    actualFrequency: bin.sampleSize ? bin.actualSum / bin.sampleSize : null
+    actualFrequency: bin.sampleSize ? bin.actualSum / bin.sampleSize : null,
+    calibrationError: bin.sampleSize
+      ? (bin.actualSum / bin.sampleSize) - (bin.predictedSum / bin.sampleSize)
+      : null
   }));
 }
 
+export function allOutcomeCalibrationBins(predictions) {
+  const flattened = [];
+  for (const prediction of predictions.filter(item => item.model)) {
+    flattened.push({ model: { home: prediction.model.home }, actualResult: prediction.actualResult === "H" ? "H" : "A" });
+    flattened.push({ model: { home: prediction.model.draw }, actualResult: prediction.actualResult === "D" ? "H" : "A" });
+    flattened.push({ model: { home: prediction.model.away }, actualResult: prediction.actualResult === "A" ? "H" : "A" });
+  }
+  return calibrationBins(flattened, "home");
+}
+
+export function expectedCalibrationError(bins) {
+  const nonEmpty = bins.filter(bin => bin.sampleSize > 0);
+  const total = nonEmpty.reduce((sum, bin) => sum + bin.sampleSize, 0);
+  if (!total) return null;
+  return nonEmpty.reduce((sum, bin) => {
+    return sum + (bin.sampleSize / total) * Math.abs(bin.calibrationError);
+  }, 0);
+}
+
 export function calibrationReport(predictions) {
+  const allOutcomes = allOutcomeCalibrationBins(predictions);
   return {
     home: calibrationBins(predictions, "home"),
     draw: calibrationBins(predictions, "draw"),
-    away: calibrationBins(predictions, "away")
+    away: calibrationBins(predictions, "away"),
+    allOutcomes,
+    expectedCalibrationError: expectedCalibrationError(allOutcomes)
   };
 }
