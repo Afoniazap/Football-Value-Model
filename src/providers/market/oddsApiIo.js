@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { providerResult, SourceStatus } from "../providerResult.js";
 import { ODDS_API_IO_LEAGUE_SLUGS } from "../../config/competitions.js";
+import { resolveRuntimeRoot } from "../../storage/runtime.js";
 
 export const ODDS_API_IO_SOURCE = "ODDS_API_IO";
 
@@ -215,6 +216,7 @@ export async function oddsProviderOddsApiIo({
   oddsApiIoBookmakers = "",
   fixtures = [],
   root,
+  runtimeRoot,
   now = new Date(),
   cacheMinutes = 10,
   kickoffToleranceMinutes = 180,
@@ -241,7 +243,7 @@ export async function oddsProviderOddsApiIo({
     return { ...result, events: [], requestsUsed: 0 };
   }
 
-  const rawDir = path.join(root, "data", "market", "odds-api-io-raw");
+  const rawDir = path.join(resolveRuntimeRoot(root, runtimeRoot), "market", "odds-api-io-raw");
   const eventsByLeague = new Map();
   for (const fixture of supportedFixtures) {
     const slug = ODDS_API_IO_LEAGUE_SLUGS[fixture.competitionCode];

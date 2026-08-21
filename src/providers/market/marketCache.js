@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { resolveRuntimeRoot } from "../../storage/runtime.js";
 const SELECTIONS = [
   { key: "home", side: "П1" },
   { key: "draw", side: "X" },
@@ -44,8 +45,8 @@ function latestByQuote(rows) {
   return latest;
 }
 
-export function createMarketCache(root) {
-  const marketDir = path.join(root, "data", "market");
+export function createMarketCache(root, { runtimeRoot = resolveRuntimeRoot(root) } = {}) {
+  const marketDir = path.join(runtimeRoot, "market");
   const quotesFile = path.join(marketDir, "odds-history.jsonl");
 
   function readQuotes() {

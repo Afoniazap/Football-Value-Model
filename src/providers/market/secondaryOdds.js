@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { providerResult, SourceStatus } from "../providerResult.js";
 import { API_FOOTBALL_LEAGUE_IDS } from "../../config/competitions.js";
+import { resolveRuntimeRoot } from "../../storage/runtime.js";
 
 export const API_FOOTBALL_SOURCE = "API_FOOTBALL";
 
@@ -165,6 +166,7 @@ export async function oddsProviderSecondary({
   apiFootballKey,
   fixtures = [],
   root,
+  runtimeRoot,
   now = new Date(),
   cacheMinutes = 180
 } = {}) {
@@ -179,7 +181,7 @@ export async function oddsProviderSecondary({
     return { ...result, events: [], requestsUsed: 0 };
   }
 
-  const rawDir = path.join(root, "data", "market", "api-football-raw");
+  const rawDir = path.join(resolveRuntimeRoot(root, runtimeRoot), "market", "api-football-raw");
   const groups = groupedFixtureRequests(fixtures);
   const events = [];
   const errors = [];

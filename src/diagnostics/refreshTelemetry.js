@@ -6,14 +6,15 @@ import { providerErrors } from "./operationalErrors.js";
 import { readinessState } from "./readiness.js";
 import { projectRequestBudget } from "./requestBudget.js";
 import { auditCompetitionCoverage } from "../config/competitions.js";
+import { resolveRuntimeRoot } from "../storage/runtime.js";
 
 function appendJsonl(file, row) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.appendFileSync(file, JSON.stringify(row) + "\n", "utf8");
 }
 
-export function createRefreshTelemetry(root) {
-  const diagnosticsDir = path.join(root, "data", "diagnostics");
+export function createRefreshTelemetry(root, { runtimeRoot = resolveRuntimeRoot(root) } = {}) {
+  const diagnosticsDir = path.join(runtimeRoot, "diagnostics");
   const refreshHistoryFile = path.join(diagnosticsDir, "refresh-history.jsonl");
 
   function appendRefresh(record) {

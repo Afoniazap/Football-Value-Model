@@ -5,6 +5,7 @@ import {
   DEFAULT_HORIZON_HOURS,
   DEFAULT_REQUEST_TIMEOUT_SECONDS
 } from "./constants.js";
+import { resolveRuntimeRoot } from "../storage/runtime.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,6 +39,7 @@ export function loadConfig() {
 
   return {
     root: ROOT,
+    runtimeRoot: resolveRuntimeRoot(ROOT, process.env.FVM_RUNTIME_DIR),
     telegramToken: requireSecret("TELEGRAM_BOT_TOKEN"),
     footballDataToken: requireSecret("FOOTBALL_DATA_TOKEN"),
     apiFootballKey: process.env.API_FOOTBALL_KEY?.trim() || "",
@@ -50,6 +52,10 @@ export function loadConfig() {
     oddsApiIoCacheMinutes: Math.max(1, numberFromEnv("ODDS_API_IO_CACHE_MINUTES", 10)),
     oddsApiIoKickoffToleranceMinutes: Math.max(15, numberFromEnv("ODDS_API_IO_KICKOFF_TOLERANCE_MINUTES", 180)),
     apiFootballOddsCacheMinutes: Math.max(5, numberFromEnv("API_FOOTBALL_ODDS_CACHE_MINUTES", 180)),
+    injuriesCacheHours: Math.max(1, numberFromEnv("INJURIES_CACHE_HOURS", 6)),
+    lineupsEarlyCacheHours: Math.max(1, numberFromEnv("LINEUPS_EARLY_CACHE_HOURS", 6)),
+    lineupsPrematchMinutes: Math.max(1, numberFromEnv("LINEUPS_PREMATCH_MINUTES", 90)),
+    lineupsPrematchCacheMinutes: Math.max(1, numberFromEnv("LINEUPS_PREMATCH_CACHE_MINUTES", 15)),
     oddsFreshMinutes,
     oddsStaleMinutes,
     oddsRevisionThreshold: Math.max(0.001, numberFromEnv("ODDS_REVISION_THRESHOLD", 0.02)),

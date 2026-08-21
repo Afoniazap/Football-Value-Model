@@ -15,7 +15,8 @@ export const THE_ODDS_API_SPORT_KEYS = Object.freeze({
 
 export const ODDS_API_IO_LEAGUE_SLUGS = Object.freeze({
   PL: "england-premier-league",
-  PD: "spain-la-liga",
+  CLI: "international-clubs-conmebol-libertadores-knockout-stage",
+  PD: "spain-laliga",
   BL1: "germany-bundesliga",
   SA: "italy-serie-a",
   FL1: "france-ligue-1",

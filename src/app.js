@@ -108,10 +108,10 @@ export async function main() {
 
   const request = createRequest(config.requestTimeoutSeconds);
   const tg = createTelegramRequest(config, request);
-  const cacheStore = createCacheStore(config.root, createInitialState());
-  const historyStore = createHistoryStore(config.root);
-  const marketCache = createMarketCache(config.root);
-  const refreshTelemetry = createRefreshTelemetry(config.root);
+  const cacheStore = createCacheStore(config.root, createInitialState(), { runtimeRoot: config.runtimeRoot });
+  const historyStore = createHistoryStore(config.root, { runtimeRoot: config.runtimeRoot });
+  const marketCache = createMarketCache(config.root, { runtimeRoot: config.runtimeRoot });
+  const refreshTelemetry = createRefreshTelemetry(config.root, { runtimeRoot: config.runtimeRoot });
   const stateRef = { current: cacheStore.loadCache() };
   const bootReadiness = startupReadiness(config);
 
@@ -207,8 +207,13 @@ export async function main() {
 
       const apiFootballByFixture = {};
       const apiFootballIntelCache = createApiFootballIntelCache(config.root, {
+        runtimeRoot: config.runtimeRoot,
         now: analysedAt,
-        ttlMinutes: config.refreshMinutes
+        ttlMinutes: config.refreshMinutes,
+        injuriesCacheHours: config.injuriesCacheHours,
+        lineupsEarlyCacheHours: config.lineupsEarlyCacheHours,
+        lineupsPrematchMinutes: config.lineupsPrematchMinutes,
+        lineupsPrematchCacheMinutes: config.lineupsPrematchCacheMinutes
       });
       stageStarted = Date.now();
       for (const fixture of fixtures) {

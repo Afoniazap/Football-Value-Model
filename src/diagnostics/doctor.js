@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { resolveRuntimeRoot } from "../storage/runtime.js";
 
 function readJsonlWithErrors(file) {
   if (!fs.existsSync(file)) return { rows: [], issues: [] };
@@ -50,15 +51,15 @@ function invalidTimestampIssues(rows, fields, file) {
   return issues;
 }
 
-export function runDoctor(root) {
+export function runDoctor(root, { runtimeRoot = resolveRuntimeRoot(root) } = {}) {
   const files = {
-    analyses: path.join(root, "data", "history", "analyses.jsonl"),
-    officialSignals: path.join(root, "data", "history", "official-signals.jsonl"),
-    signalEvents: path.join(root, "data", "history", "signal-events.jsonl"),
-    settlements: path.join(root, "data", "history", "settlements.jsonl"),
-    shadowSignals: path.join(root, "data", "history", "shadow-signals.jsonl"),
-    marketQuotes: path.join(root, "data", "market", "odds-history.jsonl"),
-    refreshHistory: path.join(root, "data", "diagnostics", "refresh-history.jsonl")
+    analyses: path.join(runtimeRoot, "history", "analyses.jsonl"),
+    officialSignals: path.join(runtimeRoot, "history", "official-signals.jsonl"),
+    signalEvents: path.join(runtimeRoot, "history", "signal-events.jsonl"),
+    settlements: path.join(runtimeRoot, "history", "settlements.jsonl"),
+    shadowSignals: path.join(runtimeRoot, "history", "shadow-signals.jsonl"),
+    marketQuotes: path.join(runtimeRoot, "market", "odds-history.jsonl"),
+    refreshHistory: path.join(runtimeRoot, "diagnostics", "refresh-history.jsonl")
   };
   const loaded = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, { file, ...readJsonlWithErrors(file) }]));
   const issues = Object.values(loaded).flatMap(item => item.issues);

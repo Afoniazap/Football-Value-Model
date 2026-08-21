@@ -61,6 +61,7 @@ function probabilityStats(rows, probabilityKey) {
 
 function oddsBand(odds) {
   const price = Number(odds);
+  if (!Number.isFinite(price) || price <= 1) return "N/A";
   if (price < 1.8) return "1.50-1.79";
   if (price < 2) return "1.80-1.99";
   if (price < 2.5) return "2.00-2.49";
@@ -69,6 +70,7 @@ function oddsBand(odds) {
 
 function probabilityBand(probability) {
   const value = Number(probability);
+  if (!Number.isFinite(value)) return "N/A";
   if (value < 0.4) return "<40";
   if (value < 0.5) return "40-49";
   if (value < 0.6) return "50-59";
@@ -78,6 +80,7 @@ function probabilityBand(probability) {
 
 function scoreBand(value) {
   const score = Number(value);
+  if (!Number.isFinite(score)) return "N/A";
   if (score < 50) return "<50";
   if (score < 65) return "50-64";
   if (score < 80) return "65-79";
@@ -87,6 +90,11 @@ function scoreBand(value) {
 function groupedSettlements(signals, settlements, groupFn) {
   const signalById = new Map(signals.map(signal => [signal.signalId, signal]));
   const groups = {};
+  for (const signal of signals) {
+    const key = groupFn(signal, null);
+    if (!groups[key]) groups[key] = emptyBetStats();
+    groups[key].officialBets += 1;
+  }
   for (const settlement of settlements) {
     const signal = signalById.get(settlement.signalId);
     const key = groupFn(signal, settlement);
@@ -103,7 +111,8 @@ export function dailyAudit({ date, signals, settlements, shadowResults }) {
   const stats = emptyBetStats();
   stats.officialBets = daySignals.length;
   for (const settlement of daySettlements) addSettlement(stats, settlement);
-  const pending = daySignals.length - new Set(daySettlements.map(row => row.signalId)).size;
+  const settledSignalIds = new Set(settlements.map(row => row.signalId));
+  const pending = daySignals.filter(signal => !settledSignalIds.has(signal.signalId)).length;
 
   return {
     dateKyiv: day,
@@ -120,11 +129,20 @@ export function cumulativeStatistics({ signals, settlements, shadowResults }) {
   const stats = emptyBetStats();
   stats.officialBets = signals.length;
   for (const settlement of settlements) addSettlement(stats, settlement);
+  const signalIds = new Set(signals.map(signal => signal.signalId));
+  const settledSignalIds = new Set(settlements.map(settlement => settlement.signalId));
 
   return {
     overall: stats,
+    integrity: {
+      officialSignals: signals.length,
+      settlements: settlements.length,
+      pending: signals.filter(signal => !settledSignalIds.has(signal.signalId)).length,
+      settlementsWithoutSignal: settlements.filter(settlement => !signalIds.has(settlement.signalId)).length
+    },
     byMarket: groupedSettlements(signals, settlements, signal => signal?.market || "unknown"),
     byCompetition: groupedSettlements(signals, settlements, signal => signal?.competition || "unknown"),
+    bySource: groupedSettlements(signals, settlements, signal => signal?.marketSource || "N/A"),
     byOddsBand: groupedSettlements(signals, settlements, signal => oddsBand(signal?.officialOdds)),
     byModelProbabilityBand: groupedSettlements(signals, settlements, signal => probabilityBand(signal?.modelProbability)),
     byDqBand: groupedSettlements(signals, settlements, signal => scoreBand(signal?.DQ?.scoreNormalized ?? signal?.dataQuality)),

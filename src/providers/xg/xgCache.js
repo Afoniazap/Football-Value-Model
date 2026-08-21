@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { resolveRuntimeRoot } from "../../storage/runtime.js";
 
 const WINDOWS = [3, 5, 10];
 
@@ -105,8 +106,8 @@ function teamFeatures(records, teamId, targetKickoff) {
   return features;
 }
 
-export function createXgCache(root) {
-  const xgDir = path.join(root, "data", "xg");
+export function createXgCache(root, { runtimeRoot = resolveRuntimeRoot(root) } = {}) {
+  const xgDir = path.join(runtimeRoot, "xg");
   const matchXgFile = path.join(xgDir, "match-xg.jsonl");
 
   function readRecords() {

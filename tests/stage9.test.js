@@ -103,7 +103,7 @@ function testCoverageAndBlockers() {
       odds: { home: 2, draw: 3, away: 4 },
       candidate: { edge: 2, ev: 1 },
       diagnostics: {
-        market: { source: "ODDS_API_IO", freshness: "FRESH" },
+        market: { source: "ODDS_API_IO", freshness: "FRESH", observedAt: "2026-08-18T10:00:00Z" },
         dataQualityV2: { scoreNormalized: 80 },
         risk: { score: 90, redFlags: [] },
         apiFootball: { meta: { apiFixtureId: 9 }, injuryCount: 1, lineupsCount: 2 },

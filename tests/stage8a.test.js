@@ -346,7 +346,7 @@ async function testApiFootballPlanErrorIsUnavailable() {
   assert.equal(calls.secondary, 1);
 }
 
-async function testPrimaryWinsAndAgreementDiagnosticOnly() {
+async function testPrimaryCoverageSkipsFallbackProviders() {
   const tmp = root();
   const calls = { secondary: 0 };
   const result = await aggregateMarket({
@@ -359,8 +359,12 @@ async function testPrimaryWinsAndAgreementDiagnosticOnly() {
   });
   const event = result.byFixtureId["fixture-1"];
   assert.equal(event.marketMeta.sourcePriority, "PRIMARY");
-  assert.equal(result.diagnostics["fixture-1"].marketAgreement.home.sourceCount, 2);
+  assert.equal(result.diagnostics["fixture-1"].marketAgreement, null);
   assert.equal(result.meta.usageCounts.PRIMARY, 1);
+  assert.equal(result.meta.oddsApiIoRequestsUsed, 0);
+  assert.equal(result.meta.secondaryRequestsUsed, 0);
+  assert.equal(calls.oddsApiIo || 0, 0);
+  assert.equal(calls.secondary, 0);
 }
 
 async function testPrimaryQuotaFallsBackToOddsApiIo() {
@@ -408,7 +412,7 @@ async function testOddsApiIoProvenanceAndCacheRevision() {
   const calls = { secondary: 0, oddsApiIo: 0 };
   const cache = createMarketCache(tmp);
   await aggregateMarket({
-    request: createRequest({ primary: "ok", oddsApiIo: "ok", calls }),
+    request: createRequest({ primary: "quota", oddsApiIo: "ok", calls }),
     config: config(tmp, { oddsApiIoKey: "odds-api-io-key", oddsApiIoBookmakers: "OddsIoBook" }),
     sportKey: "soccer_epl",
     fixtures: [fixture()],
@@ -498,7 +502,7 @@ await testNoOddsApiIoKeyIsNA();
 await testOddsApiIoRequiresConfiguredBookmakersForOdds();
 await testOddsApiIoInvalidBookmakerIsUnavailable();
 await testOddsApiIoBookmakerSelectionMismatchIsUnavailable();
-await testPrimaryWinsAndAgreementDiagnosticOnly();
+await testPrimaryCoverageSkipsFallbackProviders();
 await testPrimaryQuotaFallsBackToOddsApiIo();
 await testOddsApiIoQuotaFallsBackToApiFootball();
 await testOddsApiIoProvenanceAndCacheRevision();

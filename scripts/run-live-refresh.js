@@ -63,10 +63,10 @@ export async function runLiveRefresh({ commit = true } = {}) {
   const config = loadConfig();
   const requestCounts = {};
   const request = createRequest(config.requestTimeoutSeconds, requestCounts);
-  const cacheStore = createCacheStore(config.root, createInitialState());
-  const historyStore = createHistoryStore(config.root);
-  const marketCache = createMarketCache(config.root);
-  const refreshTelemetry = createRefreshTelemetry(config.root);
+  const cacheStore = createCacheStore(config.root, createInitialState(), { runtimeRoot: config.runtimeRoot });
+  const historyStore = createHistoryStore(config.root, { runtimeRoot: config.runtimeRoot });
+  const marketCache = createMarketCache(config.root, { runtimeRoot: config.runtimeRoot });
+  const refreshTelemetry = createRefreshTelemetry(config.root, { runtimeRoot: config.runtimeRoot });
   const startedAt = new Date();
   const analysedAt = new Date();
   const analysisId = createAnalysisId(analysedAt);
@@ -119,8 +119,13 @@ export async function runLiveRefresh({ commit = true } = {}) {
 
   const apiFootballByFixture = {};
   const apiFootballIntelCache = createApiFootballIntelCache(config.root, {
+    runtimeRoot: config.runtimeRoot,
     now: analysedAt,
-    ttlMinutes: config.refreshMinutes
+    ttlMinutes: config.refreshMinutes,
+    injuriesCacheHours: config.injuriesCacheHours,
+    lineupsEarlyCacheHours: config.lineupsEarlyCacheHours,
+    lineupsPrematchMinutes: config.lineupsPrematchMinutes,
+    lineupsPrematchCacheMinutes: config.lineupsPrematchCacheMinutes
   });
   stageStarted = Date.now();
   for (const fixture of fixtures) {

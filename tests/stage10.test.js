@@ -67,8 +67,9 @@ async function testCentralCompetitionMapping() {
   assert.equal(THE_ODDS_API_SPORT_KEYS.PL, "soccer_epl");
   assert.equal(THE_ODDS_API_SPORT_KEYS.CLI, "soccer_conmebol_copa_libertadores");
   assert.equal(ODDS_API_IO_LEAGUE_SLUGS.PL, "england-premier-league");
+  assert.equal(ODDS_API_IO_LEAGUE_SLUGS.PD, "spain-laliga");
   assert.equal(marketSupportClass("PL"), "SUPPORTED_BOTH");
-  assert.equal(marketSupportClass("CLI"), "SUPPORTED_PRIMARY");
+  assert.equal(marketSupportClass("CLI"), "SUPPORTED_BOTH");
   assert.equal(competitionMarketSupport("CLI").primary, true);
   const audit = auditCompetitionCoverage([fixture("a", "PL"), fixture("b", "CLI"), fixture("c", "CLI")]);
   assert.equal(audit.supported, 3);
@@ -105,7 +106,7 @@ async function testUnsupportedCompetitionPreciseWaitReason() {
 
 async function testApiFootballRequestDedupAndMappingCache() {
   const tmp = root();
-  const cache = createApiFootballIntelCache(tmp, { now: new Date("2026-08-20T10:00:00Z"), ttlMinutes: 30 });
+  const cache = createApiFootballIntelCache(tmp, { now: new Date("2026-08-20T12:45:00Z"), ttlMinutes: 30 });
   const calls = [];
   const request = async url => {
     const value = String(url);
@@ -124,14 +125,14 @@ async function testApiFootballRequestDedupAndMappingCache() {
   assert.equal(calls.filter(value => value.includes("fixtures/lineups")).length, 1);
   assert.ok(second.meta.mappingHits >= 1);
 
-  const restarted = createApiFootballIntelCache(tmp, { now: new Date("2026-08-20T10:10:00Z"), ttlMinutes: 30 });
+  const restarted = createApiFootballIntelCache(tmp, { now: new Date("2026-08-20T12:50:00Z"), ttlMinutes: 30 });
   await fetchApiFootballFixtureIntel({ request, apiFootballKey: "key", fixture: fixture("f1"), intelCache: restarted });
   assert.equal(calls.filter(value => value.includes("fixtures?")).length, 1);
 }
 
 async function testZeroInjuriesAndLineupsNotPublishedAreNotErrors() {
   const tmp = root();
-  const cache = createApiFootballIntelCache(tmp, { now: new Date("2026-08-20T10:00:00Z"), ttlMinutes: 30 });
+  const cache = createApiFootballIntelCache(tmp, { now: new Date("2026-08-20T12:45:00Z"), ttlMinutes: 30 });
   const result = await fetchApiFootballFixtureIntel({
     request: async url => {
       const value = String(url);

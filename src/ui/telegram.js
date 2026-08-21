@@ -32,6 +32,7 @@ function mainKeyboard(state) {
     ],
     [
       { text: UI_LABELS.statistics, callback_data: "stats" },
+      { text: "День", callback_data: "daily_audit" },
       { text: "Shadow", callback_data: "shadow_stats" }
     ],
     [
@@ -357,11 +358,17 @@ export function createTelegramUi({
 
     if (kind === "stats") {
       lines = audit ? [
-        `Official bets: <b>${audit.overall.officialBets}</b>`,
+        `Issued VALUE: <b>${audit.integrity?.officialSignals ?? audit.overall.officialBets}</b>`,
         `Settled: <b>${audit.overall.settledBets}</b>`,
+        `Pending: <b>${audit.integrity?.pending ?? "N/A"}</b>`,
+        `Unmatched settlements: <b>${audit.integrity?.settlementsWithoutSignal ?? "N/A"}</b>`,
         `W-L-P: <b>${audit.overall.win}-${audit.overall.loss}-${audit.overall.push}</b>`,
         `Units: <b>${audit.overall.netUnits.toFixed(2)}</b>`,
-        `ROI: <b>${percent(audit.overall.roi)}</b>`
+        `ROI: <b>${percent(audit.overall.roi)}</b>`,
+        "",
+        "By source:",
+        ...Object.entries(audit.bySource || {}).map(([source, row]) =>
+          `${esc(source)}: ${row.officialBets} issued, ${row.settledBets} settled, ${row.netUnits.toFixed(2)}u`)
       ] : ["No audit data."];
     }
 

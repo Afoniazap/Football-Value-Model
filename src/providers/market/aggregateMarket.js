@@ -1,5 +1,5 @@
 import { SourceStatus } from "../providerResult.js";
-import { bestH2H, matchOddsEvent } from "../../market/oddsMatching.js";
+import { matchOddsEvent } from "../../market/oddsMatching.js";
 import { oddsProviderPrimary } from "./primaryOdds.js";
 import { oddsProviderOddsApiIo } from "./oddsApiIo.js";
 import { oddsProviderSecondary } from "./secondaryOdds.js";
@@ -22,29 +22,6 @@ function attachMarketMeta(event, meta) {
 
 function providerAvailable(provider) {
   return [SourceStatus.OK, SourceStatus.PARTIAL].includes(provider.status);
-}
-
-function agreement(primaryEvent, secondaryEvent) {
-  const primary = bestH2H(primaryEvent);
-  const secondary = bestH2H(secondaryEvent);
-  if (!primary || !secondary) return null;
-  const rows = {};
-  for (const key of ["home", "draw", "away"]) {
-    const values = [
-      { source: primaryEvent.marketMeta?.source || "PRIMARY", odds: primary[key] },
-      { source: secondaryEvent.marketMeta?.source || "SECONDARY", odds: secondary[key] }
-    ].filter(row => Number.isFinite(Number(row.odds)));
-    const odds = values.map(row => Number(row.odds)).sort((a, b) => a - b);
-    rows[key] = {
-      sourceCount: values.length,
-      min: odds[0] ?? null,
-      max: odds.at(-1) ?? null,
-      median: odds.length ? odds[Math.floor(odds.length / 2)] : null,
-      spread: odds.length > 1 ? odds.at(-1) - odds[0] : null,
-      quotes: values
-    };
-  }
-  return rows;
 }
 
 function appendProviderOdds({ marketCache, fixture, event, source, observedAt, confidence, config }) {
@@ -73,22 +50,42 @@ export async function aggregateMarket({
     oddsRegion: config.oddsRegion,
     sportKey
   });
+  const primaryMatches = new Map(fixtures.map(fixture => [fixture.id, matchOddsEvent(
+    { ...fixture, sportKey },
+    primary.events,
+    config.marketMatchMinConfidence
+  )]));
+  const oddsApiIoFixtures = fixtures.filter(fixture => {
+    const match = primaryMatches.get(fixture.id);
+    return !(match?.event && primary.status === SourceStatus.OK);
+  });
   const oddsApiIo = await oddsProviderOddsApiIo({
     request,
     oddsApiIoKey: config.oddsApiIoKey,
     oddsApiIoBookmakers: config.oddsApiIoBookmakers,
-    fixtures,
+    fixtures: oddsApiIoFixtures,
     root: config.root,
+    runtimeRoot: config.runtimeRoot,
     now,
     cacheMinutes: config.oddsApiIoCacheMinutes,
     kickoffToleranceMinutes: config.oddsApiIoKickoffToleranceMinutes,
     minConfidence: config.marketMatchMinConfidence
   });
+  const oddsApiIoMatches = new Map(fixtures.map(fixture => [fixture.id, matchOddsEvent(
+    { ...fixture, sportKey: "football" },
+    oddsApiIo.events,
+    config.marketMatchMinConfidence
+  )]));
+  const secondaryFixtures = oddsApiIoFixtures.filter(fixture => {
+    const match = oddsApiIoMatches.get(fixture.id);
+    return !(match?.event && providerAvailable(oddsApiIo));
+  });
   const secondary = await oddsProviderSecondary({
     request,
     apiFootballKey: config.apiFootballKey,
-    fixtures,
+    fixtures: secondaryFixtures,
     root: config.root,
+    runtimeRoot: config.runtimeRoot,
     now,
     cacheMinutes: config.apiFootballOddsCacheMinutes
   });
@@ -102,16 +99,8 @@ export async function aggregateMarket({
   ];
 
   for (const fixture of fixtures) {
-    const primaryMatch = matchOddsEvent(
-      { ...fixture, sportKey },
-      primary.events,
-      config.marketMatchMinConfidence
-    );
-    const oddsApiIoMatch = matchOddsEvent(
-      { ...fixture, sportKey: "football" },
-      oddsApiIo.events,
-      config.marketMatchMinConfidence
-    );
+    const primaryMatch = primaryMatches.get(fixture.id);
+    const oddsApiIoMatch = oddsApiIoMatches.get(fixture.id);
     const secondaryMatch = matchOddsEvent(
       { ...fixture, sportKey },
       secondary.events,
@@ -138,11 +127,7 @@ export async function aggregateMarket({
       observedAt: secondary.fetchedAt,
       matchingConfidence: secondaryMatch.confidence
     }) : null;
-    const marketAgreement = primaryEventForDiagnostics && oddsApiIoEventForDiagnostics
-      ? agreement(primaryEventForDiagnostics, oddsApiIoEventForDiagnostics)
-      : primaryEventForDiagnostics && secondaryEventForDiagnostics
-        ? agreement(primaryEventForDiagnostics, secondaryEventForDiagnostics)
-        : null;
+    const marketAgreement = null;
     const supportClass = marketSupportClass(fixture.competitionCode);
 
     if (primaryMatch.event && primary.status === SourceStatus.OK) {

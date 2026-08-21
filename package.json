@@ -7,11 +7,12 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "node --watch src/app.js",
-    "test": "node tests/parity.test.js && node tests/stage2.test.js && node tests/stage3.test.js && node tests/stage35.test.js && node tests/stage4.test.js && node tests/stage5.test.js && node tests/stage6.test.js && node tests/stage7.test.js && node tests/stage8a.test.js && node tests/stage8b.test.js && node tests/stage9.test.js && node tests/stage10.test.js",
+    "test": "node tests/parity.test.js && node tests/stage2.test.js && node tests/stage3.test.js && node tests/stage35.test.js && node tests/stage4.test.js && node tests/stage5.test.js && node tests/stage6.test.js && node tests/stage7.test.js && node tests/stage8a.test.js && node tests/stage8b.test.js && node tests/stage9.test.js && node tests/stage10.test.js && node tests/stage101.test.js",
     "doctor": "node scripts/doctor.js",
     "live:refresh": "node scripts/run-live-refresh.js",
     "backtest:real": "node scripts/run-real-backtest.js",
-    "experiment:challenger": "node scripts/run-challenger-experiment.js"
+    "experiment:challenger": "node scripts/run-challenger-experiment.js",
+    "runtime:migrate": "node scripts/runtime-migrate.js"
   },
   "engines": {
     "node": ">=18"

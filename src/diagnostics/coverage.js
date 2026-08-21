@@ -18,12 +18,16 @@ export function refreshCoverage({ fixtures = [], processed = [], providerHealth 
   const apiFootballMatched = processed.filter(item => item.diagnostics?.apiFootball?.meta?.apiFixtureId).length;
   const injuries = processed.filter(item => (item.diagnostics?.apiFootball?.injuryCount || 0) > 0).length;
   const lineups = processed.filter(item => (item.diagnostics?.apiFootball?.lineupsCount || 0) > 0).length;
+  const marketCovered = processed.filter(item => {
+    const market = item.diagnostics?.market || {};
+    return Boolean(market.observedAt) && market.source && !["NONE", "N/A"].includes(market.source);
+  }).length;
   const xgStatus = providerHealth.xg?.status || SourceStatus.NA;
   const xgConfigured = xgStatus !== SourceStatus.NA;
 
   return {
     footballData: ratio(total, total, total ? SourceStatus.OK : SourceStatus.NA),
-    market: ratio(processed.filter(item => Boolean(item.odds)).length, total),
+    market: ratio(marketCovered, total),
     apiFootball: ratio(apiFootballMatched, total, providerHealth["api-football"]?.status || SourceStatus.NA),
     injuries: ratio(injuries, total, providerHealth["api-football"]?.status || SourceStatus.NA),
     lineups: ratio(lineups, total, providerHealth["api-football"]?.status || SourceStatus.NA),

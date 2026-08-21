@@ -4,6 +4,7 @@ import { calculateClv, findClosingQuote } from "../audit/clv.js";
 import { cumulativeStatistics, dailyAudit } from "../audit/statistics.js";
 import { settleSignal } from "../audit/settlement.js";
 import { scoreFinishedShadow, shadowSummary } from "../shadow/scoring.js";
+import { resolveRuntimeRoot } from "./runtime.js";
 
 function ensureDir(file) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -79,8 +80,8 @@ function oddsHistory(previous, marketOdds, createdAt) {
   return [...history, { at: createdAt, odds: marketOdds }];
 }
 
-export function createHistoryStore(root) {
-  const historyDir = path.join(root, "data", "history");
+export function createHistoryStore(root, { runtimeRoot = resolveRuntimeRoot(root) } = {}) {
+  const historyDir = path.join(runtimeRoot, "history");
   const analysesFile = path.join(historyDir, "analyses.jsonl");
   const signalsFile = path.join(historyDir, "signals.jsonl");
   const officialSignalsFile = path.join(historyDir, "official-signals.jsonl");

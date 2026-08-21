@@ -9,12 +9,13 @@ export function blockerReasons(item, config) {
   const risk = item.diagnostics?.risk;
   const sanity = item.diagnostics?.sanityWarnings || [];
   const candidate = item.candidate;
+  const hasUsableMarket = Boolean(market.observedAt) && market.source && !["NONE", "N/A"].includes(market.source);
 
-  if (!item.odds && market.reason === "MARKET_UNSUPPORTED_COMPETITION") reasons.add("MARKET_UNSUPPORTED_COMPETITION");
-  else if (!item.odds && market.reason === "MARKET_NO_QUOTES") reasons.add("MARKET_NO_QUOTES");
-  else if (!item.odds && market.primaryStatus === "QUOTA") reasons.add("MARKET_PROVIDER_QUOTA");
-  else if (!item.odds && [market.primaryDiagnostic, market.oddsApiIoDiagnostic, market.secondaryDiagnostic].includes("MATCH_LOW_CONFIDENCE")) reasons.add("MARKET_EVENT_NOT_MATCHED");
-  else if (!item.odds && market.source === "NONE") reasons.add("NO_MARKET");
+  if (!hasUsableMarket && market.reason === "MARKET_UNSUPPORTED_COMPETITION") reasons.add("MARKET_UNSUPPORTED_COMPETITION");
+  else if (!hasUsableMarket && market.reason === "MARKET_NO_QUOTES") reasons.add("MARKET_NO_QUOTES");
+  else if (!hasUsableMarket && market.primaryStatus === "QUOTA") reasons.add("MARKET_PROVIDER_QUOTA");
+  else if (!hasUsableMarket && [market.primaryDiagnostic, market.oddsApiIoDiagnostic, market.secondaryDiagnostic].includes("MATCH_LOW_CONFIDENCE")) reasons.add("MARKET_EVENT_NOT_MATCHED");
+  else if (!hasUsableMarket && market.source === "NONE") reasons.add("NO_MARKET");
   if (market.freshness === "STALE") reasons.add("MARKET_STALE");
   if ((dq?.scoreNormalized ?? item.dataQuality ?? 0) < config.minDataQuality) reasons.add("LOW_DQ");
   if ((item.confidence ?? 0) < 70) reasons.add("LOW_CONFIDENCE");

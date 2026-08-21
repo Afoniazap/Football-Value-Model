@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
+import { resolveRuntimeRoot } from "./runtime.js";
 
-export function createCacheStore(root, initialState) {
-  const dataDir = path.join(root, "data");
-  const cacheFile = path.join(dataDir, "cache.json");
+export function createCacheStore(root, initialState, { runtimeRoot = resolveRuntimeRoot(root) } = {}) {
+  const dataDir = runtimeRoot;
+  const cacheFile = path.join(runtimeRoot, "cache.json");
 
   function saveCache(state) {
     fs.mkdirSync(dataDir, { recursive: true });

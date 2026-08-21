@@ -2,7 +2,7 @@ import { loadConfig } from "../src/config/env.js";
 import { runDoctor } from "../src/diagnostics/doctor.js";
 
 const config = loadConfig();
-const result = runDoctor(config.root);
+const result = runDoctor(config.root, { runtimeRoot: config.runtimeRoot });
 
 console.log(JSON.stringify({
   status: result.status,

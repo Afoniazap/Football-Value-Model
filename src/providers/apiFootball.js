@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { providerResult, SourceStatus } from "./providerResult.js";
+import { resolveRuntimeRoot } from "../storage/runtime.js";
 
 const API_FOOTBALL_BASE_URL = "https://v3.football.api-sports.io";
 
@@ -62,6 +63,9 @@ function errorText(payload) {
 }
 
 function classifyApiFootballError(errorOrPayload) {
+  if (errorOrPayload?.status === SourceStatus.QUOTA || errorOrPayload?.code === "QUOTA_BACKOFF") {
+    return { status: SourceStatus.QUOTA, code: errorOrPayload.code || "QUOTA", message: errorOrPayload.message || "API-Football quota unavailable" };
+  }
   const message = errorOrPayload?.message || errorText(errorOrPayload) || "";
   const lower = message.toLowerCase();
 
@@ -72,7 +76,7 @@ function classifyApiFootballError(errorOrPayload) {
       message
     };
   }
-  if (lower.includes("quota") || lower.includes("rate limit") || lower.includes("too many requests")) {
+  if (lower.includes("quota") || lower.includes("rate limit") || lower.includes("too many requests") || lower.includes("request limit") || lower.includes("limit for the day")) {
     return {
       status: SourceStatus.QUOTA,
       code: "QUOTA",
@@ -147,12 +151,26 @@ function matchFixture(fixture, candidates) {
 
 export function createApiFootballIntelCache(root, {
   now = new Date(),
-  ttlMinutes = 30
+  ttlMinutes = 30,
+  runtimeRoot = resolveRuntimeRoot(root),
+  injuriesCacheHours = 6,
+  lineupsEarlyCacheHours = 6,
+  lineupsPrematchMinutes = 90,
+  lineupsPrematchCacheMinutes = 15
 } = {}) {
-  const dir = path.join(root, "data", "api-football");
+  const dir = path.join(runtimeRoot, "api-football");
   const mappingFile = path.join(dir, "fixture-mapping.json");
+  const quotaBackoffFile = path.join(dir, "quota-backoff.json");
   const memory = new Map();
-  const counters = { requestsUsed: 0, cacheHits: 0, mappingHits: 0 };
+  const counters = {
+    requestsUsed: 0,
+    cacheHits: 0,
+    mappingHits: 0,
+    injuriesFetches: 0,
+    lineupsFetches: 0,
+    lineupsSkippedEarly: 0,
+    quotaBackoffHits: 0
+  };
 
   function rawFile(endpoint, params) {
     const safe = `${endpoint}-${stableParams(params)}`.replaceAll(/[^a-zA-Z0-9_.=-]+/g, "_");
@@ -161,6 +179,73 @@ export function createApiFootballIntelCache(root, {
 
   function readMappings() {
     return readJson(mappingFile) || {};
+  }
+
+  function readBackoff() {
+    return readJson(quotaBackoffFile) || {};
+  }
+
+  function writeBackoff(row) {
+    const backoff = readBackoff();
+    backoff.apiFootball = row;
+    writeJson(quotaBackoffFile, backoff);
+  }
+
+  function backoffUntilNextUtcDay(reason = "QUOTA") {
+    const current = new Date(now);
+    const until = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() + 1, 0, 5, 0));
+    writeBackoff({ status: SourceStatus.QUOTA, reason, until: until.toISOString(), setAt: new Date(now).toISOString() });
+    return until.toISOString();
+  }
+
+  function currentBackoff() {
+    const row = readBackoff().apiFootball;
+    if (!row?.until) return null;
+    if (new Date(row.until).getTime() <= new Date(now).getTime()) return null;
+    return row;
+  }
+
+  function ttlFor(endpoint, fixture = null) {
+    if (endpoint === "injuries") return injuriesCacheHours * 60;
+    if (endpoint === "fixtures/lineups") {
+      const kickoffMs = fixture ? new Date(fixture.utcDate).getTime() : NaN;
+      const minutesToKickoff = (kickoffMs - new Date(now).getTime()) / 60_000;
+      return Number.isFinite(minutesToKickoff) && minutesToKickoff <= lineupsPrematchMinutes
+        ? lineupsPrematchCacheMinutes
+        : lineupsEarlyCacheHours * 60;
+    }
+    return ttlMinutes;
+  }
+
+  function readEndpointCache(endpoint, params, ttlMinutesOverride = null) {
+    const key = `${endpoint}?${stableParams(params)}`;
+    if (memory.has(key)) {
+      counters.cacheHits += 1;
+      return { data: memory.get(key), hit: true, source: "memory" };
+    }
+    const file = rawFile(endpoint, params);
+    const cached = readJson(file);
+    const ttl = ttlMinutesOverride ?? ttlMinutes;
+    if (cacheFresh(cached, now, ttl)) {
+      counters.cacheHits += 1;
+      memory.set(key, cached.data);
+      return { data: cached.data, hit: true, source: "disk", fetchedAt: cached.fetchedAt };
+    }
+    return { data: cached?.data || null, hit: false, source: cached ? "expired" : "miss", fetchedAt: cached?.fetchedAt || null };
+  }
+
+  function cachedConfirmedLineups(endpoint, params, fixture) {
+    const cached = readEndpointCache(endpoint, params, 365 * 24 * 60);
+    const lineups = cached.data?.response || [];
+    const beforeKickoff = new Date(now).getTime() < new Date(fixture.utcDate).getTime();
+    if (cached.data && beforeKickoff && lineups.length >= 2) return cached;
+    return null;
+  }
+
+  function shouldSkipEarlyLineups(fixture) {
+    const kickoffMs = new Date(fixture.utcDate).getTime();
+    const minutesToKickoff = (kickoffMs - new Date(now).getTime()) / 60_000;
+    return Number.isFinite(minutesToKickoff) && minutesToKickoff > lineupsPrematchMinutes;
   }
 
   function getMapping(fixture) {
@@ -187,44 +272,59 @@ export function createApiFootballIntelCache(root, {
     return row;
   }
 
-  async function getOrFetch({ request, apiFootballKey, endpoint, params }) {
+  async function getOrFetch({ request, apiFootballKey, endpoint, params, fixture = null }) {
     const key = `${endpoint}?${stableParams(params)}`;
-    if (memory.has(key)) {
-      counters.cacheHits += 1;
-      return memory.get(key);
+    const ttl = ttlFor(endpoint, fixture);
+    const cached = readEndpointCache(endpoint, params, ttl);
+    if (cached.hit) return cached.data;
+
+    const backoff = currentBackoff();
+    if (backoff) {
+      counters.quotaBackoffHits += 1;
+      const error = new Error(`API-Football quota backoff active until ${backoff.until}`);
+      error.code = "QUOTA_BACKOFF";
+      error.status = SourceStatus.QUOTA;
+      throw error;
     }
-    const file = rawFile(endpoint, params);
-    const cached = readJson(file);
-    if (cacheFresh(cached, now, ttlMinutes)) {
-      counters.cacheHits += 1;
-      memory.set(key, cached.data);
-      return cached.data;
+
+    try {
+      const payload = await apiFootballRequest(request, apiFootballKey, endpoint, params, null);
+      counters.requestsUsed += 1;
+      if (endpoint === "injuries") counters.injuriesFetches += 1;
+      if (endpoint === "fixtures/lineups") counters.lineupsFetches += 1;
+      writeJson(rawFile(endpoint, params), {
+        fetchedAt: new Date(now).toISOString(),
+        endpoint,
+        params,
+        data: payload
+      });
+      memory.set(key, payload);
+      return payload;
+    } catch (error) {
+      const classified = classifyApiFootballError(error);
+      if (classified.status === SourceStatus.QUOTA) backoffUntilNextUtcDay(classified.code);
+      throw error;
     }
-    const payload = await apiFootballRequest(request, apiFootballKey, endpoint, params, null);
-    counters.requestsUsed += 1;
-    writeJson(file, {
-      fetchedAt: new Date(now).toISOString(),
-      endpoint,
-      params,
-      data: payload
-    });
-    memory.set(key, payload);
-    return payload;
   }
 
   return {
     dir,
     mappingFile,
+    quotaBackoffFile,
     counters,
+    options: { injuriesCacheHours, lineupsEarlyCacheHours, lineupsPrematchMinutes, lineupsPrematchCacheMinutes },
     getMapping,
     setMapping,
-    getOrFetch
+    getOrFetch,
+    readEndpointCache,
+    cachedConfirmedLineups,
+    shouldSkipEarlyLineups,
+    currentBackoff
   };
 }
-
-async function apiFootballRequest(request, apiFootballKey, endpoint, params = {}, intelCache = null) {
+async function apiFootballRequest(request, apiFootballKey, endpoint, params = {}, intelCache = null, fixture = null) {
   if (intelCache) {
-    return intelCache.getOrFetch({ request, apiFootballKey, endpoint, params });
+    return intelCache.getOrFetch({ request, apiFootballKey, endpoint, params, fixture });
   }
   const url = new URL(`${API_FOOTBALL_BASE_URL}/${endpoint}`);
   for (const [key, value] of Object.entries(params)) {
@@ -311,7 +411,12 @@ export async function fetchApiFootballFixtureIntel({ request, apiFootballKey, fi
         fixture: apiFixtureId
       }, intelCache);
       injuries = injuriesPayload.response || [];
-      endpointResults.push({ endpoint: "injuries", status: SourceStatus.OK, count: injuries.length });
+      endpointResults.push({
+        endpoint: "injuries",
+        status: SourceStatus.OK,
+        count: injuries.length,
+        source: "CACHE_OR_FETCH"
+      });
     } catch (error) {
       const classified = classifyApiFootballError(error);
       endpointResults.push({
@@ -322,27 +427,53 @@ export async function fetchApiFootballFixtureIntel({ request, apiFootballKey, fi
       });
     }
 
-    try {
-      const lineupsPayload = await apiFootballRequest(request, apiFootballKey, "fixtures/lineups", {
-        fixture: apiFixtureId
-      }, intelCache);
-      lineups = lineupsPayload.response || [];
+    const lineupParams = { fixture: apiFixtureId };
+    const confirmedLineups = intelCache?.cachedConfirmedLineups("fixtures/lineups", lineupParams, fixture);
+    const shouldSkipLineups = intelCache?.shouldSkipEarlyLineups(fixture);
+
+    if (confirmedLineups) {
+      lineups = confirmedLineups.data.response || [];
       endpointResults.push({
         endpoint: "lineups",
         status: SourceStatus.OK,
         count: lineups.length,
-        note: lineups.length ? "PUBLISHED" : "NOT_PUBLISHED"
+        note: "PUBLISHED",
+        source: "CONFIRMED_CACHE"
       });
-    } catch (error) {
-      const classified = classifyApiFootballError(error);
+    } else if (shouldSkipLineups) {
+      const cachedLineups = intelCache?.readEndpointCache("fixtures/lineups", lineupParams, intelCache.options.lineupsEarlyCacheHours * 60);
+      lineups = cachedLineups?.data?.response || [];
+      intelCache.counters.lineupsSkippedEarly += 1;
       endpointResults.push({
         endpoint: "lineups",
-        status: classified.status,
-        reason: classified.code,
-        message: classified.message
+        status: cachedLineups?.hit ? SourceStatus.OK : SourceStatus.NA,
+        count: lineups.length,
+        reason: cachedLineups?.hit ? null : "EARLY_PREMATCH",
+        note: lineups.length ? "PUBLISHED" : "NOT_PUBLISHED",
+        skipped: !cachedLineups?.hit,
+        source: cachedLineups?.hit ? "CACHE" : "EARLY_SKIP"
       });
+    } else {
+      try {
+        const lineupsPayload = await apiFootballRequest(request, apiFootballKey, "fixtures/lineups", lineupParams, intelCache, fixture);
+        lineups = lineupsPayload.response || [];
+        endpointResults.push({
+          endpoint: "lineups",
+          status: SourceStatus.OK,
+          count: lineups.length,
+          note: lineups.length ? "PUBLISHED" : "NOT_PUBLISHED",
+          source: "CACHE_OR_FETCH"
+        });
+      } catch (error) {
+        const classified = classifyApiFootballError(error);
+        endpointResults.push({
+          endpoint: "lineups",
+          status: classified.status,
+          reason: classified.code,
+          message: classified.message
+        });
+      }
     }
-
     const hardFailure = endpointResults.find(result =>
       [SourceStatus.QUOTA, SourceStatus.ERROR].includes(result.status)
     );
@@ -367,7 +498,12 @@ export async function fetchApiFootballFixtureIntel({ request, apiFootballKey, fi
         endpoints: endpointResults,
         requestsUsed: intelCache?.counters.requestsUsed || null,
         cacheHits: intelCache?.counters.cacheHits || 0,
-        mappingHits: intelCache?.counters.mappingHits || 0
+        mappingHits: intelCache?.counters.mappingHits || 0,
+        injuriesFetches: intelCache?.counters.injuriesFetches || 0,
+        lineupsFetches: intelCache?.counters.lineupsFetches || 0,
+        lineupsSkippedEarly: intelCache?.counters.lineupsSkippedEarly || 0,
+        quotaBackoffHits: intelCache?.counters.quotaBackoffHits || 0,
+        quotaBackoffUntil: intelCache?.currentBackoff()?.until || null
       }
     });
   } catch (error) {
@@ -389,7 +525,12 @@ export async function fetchApiFootballFixtureIntel({ request, apiFootballKey, fi
         date: fixtureDate(fixture),
         requestsUsed: intelCache?.counters.requestsUsed || null,
         cacheHits: intelCache?.counters.cacheHits || 0,
-        mappingHits: intelCache?.counters.mappingHits || 0
+        mappingHits: intelCache?.counters.mappingHits || 0,
+        injuriesFetches: intelCache?.counters.injuriesFetches || 0,
+        lineupsFetches: intelCache?.counters.lineupsFetches || 0,
+        lineupsSkippedEarly: intelCache?.counters.lineupsSkippedEarly || 0,
+        quotaBackoffHits: intelCache?.counters.quotaBackoffHits || 0,
+        quotaBackoffUntil: intelCache?.currentBackoff()?.until || null
       }
     });
   }

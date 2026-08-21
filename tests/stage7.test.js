@@ -9,6 +9,7 @@ import {
   gradeMarket,
   gradeOverUnder
 } from "../src/audit/settlement.js";
+import { cumulativeStatistics, dailyAudit } from "../src/audit/statistics.js";
 import { createHistoryStore } from "../src/storage/history.js";
 import { scoreFinishedShadow } from "../src/shadow/scoring.js";
 
@@ -138,6 +139,46 @@ function testRepeatedSettlementNoDuplicatePLAndAudits() {
   assert.equal(store.auditCumulative().overall.roi, 1.1);
 }
 
+function testStatisticsExplainPendingAndOrphanedSettlements() {
+  const signals = [{
+    signalId: "s1",
+    issuedAt: "2026-01-10T11:00:00Z",
+    market: "h2h",
+    marketSource: "ODDS_API_IO",
+    officialOdds: 2.1,
+    modelProbability: 0.55,
+    competition: "Test League",
+    DQ: { scoreNormalized: 80 },
+    Risk: { score: 70 }
+  }];
+  const settlement = {
+    signalId: "s1",
+    status: "WIN",
+    stake: 1,
+    returns: 2.1,
+    netUnits: 1.1,
+    settledAt: "2026-01-11T15:00:00Z"
+  };
+  const cumulative = cumulativeStatistics({
+    signals,
+    settlements: [settlement, { ...settlement, signalId: "missing" }],
+    shadowResults: []
+  });
+  assert.equal(cumulative.integrity.pending, 0);
+  assert.equal(cumulative.integrity.settlementsWithoutSignal, 1);
+  assert.equal(cumulative.bySource.ODDS_API_IO.officialBets, 1);
+  assert.equal(cumulative.bySource.ODDS_API_IO.settledBets, 1);
+
+  const daily = dailyAudit({
+    date: "2026-01-10",
+    signals,
+    settlements: [settlement],
+    shadowResults: []
+  });
+  assert.equal(daily.pending, 0);
+  assert.equal(daily.officialValueIssued, 1);
+}
+
 function testClvValidAndNA() {
   const signal = {
     signalId: "s1",
@@ -184,6 +225,7 @@ testKickoffLockAndPostKickoffIgnored();
 testSettlementMarkets();
 testFixedStakeAccounting();
 testRepeatedSettlementNoDuplicatePLAndAudits();
+testStatisticsExplainPendingAndOrphanedSettlements();
 testClvValidAndNA();
 testShadowResultScoring();
 

@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import { resolveRuntimeRoot } from "./runtime.js";
 
-export function createBacktestStore(root) {
-  const backtestsDir = path.join(root, "data", "backtests");
+export function createBacktestStore(root, { runtimeRoot = resolveRuntimeRoot(root) } = {}) {
+  const backtestsDir = path.join(runtimeRoot, "backtests");
   const rawDir = path.join(backtestsDir, "raw");
   const reportsDir = path.join(backtestsDir, "reports");
 
