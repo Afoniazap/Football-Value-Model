@@ -388,6 +388,42 @@ async function testPrimaryQuotaFallsBackToOddsApiIo() {
   assert.equal(result.meta.oddsApiIoMatchedFixtures, 1);
 }
 
+async function testPrimaryQuotaBackoffSharedAcrossCompetitions() {
+  const tmp = root();
+  const calls = { primary: 0, secondary: 0, oddsApiIo: 0 };
+  const fallbackRequest = createRequest({ primary: "quota", oddsApiIo: "ok", calls });
+  const request = async url => {
+    if (String(url).includes("the-odds-api")) {
+      calls.primary += 1;
+      throw new Error("OUT_OF_USAGE_CREDITS");
+    }
+    return fallbackRequest(url);
+  };
+  const cfg = config(tmp, { oddsApiIoKey: "odds-api-io-key", oddsApiIoBookmakers: "OddsIoBook" });
+  const cache = createMarketCache(tmp);
+  const first = await aggregateMarket({
+    request,
+    config: cfg,
+    sportKey: "soccer_epl",
+    fixtures: [fixture("f1")],
+    marketCache: cache,
+    now: new Date("2026-08-20T10:00:00Z")
+  });
+  const second = await aggregateMarket({
+    request,
+    config: cfg,
+    sportKey: "soccer_spain_la_liga",
+    fixtures: [{ ...fixture("f2"), competitionCode: "PD" }],
+    marketCache: cache,
+    now: new Date("2026-08-20T10:01:00Z")
+  });
+  assert.equal(calls.primary, 1);
+  assert.equal(first.meta.primaryBackoff.reason, "QUOTA");
+  assert.equal(second.meta.primaryBackoff.reason, "QUOTA_BACKOFF");
+  assert.equal(second.providerResults[0].error.code, "QUOTA_BACKOFF");
+  assert.equal(second.providerResults[0].meta.requestsUsed, 0);
+}
+
 async function testOddsApiIoQuotaFallsBackToApiFootball() {
   const tmp = root();
   const calls = { secondary: 0, oddsApiIo: 0 };
@@ -504,6 +540,7 @@ await testOddsApiIoInvalidBookmakerIsUnavailable();
 await testOddsApiIoBookmakerSelectionMismatchIsUnavailable();
 await testPrimaryCoverageSkipsFallbackProviders();
 await testPrimaryQuotaFallsBackToOddsApiIo();
+await testPrimaryQuotaBackoffSharedAcrossCompetitions();
 await testOddsApiIoQuotaFallsBackToApiFootball();
 await testOddsApiIoProvenanceAndCacheRevision();
 await testConflictingFixtureIdentityRejected();

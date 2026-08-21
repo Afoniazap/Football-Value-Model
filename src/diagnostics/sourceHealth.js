@@ -2,14 +2,42 @@ import { SourceStatus } from "../providers/providerResult.js";
 
 export function createSourceHealth(results = []) {
   const bySource = {};
+  const grouped = new Map();
   for (const result of results.filter(Boolean)) {
-    bySource[result.source] = {
-      status: result.status,
-      fetchedAt: result.fetchedAt,
-      lastSuccessfulFetch: result.status === SourceStatus.OK ? result.fetchedAt : null,
-      coverageCount: Array.isArray(result.data) ? result.data.length : null,
-      error: result.error,
-      meta: result.meta || {}
+    if (!grouped.has(result.source)) grouped.set(result.source, []);
+    grouped.get(result.source).push(result);
+  }
+  for (const [source, rows] of grouped.entries()) {
+    const last = rows.at(-1);
+    const okCount = rows.filter(row => row.status === SourceStatus.OK).length;
+    const partialCount = rows.filter(row => row.status === SourceStatus.PARTIAL).length;
+    const status = okCount
+      ? (okCount === rows.length ? SourceStatus.OK : SourceStatus.PARTIAL)
+      : partialCount
+        ? SourceStatus.PARTIAL
+        : rows.some(row => row.status === SourceStatus.QUOTA)
+          ? SourceStatus.QUOTA
+          : rows.some(row => row.status === SourceStatus.ERROR)
+            ? SourceStatus.ERROR
+            : SourceStatus.NA;
+    const coverageRows = rows.filter(row => Array.isArray(row.data));
+    const successful = rows.filter(row => [SourceStatus.OK, SourceStatus.PARTIAL].includes(row.status));
+    const meta = rows.length === 1 ? (last.meta || {}) : {
+      ...(last.meta || {}),
+      aggregated: true,
+      resultsCount: rows.length,
+      requestsUsed: rows.reduce((sum, row) => sum + (row.meta?.requestsUsed || 0), 0),
+      cacheHits: rows.reduce((sum, row) => sum + (row.meta?.cacheHits || 0), 0),
+      eventsReceived: rows.reduce((sum, row) => sum + (row.meta?.eventsReceived || 0), 0),
+      matchedFixtures: rows.reduce((sum, row) => sum + (row.meta?.matchedFixtures || 0), 0)
+    };
+    bySource[source] = {
+      status,
+      fetchedAt: last.fetchedAt,
+      lastSuccessfulFetch: successful.at(-1)?.fetchedAt || null,
+      coverageCount: coverageRows.length ? coverageRows.reduce((sum, row) => sum + row.data.length, 0) : null,
+      error: rows.find(row => row.error)?.error || null,
+      meta
     };
   }
 

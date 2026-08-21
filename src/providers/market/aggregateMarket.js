@@ -48,7 +48,10 @@ export async function aggregateMarket({
     request,
     oddsApiKey: config.oddsApiKey,
     oddsRegion: config.oddsRegion,
-    sportKey
+    sportKey,
+    root: config.root,
+    runtimeRoot: config.runtimeRoot,
+    now
   });
   const primaryMatches = new Map(fixtures.map(fixture => [fixture.id, matchOddsEvent(
     { ...fixture, sportKey },
@@ -283,7 +286,7 @@ export async function aggregateMarket({
       usageCounts,
       cache: marketCache.summary(now, config),
       primaryBackoff: primary.status === SourceStatus.QUOTA
-        ? { reason: "QUOTA", retryAfterMinutes: config.oddsStaleMinutes }
+        ? { reason: primary.meta?.reason || "QUOTA", until: primary.meta?.backoffUntil || null }
         : null
     }
   };

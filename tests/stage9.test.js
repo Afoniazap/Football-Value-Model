@@ -9,6 +9,7 @@ import { auditExactHorizon } from "../src/diagnostics/horizon.js";
 import { operationalError } from "../src/diagnostics/operationalErrors.js";
 import { buildRefreshTelemetry } from "../src/diagnostics/refreshTelemetry.js";
 import { readinessState, startupReadiness } from "../src/diagnostics/readiness.js";
+import { createSourceHealth } from "../src/diagnostics/sourceHealth.js";
 import { SourceStatus } from "../src/providers/providerResult.js";
 import { createHistoryStore } from "../src/storage/history.js";
 
@@ -192,11 +193,24 @@ function testDoctorFindsProblems() {
   assert.ok(result.issues.some(issue => issue.code === "SETTLEMENT_WITHOUT_SIGNAL"));
 }
 
+function testRepeatedProviderHealthIsAggregated() {
+  const health = createSourceHealth([
+    { source: "odds-api-io", status: SourceStatus.OK, fetchedAt: "2026-08-21T10:00:00Z", data: [{ id: 1 }], error: null, meta: { requestsUsed: 2, eventsReceived: 1, matchedFixtures: 1 } },
+    { source: "odds-api-io", status: SourceStatus.OK, fetchedAt: "2026-08-21T10:01:00Z", data: [{ id: 2 }, { id: 3 }], error: null, meta: { requestsUsed: 2, eventsReceived: 2, matchedFixtures: 2 } }
+  ]);
+  assert.equal(health["odds-api-io"].status, SourceStatus.OK);
+  assert.equal(health["odds-api-io"].coverageCount, 3);
+  assert.equal(health["odds-api-io"].meta.resultsCount, 2);
+  assert.equal(health["odds-api-io"].meta.requestsUsed, 4);
+  assert.equal(health["odds-api-io"].meta.matchedFixtures, 3);
+}
+
 testReadinessState();
 testExactHorizon();
 testCoverageAndBlockers();
 testStructuredErrorsAndTelemetry();
 testRestartIdempotency();
 testDoctorFindsProblems();
+testRepeatedProviderHealthIsAggregated();
 
 console.log("Stage 9 tests OK: readiness, horizon, coverage, blockers, errors, idempotency and doctor.");
