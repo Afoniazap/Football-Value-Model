@@ -39,8 +39,11 @@ export function calculateDataQuality({ fixture, context, oddsEvent, apiFootballR
   const away = teamRow(context, fixture.awayId);
   const homeGames = recentGames(context, fixture.homeId).length;
   const awayGames = recentGames(context, fixture.awayId).length;
-  const minPlayed = Math.min(home?.playedGames || 0, away?.playedGames || 0);
   const minRecent = Math.min(homeGames, awayGames);
+  const minPlayed = Math.max(
+    Math.min(home?.playedGames || 0, away?.playedGames || 0),
+    minRecent
+  );
   const hasMarket = Boolean(oddsEvent);
 
   const components = [

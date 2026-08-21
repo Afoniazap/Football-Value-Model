@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { fetchApiFootballFixtureIntel } from "../src/providers/apiFootball.js";
 import { fetchOddsForSport } from "../src/providers/odds.js";
+import { fetchCompetitionContext } from "../src/providers/footballData.js";
 import { SourceStatus } from "../src/providers/providerResult.js";
 import { calculateDataQuality } from "../src/quality/dataQuality.js";
 import { calculateRisk } from "../src/risk/riskScore.js";
@@ -97,6 +98,49 @@ function testSquadCoverage() {
   assert.equal(dq.components.find(x => x.name === "squadCoverage").score, 10);
 }
 
+async function testFl1EmptyNewSeasonUsesPreviousHistory() {
+  const request = async url => {
+    const value = String(url);
+    if (value.endsWith("/standings")) {
+      return {
+        season: { startDate: "2026-08-01" },
+        standings: [{
+          type: "TOTAL",
+          table: [
+            { team: { id: 516, name: "Olympique de Marseille" }, playedGames: 0 },
+            { team: { id: 576, name: "RC Strasbourg Alsace" }, playedGames: 0 }
+          ]
+        }]
+      };
+    }
+    if (value.endsWith("status=FINISHED")) return { matches: [] };
+    if (value.endsWith("status=FINISHED&season=2025")) {
+      return {
+        matches: [
+          { homeTeam: { id: 516 }, awayTeam: { id: 1 } },
+          { homeTeam: { id: 2 }, awayTeam: { id: 576 } },
+          { homeTeam: { id: 576 }, awayTeam: { id: 516 } }
+        ]
+      };
+    }
+    throw new Error(`Unexpected URL: ${value}`);
+  };
+
+  const result = await fetchCompetitionContext({ request, token: "fd", code: "FL1" });
+  const fl1Fixture = { homeId: 516, awayId: 576 };
+  const dq = calculateDataQuality({
+    fixture: fl1Fixture,
+    context: result.data,
+    oddsEvent: {},
+    apiFootballResult: null
+  });
+
+  assert.equal(result.meta.historySeason, 2025);
+  assert.equal(result.data.matches.length, 3);
+  assert.ok(dq.components.find(x => x.name === "historicalSample").score > 0);
+  assert.ok(dq.components.find(x => x.name === "recentFormCoverage").score > 0);
+}
+
 function testRiskWithNoLineupData() {
   const risk = calculateRisk({
     item: { model: { components: {} } },
@@ -140,6 +184,7 @@ await testApiFootballFreePlanDate();
 await testOddsQuota();
 testDqNormalizationWithNotConnectedXg();
 testSquadCoverage();
+await testFl1EmptyNewSeasonUsesPreviousHistory();
 testRiskWithNoLineupData();
 testSanityEvOver100();
 testSanityProbabilityHighLowDq();

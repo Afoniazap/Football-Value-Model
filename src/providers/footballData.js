@@ -75,14 +75,33 @@ export async function fetchCompetitionContext({ request, token, code }) {
       })
     ]);
 
+    let finishedMatches = matches.matches || [];
+    let historySeason = null;
+    let historyFallbackError = null;
+    if (!finishedMatches.length) {
+      const currentSeason = Number(String(standings.season?.startDate || "").slice(0, 4));
+      if (Number.isInteger(currentSeason)) {
+        historySeason = currentSeason - 1;
+        try {
+          const previousSeason = await request(
+            `https://api.football-data.org/v4/competitions/${code}/matches?status=FINISHED&season=${historySeason}`,
+            { headers: { "X-Auth-Token": token } }
+          );
+          finishedMatches = previousSeason.matches || [];
+        } catch (error) {
+          historyFallbackError = error.message || String(error);
+        }
+      }
+    }
+
     return providerResult({
       status: SourceStatus.OK,
       source,
       data: {
         standings,
-        matches: (matches.matches || []).slice(-300)
+        matches: finishedMatches.slice(-300)
       },
-      meta: { code }
+      meta: { code, historySeason, historyFallbackError }
     });
   } catch (error) {
     return errorResult(source, error, { code });
