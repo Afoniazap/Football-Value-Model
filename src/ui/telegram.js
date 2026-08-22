@@ -246,7 +246,10 @@ export function createTelegramUi({
   async function showDiagnostics(chatId, id, kind) {
     const item = findItem(id);
     if (!item) return;
-    const rendered = renderFixtureDiagnostic(item, kind);
+    const rendered = renderFixtureDiagnostic(item, kind, {
+      minDataQuality: config.minDataQuality,
+      minEdgePercent: config.minEdgePercent
+    });
     return tg("sendMessage", {
       chat_id: chatId,
       text: [`<b>${rendered.title}</b>`, "", `<b>${esc(item.home)} — ${esc(item.away)}</b>`, "", ...rendered.lines].join("\n"),
@@ -347,7 +350,9 @@ export function createTelegramUi({
       text: renderMatchCard(item),
       parse_mode: "HTML",
       reply_markup: keyboard([
-        [{ text: "🔎 DQ", callback_data: `dq:${item.id}` }, { text: UI_LABELS.risks, callback_data: `risk:${item.id}` }],
+        [{ text: "📚 DQ", callback_data: `dq:${item.id}` }, { text: "🎛 Confidence", callback_data: `confidence:${item.id}` }, { text: "🛡 Risk", callback_data: `risk:${item.id}` }],
+        [{ text: "📏 Edge", callback_data: `edge:${item.id}` }, { text: "💹 EV", callback_data: `ev:${item.id}` }],
+        [{ text: "⚖️ Fair Odds", callback_data: `fair:${item.id}` }, { text: "🧱 Stability", callback_data: `stability:${item.id}` }],
         [{ text: UI_LABELS.sources, callback_data: `sources:${item.id}` }, { text: "🧭 Проверки", callback_data: `sanity:${item.id}` }],
         [{ text: UI_LABELS.shadow, callback_data: `shadow:${item.id}` }, { text: UI_LABELS.context, callback_data: `context:${item.id}` }],
         [{ text: "⬅️ Обзор", callback_data: "dashboard" }]
@@ -563,7 +568,12 @@ export function createTelegramUi({
     if (query.data.startsWith("list:")) return showList(chatId, query.data.split(":")[1]);
     if (query.data.startsWith("card:")) return showCard(chatId, query.data.split(":")[1]);
     if (query.data.startsWith("dq:")) return showDiagnostics(chatId, query.data.split(":")[1], "dq");
+    if (query.data.startsWith("confidence:")) return showDiagnostics(chatId, query.data.split(":")[1], "confidence");
     if (query.data.startsWith("risk:")) return showDiagnostics(chatId, query.data.split(":")[1], "risk");
+    if (query.data.startsWith("edge:")) return showDiagnostics(chatId, query.data.split(":")[1], "edge");
+    if (query.data.startsWith("ev:")) return showDiagnostics(chatId, query.data.split(":")[1], "ev");
+    if (query.data.startsWith("fair:")) return showDiagnostics(chatId, query.data.split(":")[1], "fair");
+    if (query.data.startsWith("stability:")) return showDiagnostics(chatId, query.data.split(":")[1], "stability");
     if (query.data.startsWith("sources:")) return showDiagnostics(chatId, query.data.split(":")[1], "sources");
     if (query.data.startsWith("sanity:")) return showDiagnostics(chatId, query.data.split(":")[1], "sanity");
     if (query.data.startsWith("shadow:")) return showDiagnostics(chatId, query.data.split(":")[1], "shadow");
