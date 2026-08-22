@@ -20,6 +20,7 @@ import { auditExactHorizon } from "./diagnostics/horizon.js";
 import { buildRefreshTelemetry, createRefreshTelemetry } from "./diagnostics/refreshTelemetry.js";
 import { providerErrors } from "./diagnostics/operationalErrors.js";
 import { readinessLines, readinessState, startupReadiness } from "./diagnostics/readiness.js";
+import { createContextEngine } from "./context/contextEngine.js";
 
 function createInitialState() {
   return {
@@ -112,6 +113,7 @@ export async function main() {
   const historyStore = createHistoryStore(config.root, { runtimeRoot: config.runtimeRoot });
   const marketCache = createMarketCache(config.root, { runtimeRoot: config.runtimeRoot });
   const refreshTelemetry = createRefreshTelemetry(config.root, { runtimeRoot: config.runtimeRoot });
+  const contextEngine = createContextEngine({ config: config.context, runtimeRoot: config.runtimeRoot });
   const stateRef = { current: cacheStore.loadCache() };
   const bootReadiness = startupReadiness(config);
 
@@ -229,6 +231,11 @@ export async function main() {
       timings.apiFootball = Date.now() - stageStarted;
 
       stageStarted = Date.now();
+      const contextResult = await contextEngine.collectFixtures(fixtures);
+      providerResults.push(...contextResult.providerResults);
+      timings.context = Date.now() - stageStarted;
+
+      stageStarted = Date.now();
       processed = fixtures.map(fixture => {
         const fixtureContext = createLivePreMatchContext(contexts[fixture.competitionCode]);
         const modelled = buildModel(fixture, fixtureContext);
@@ -274,6 +281,7 @@ export async function main() {
         return {
           ...classified,
           shadow,
+          contextAnalysis: contextResult.byFixtureId[fixture.id],
           diagnostics: {
             dataQualityV2,
             risk,
@@ -342,6 +350,7 @@ export async function main() {
         sanityWarnings: processed.flatMap(item =>
           (item.diagnostics?.sanityWarnings || []).map(warning => ({ fixtureId: item.id, ...warning }))
         ),
+        contextAnalysis: processed.map(item => ({ fixtureId: item.id, ...item.contextAnalysis })),
         modelVersion: MODEL_VERSION
       });
       const signalEventsBefore = historyStore.readSignalEvents().length;

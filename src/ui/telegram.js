@@ -284,6 +284,28 @@ export function createTelegramUi({
         : [`shadowStatus: <b>${esc(shadow?.shadowStatus || "N/A")}</b>`, esc(shadow?.reason || "No challenger probability.")];
     }
 
+    if (kind === "context") {
+      title = "🧠 Context Intelligence";
+      const context = item.contextAnalysis;
+      const signal = event => {
+        const sign = event.sentiment === "POSITIVE" ? "+" : event.sentiment === "NEGATIVE" ? "-" : "≈";
+        const forecast = event.category === "EXPERT_FORECAST" && event.extracted?.selection
+          ? `: ${event.extracted.selection}${event.extracted.odds ? ` @${event.extracted.odds}` : ""}` : "";
+        return `${sign} ${esc(event.title || event.category)}${esc(forecast)}`;
+      };
+      lines = context ? [
+        `Mode: <b>SHADOW ONLY</b>`,
+        `Home: <b>${context.scoreHome > 0 ? "+" : ""}${context.scoreHome}</b>`,
+        `Away: <b>${context.scoreAway > 0 ? "+" : ""}${context.scoreAway}</b>`,
+        `Confidence: <b>${context.confidence}/100</b>`,
+        `Independent sources: <b>${context.independentSources}</b>`,
+        `Contradictions: <b>${context.contradictions}</b>`,
+        "",
+        "Key signals:",
+        ...(context.events?.length ? context.events.slice(0, 6).map(signal) : ["No matched context events."])
+      ] : ["Context analysis unavailable."];
+    }
+
     return tg("sendMessage", {
       chat_id: chatId,
       text: [`<b>${title}</b>`, "", `<b>${esc(item.home)} - ${esc(item.away)}</b>`, "", ...lines].join("\n"),
@@ -342,7 +364,10 @@ export function createTelegramUi({
           { text: UI_LABELS.sources, callback_data: `sources:${item.id}` },
           { text: "Sanity", callback_data: `sanity:${item.id}` }
         ],
-        [{ text: "Shadow", callback_data: `shadow:${item.id}` }],
+        [
+          { text: "Shadow", callback_data: `shadow:${item.id}` },
+          { text: "🧠 Context", callback_data: `context:${item.id}` }
+        ],
         [{ text: "Dashboard", callback_data: "dashboard" }]
       ])
     });
@@ -470,6 +495,7 @@ export function createTelegramUi({
     if (query.data.startsWith("sources:")) return showDiagnostics(chatId, query.data.split(":")[1], "sources");
     if (query.data.startsWith("sanity:")) return showDiagnostics(chatId, query.data.split(":")[1], "sanity");
     if (query.data.startsWith("shadow:")) return showDiagnostics(chatId, query.data.split(":")[1], "shadow");
+    if (query.data.startsWith("context:")) return showDiagnostics(chatId, query.data.split(":")[1], "context");
   }
 
   async function handleMessage(message) {

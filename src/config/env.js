@@ -6,6 +6,7 @@ import {
   DEFAULT_REQUEST_TIMEOUT_SECONDS
 } from "./constants.js";
 import { resolveRuntimeRoot } from "../storage/runtime.js";
+import { contextConfigFromEnv } from "../context/config.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -70,6 +71,7 @@ export function loadConfig() {
     ),
     horizonHours: Math.max(1, numberFromEnv("HORIZON_HOURS", DEFAULT_HORIZON_HOURS)),
     logDeniedAccess: (process.env.LOG_DENIED_ACCESS || "true").toLowerCase() === "true",
+    context: contextConfigFromEnv(process.env),
     allowedChatIds: new Set(
       allowedChatIdsRaw
         .split(",")
