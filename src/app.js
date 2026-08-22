@@ -505,11 +505,12 @@ export async function main() {
       const updates = await tg("getUpdates", {
         offset,
         timeout: 30,
-        allowed_updates: ["message", "callback_query"]
+        allowed_updates: ["message", "callback_query", "channel_post", "edited_channel_post"]
       });
 
       for (const update of updates) {
         offset = update.update_id + 1;
+        if (update.channel_post || update.edited_channel_post) contextEngine.ingestTelegramUpdate(update);
         if (update.message) await ui.handleMessage(update.message);
         if (update.callback_query) await ui.handleCallback(update.callback_query);
       }

@@ -85,18 +85,29 @@ FootBoom может отвечать Cloudflare challenge. Тогда прова
 - `LUXEBET ANALYTICS ⚽️🏒` — `MULTISPORT`;
 - `Dychkovsky 🎾` — `TENNIS`.
 
-Имена не используются для угадывания Telegram username или channel ID. Пока владелец не передаст
-точные идентификаторы, у каждой записи остаются `channelId: null`, `username: null`,
-`reliability: null` и `reliabilityStatus: UNRATED`; провайдер возвращает
-`IDENTIFIERS_REQUIRED` и не выполняет сетевой доступ.
+Подтверждённые владельцем публичные связи активированы без угадывания:
 
-Адаптер сохраняет исходные `messageId` и timestamp, классифицирует спорт и тип поста, а для ставок
+- `Метод Фидча. Курилка.` → `@MethodFidch`;
+- `LUXEBET ANALYTICS ⚽️🏒` → `@luxebetanalyt`.
+
+`@jagsunci17` и шесть переданных внутренних ID хранятся в очереди разрешения отдельно от
+source registry со статусом `UNRESOLVED`: они не связываются с отображаемыми именами без точного
+совпадения title/username/ID. Resolver объединяет username и channel ID одного источника и не
+создаёт дубликат. Недоступный или приватный чат остаётся неактивным; ограничения Telegram не
+обходятся. Надёжность всех Telegram-источников остаётся `null / UNRATED`.
+
+Bot API принимает новые `channel_post` и `edited_channel_post` только из доступных боту каналов и
+сохраняет их append-only в runtime-файле `data/context/telegram-posts.jsonl`. Произвольную историю
+Bot API читать не умеет. Адаптер сохраняет исходные `messageId`, `publishedAt`, `editedAt`,
+`channelId`, `username` и title, классифицирует спорт и тип поста, а для ставок
 извлекает match, market, selection, odds, bookmaker, author и reasoning. В FVM передаются только
-посты, классифицированные как `FOOTBALL`. Теннисные записи сохраняются для будущей TVM-интеграции,
+посты, классифицированные как `FOOTBALL`; `TENNIS`, `HOCKEY`, `OTHER` и `UNKNOWN` не влияют на FVM.
+Теннисные записи сохраняются для будущей TVM-интеграции,
 но не попадают в football Context Score. Multisport-посты классифицируются по содержанию каждого
 сообщения.
 
 Все Telegram-события имеют нулевую начальную надёжность и остаются shadow data. Для каждого канала
-подготовлена независимая статистика `picks/wins/losses/pushes/hitRate/roi/avgOdds/clv/sampleSize`;
+подготовлена независимая статистика `picks/gradedPicks/wins/losses/pushes/hitRate/roi/avgOdds/clv/sampleSize`;
 она не заполняется заявлениями самого канала и в будущем должна строиться только по независимо
-проверенным результатам.
+проверенным результатам. Пост считается предматчевым только при `publishedAt < kickoff`; время
+редактирования сохраняется отдельно для обнаружения последующих изменений.

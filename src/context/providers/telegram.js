@@ -1,6 +1,6 @@
 import { providerResult, SourceStatus } from "../../providers/providerResult.js";
 import { ContextCategory, ContextSentiment, ContextTarget, EvidenceType, normalizeContextEvent } from "../contextTypes.js";
-import { TelegramSport, telegramSourcesMissingIdentifiers } from "../telegramRegistry.js";
+import { matchTelegramMetadata, TelegramSport, telegramSourcesMissingIdentifiers } from "../telegramRegistry.js";
 
 export const TelegramPostType = Object.freeze({
   FACT: "FACT", QUOTE: "QUOTE", REPORT: "REPORT", RUMOUR: "RUMOUR",
@@ -8,13 +8,16 @@ export const TelegramPostType = Object.freeze({
   LINE_MOVEMENT_COMMENT: "LINE_MOVEMENT_COMMENT", MATCH_ANALYSIS: "MATCH_ANALYSIS"
 });
 
-function detectSport(text, sourceSport = TelegramSport.UNKNOWN) {
+export function detectTelegramSport(text, sourceSport = TelegramSport.UNKNOWN) {
   const value = String(text || "");
   const football = /\b(?:football|soccer|goal|premier league|champions league|serie a|la liga|bundesliga)\b|футбол|лига чемпионов|гол\b/iu.test(value);
   const tennis = /\b(?:tennis|atp|wta|grand slam|break point|tiebreak)\b|теннис|тай-?брейк|сет\b/iu.test(value);
+  const hockey = /\b(?:hockey|nhl|khl|puck)\b|хоккей|нхл|кхл|шайб/iu.test(value);
+  const detected = [football && TelegramSport.FOOTBALL, tennis && TelegramSport.TENNIS, hockey && TelegramSport.HOCKEY].filter(Boolean);
+  if (detected.length > 1) return TelegramSport.MULTISPORT;
   if (football && !tennis) return TelegramSport.FOOTBALL;
   if (tennis && !football) return TelegramSport.TENNIS;
-  if (football && tennis) return TelegramSport.MULTISPORT;
+  if (hockey) return TelegramSport.HOCKEY;
   return sourceSport === TelegramSport.MULTISPORT ? TelegramSport.UNKNOWN : sourceSport;
 }
 
@@ -42,22 +45,24 @@ export function extractTelegramPick(post, source) {
   const bookmaker = text.match(/(?:bookmaker|букмекер)\s*[:=-]\s*([^,;\n]+)/iu)?.[1]?.trim() || null;
   const reasoning = text.match(/(?:reason|reasoning|обоснование|почему)\s*[:=-]\s*([^\n]+)/iu)?.[1]?.trim() || null;
   return {
-    match: teams.match, sport: detectSport(text, source.sport), market, selection, odds, bookmaker,
+    match: teams.match, sport: detectTelegramSport(text, source.sport), market, selection, odds, bookmaker,
     publishedAt: post.publishedAt || post.timestamp || null, author: post.author || null,
-    reasoning, sourceChannel: source.channelName
+    messageId: post.messageId ?? null, reasoning, source: source.id, sourceChannel: source.channelName
   };
 }
 
 export function normalizeTelegramPost(post, source) {
   const type = Object.values(TelegramPostType).includes(post.telegramPostType)
     ? post.telegramPostType : postType(post.text || "");
-  const sport = detectSport(post.text, source.sport);
+  const sport = detectTelegramSport(post.text, source.sport);
   const teams = extractMatch(post.text || "");
   return {
     platform: "TELEGRAM", sourceId: source.id, sourceChannel: source.channelName,
     messageId: post.messageId ?? null,
     originalPublishedAt: post.publishedAt || post.timestamp || null,
     publishedAt: post.publishedAt || post.timestamp || null,
+    editedAt: post.editedAt || null, channelId: post.channelId ?? source.channelId,
+    username: post.username || source.username, sourceTitle: post.sourceTitle || source.channelName,
     author: post.author || null, text: String(post.text || ""), sport,
     telegramPostType: type, ...teams,
     pick: type === TelegramPostType.BETTING_PICK ? extractTelegramPick(post, source) : null
@@ -66,9 +71,13 @@ export function normalizeTelegramPost(post, source) {
 
 export function telegramPostsToFvmEvents(posts = [], sources = []) {
   const byId = new Map(sources.map(source => [source.id, source]));
+  const seen = new Set();
   return posts.flatMap(post => {
-    const source = byId.get(post.sourceId);
+    const source = byId.get(post.sourceId) || matchTelegramMetadata(post, sources);
     if (!source || !source.enabled) return [];
+    const identity = `${post.channelId ?? source.channelId ?? source.id}:${post.messageId ?? ""}`;
+    if (post.messageId != null && seen.has(identity)) return [];
+    if (post.messageId != null) seen.add(identity);
     const normalized = normalizeTelegramPost(post, source);
     if (normalized.sport !== TelegramSport.FOOTBALL) return [];
     const evidenceType = Object.values(EvidenceType).includes(normalized.telegramPostType)
@@ -87,10 +96,18 @@ export function telegramPostsToFvmEvents(posts = [], sources = []) {
         sourceUrl: null, title: normalized.telegramPostType,
         publishedAt: normalized.publishedAt, snippet: normalized.text.slice(0, 260),
         speaker: normalized.author, extractionMethod: "TELEGRAM_POST_ADAPTER",
-        messageId: normalized.messageId, originalPublishedAt: normalized.originalPublishedAt
+        messageId: normalized.messageId, originalPublishedAt: normalized.originalPublishedAt,
+        editedAt: normalized.editedAt, channelId: normalized.channelId, username: normalized.username,
+        sourceTitle: normalized.sourceTitle
       }
     })];
   });
+}
+
+export function isTelegramPostPreKickoff(post, fixture) {
+  const published = new Date(post?.publishedAt || post?.timestamp).getTime();
+  const kickoff = new Date(fixture?.utcDate || fixture?.kickoff).getTime();
+  return Number.isFinite(published) && Number.isFinite(kickoff) && published < kickoff;
 }
 
 export async function fetchTelegramContext({ sources = [], posts = [] } = {}) {
