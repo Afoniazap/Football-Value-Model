@@ -12,6 +12,12 @@ export function esc(value = "") {
     .replaceAll(">", "&gt;");
 }
 
+export function providerHealthLabel(health) {
+  if (!health) return "N/A (NOT_REPORTED)";
+  const reason = health.meta?.reason || health.error?.code || null;
+  return reason ? `${health.status} (${reason})` : health.status;
+}
+
 function keyboard(rows) {
   return { inline_keyboard: rows };
 }
@@ -132,7 +138,7 @@ export function createTelegramUi({
       "Sources:",
       `FD <b>${esc(state.sourceHealth?.["football-data.fixtures"]?.status || "N/A")}</b>`,
       `Odds Primary <b>${esc(Object.entries(state.sourceHealth || {}).find(([source]) => source.startsWith("odds."))?.[1]?.status || "N/A")}</b>`,
-      `Odds Secondary <b>${esc(state.sourceHealth?.["odds-api-io"]?.status || state.sourceHealth?.["odds.secondary"]?.status || "N/A")}</b>`,
+      `Odds Secondary <b>odds-api.io ${esc(providerHealthLabel(state.sourceHealth?.["odds-api-io"]))}; API-Football odds ${esc(providerHealthLabel(state.sourceHealth?.["odds.secondary"]))}</b>`,
       `API-Football <b>${esc(state.sourceHealth?.["api-football"]?.status || "N/A")}</b>`,
       `xG <b>${esc(state.sourceHealth?.xg?.status || "N/A")}</b>`,
       "",

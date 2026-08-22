@@ -388,6 +388,19 @@ async function testPrimaryQuotaFallsBackToOddsApiIo() {
   assert.equal(result.meta.oddsApiIoMatchedFixtures, 1);
 }
 
+async function testSecondaryNaHasExactReason() {
+  const tmp = root();
+  const result = await oddsProviderSecondary({
+    request: async () => ({ response: [] }),
+    apiFootballKey: "key",
+    fixtures: [{ ...fixture(), competitionCode: "CLI" }],
+    root: tmp,
+    now: new Date("2026-08-20T10:05:00Z")
+  });
+  assert.equal(result.status, "N/A");
+  assert.equal(result.meta.reason, "NO_SUPPORTED_FIXTURES");
+}
+
 async function testPrimaryQuotaBackoffSharedAcrossCompetitions() {
   const tmp = root();
   const calls = { primary: 0, secondary: 0, oddsApiIo: 0 };
@@ -540,6 +553,7 @@ await testOddsApiIoInvalidBookmakerIsUnavailable();
 await testOddsApiIoBookmakerSelectionMismatchIsUnavailable();
 await testPrimaryCoverageSkipsFallbackProviders();
 await testPrimaryQuotaFallsBackToOddsApiIo();
+await testSecondaryNaHasExactReason();
 await testPrimaryQuotaBackoffSharedAcrossCompetitions();
 await testOddsApiIoQuotaFallsBackToApiFootball();
 await testOddsApiIoProvenanceAndCacheRevision();

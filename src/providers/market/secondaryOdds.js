@@ -239,6 +239,15 @@ export async function oddsProviderSecondary({
       : events.length
         ? SourceStatus.OK
         : SourceStatus.NA;
+  const reason = errors[0]?.reason || (
+    !fixtures.length
+      ? "NOT_NEEDED_ALREADY_COVERED"
+      : !groups.length
+        ? "NO_SUPPORTED_FIXTURES"
+        : !events.length
+          ? "NO_ODDS"
+          : null
+  );
 
   const result = providerResult({
     status,
@@ -247,7 +256,7 @@ export async function oddsProviderSecondary({
     error: errors.length ? { code: errors[0]?.reason || status, message: `${errors.length} API-Football odds request(s) failed` } : null,
     meta: {
       provider: API_FOOTBALL_SOURCE,
-      reason: errors[0]?.reason || null,
+      reason,
       requestsUsed,
       cacheHits,
       requestGroups: groups.length,

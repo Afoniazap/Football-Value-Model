@@ -229,6 +229,11 @@ export async function aggregateMarket({
     diagnostics[fixture.id] = {
       source: "NONE",
       reason: supportClass === "UNSUPPORTED" ? "MARKET_UNSUPPORTED_COMPETITION" : "MARKET_NO_QUOTES",
+      providerReasons: {
+        primary: primary.meta?.reason || primary.error?.code || null,
+        oddsApiIo: oddsApiIo.meta?.reason || oddsApiIo.error?.code || null,
+        apiFootballOdds: secondary.meta?.reason || secondary.error?.code || null
+      },
       support: supportClass,
       primaryStatus: primary.status,
       oddsApiIoStatus: oddsApiIo.status,

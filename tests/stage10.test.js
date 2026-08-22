@@ -16,6 +16,7 @@ import { aggregateMarket } from "../src/providers/market/aggregateMarket.js";
 import { createMarketCache } from "../src/providers/market/marketCache.js";
 import { UI_LABELS } from "../src/ui/labels.js";
 import { formatKyivDateLabel } from "../src/ui/time.js";
+import { providerHealthLabel } from "../src/ui/telegram.js";
 
 function root() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "fvm-stage10-"));
@@ -151,6 +152,8 @@ async function testZeroInjuriesAndLineupsNotPublishedAreNotErrors() {
 }
 
 function testUtf8LabelsAndKyivFormatter() {
+  assert.equal(providerHealthLabel({ status: "N/A", meta: { reason: "NO_ODDS" } }), "N/A (NO_ODDS)");
+  assert.equal(providerHealthLabel(null), "N/A (NOT_REPORTED)");
   assert.equal(UI_LABELS.value, "VALUE");
   assert.equal(UI_LABELS.near, "NEAR");
   assert.equal(UI_LABELS.wait, "WAIT");
