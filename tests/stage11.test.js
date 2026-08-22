@@ -110,7 +110,10 @@ async function testEngineShadowAndNonFatalFailure() {
     const engine = createContextEngine({
       runtimeRoot, now: () => now,
       config: { enabled: true, debug: false, footboomTtlMinutes: 60, timeoutSeconds: 5, telegramChannels: [], reliability: { FOOTBOOM: 60 } },
-      providers: { footboom: async () => { throw new Error("provider down"); } }
+      providers: {
+        footboom: async () => { throw new Error("provider down"); },
+        officialSources: async () => ({ providerResults: [], events: [], metrics: {} })
+      }
     });
     const result = await engine.collectFixtures([fixture]);
     assert.equal(result.providerResults[0].status, SourceStatus.ERROR);

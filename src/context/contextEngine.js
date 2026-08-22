@@ -5,9 +5,10 @@ import { dedupeContextEvents } from "./dedupe.js";
 import { matchContextEventToFixture } from "./fixtureMatching.js";
 import { normalizeContextEvent } from "./contextTypes.js";
 import { fetchFootboomForecasts } from "./providers/footboom.js";
-import { fetchInterviewContext } from "./providers/interviews.js";
-import { fetchClubNewsContext } from "./providers/clubNews.js";
 import { fetchTelegramContext } from "./providers/telegram.js";
+import { fetchRegisteredContextSources } from "./providers/officialSources.js";
+import { createSourceRegistry, DEFAULT_CONTEXT_SOURCES } from "./sourceRegistry.js";
+import { createContextHttpClient } from "./requestControl.js";
 
 function emptyAnalysis(enabled, status = "NO_CONTEXT") {
   return {
@@ -42,8 +43,10 @@ export function analyzeContextForFixtures({ fixtures = [], events = [], now = ne
     matched.push({ ...event, fixtureId: String(match.fixture.id), fixtureMatchConfidence: match.confidence, relevance, freshness, contextConfidence, confidence: contextConfidence });
   }
 
+  let uniqueCount = 0;
   for (const fixture of fixtures) {
     const unique = dedupeContextEvents(matched.filter(event => event.fixtureId === String(fixture.id)));
+    uniqueCount += unique.length;
     const aggregate = aggregateContext(unique);
     byFixtureId[fixture.id] = {
       enabled: true, shadowOnly: true, status: unique.length ? "OK" : "NO_CONTEXT",
@@ -52,15 +55,19 @@ export function analyzeContextForFixtures({ fixtures = [], events = [], now = ne
       contradictions: aggregate.contradictions, ...aggregate
     };
   }
-  return { byFixtureId, unmatched };
+  return { byFixtureId, unmatched, metrics: { itemsMatched: matched.length, duplicatesRemoved: Math.max(0, matched.length - uniqueCount) } };
 }
 
 export function createContextEngine({ config, runtimeRoot, providers = {}, now = () => new Date() }) {
   const cache = createContextCache(runtimeRoot, { debug: config.debug });
+  const registry = createSourceRegistry({
+    sources: config.sourceRegistry || DEFAULT_CONTEXT_SOURCES,
+    enabledIds: config.enabledSourceIds,
+    reliabilityByType: config.reliability
+  });
+  const httpClient = providers.httpClient || createContextHttpClient({ timeoutSeconds: config.timeoutSeconds, minHostIntervalMs: config.minHostIntervalMs });
   const implementations = {
     footboom: providers.footboom || fetchFootboomForecasts,
-    interviews: providers.interviews || fetchInterviewContext,
-    clubNews: providers.clubNews || fetchClubNewsContext,
     telegram: providers.telegram || fetchTelegramContext
   };
 
@@ -86,16 +93,25 @@ export function createContextEngine({ config, runtimeRoot, providers = {}, now =
       : await safeProvider("context.footboom", () => implementations.footboom({ timeoutSeconds: config.timeoutSeconds, reliability: config.reliability.FOOTBOOM, now: now() }));
     if (!cachedFootboom && footboom.status === SourceStatus.OK) cache.set("footboom", footboom.data, now());
 
+    const registered = await safeProvider("context.sources", () => (providers.officialSources || fetchRegisteredContextSources)({
+      registry, fixtures, cache, httpClient, now: now(), sourceTtlMinutes: config.sourceTtlMinutes,
+      articleTtlMinutes: config.articleTtlMinutes, windowHours: config.sourceWindowHours,
+      maxArticlesPerSource: config.maxArticlesPerSource, concurrency: config.sourceConcurrency
+    }));
+    const registeredResults = registered?.providerResults || (registered?.source ? [registered] : []);
     const results = await Promise.all([
       Promise.resolve(footboom),
-      safeProvider("context.interviews", () => implementations.interviews({ sources: [] })),
-      safeProvider("context.club-news", () => implementations.clubNews({ sources: [] })),
+      ...registeredResults,
       safeProvider("context.telegram", () => implementations.telegram({ channels: config.telegramChannels }))
     ]);
     const events = results.flatMap(result => Array.isArray(result?.data) ? result.data : []);
     const analysis = analyzeContextForFixtures({ fixtures, events, now: now() });
-    return { ...analysis, providerResults: results };
+    const metrics = { ...(registered?.metrics || {}), ...analysis.metrics, itemsDiscovered: events.length };
+    if (config.debug) {
+      console.debug(`[context] Official: ${metrics.official?.ok || 0} OK / ${metrics.official?.failed || 0} failed | Media: ${metrics.media?.ok || 0} OK / ${metrics.media?.failed || 0} failed | Items discovered: ${metrics.itemsDiscovered} | Items matched: ${metrics.itemsMatched} | Duplicates removed: ${metrics.duplicatesRemoved}`);
+    }
+    return { ...analysis, metrics, providerResults: results };
   }
 
-  return { collectFixtures, cacheFile: cache.file };
+  return { collectFixtures, cacheFile: cache.file, registry };
 }

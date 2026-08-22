@@ -1,11 +1,14 @@
 const aliases = new Map([
   ["olympique marseille", "marseille"], ["olympique de marseille", "marseille"],
-  ["rc strasbourg alsace", "strasbourg"], ["strasbourg alsace", "strasbourg"]
+  ["rc strasbourg alsace", "strasbourg"], ["strasbourg alsace", "strasbourg"],
+  ["manchester united", "man utd"], ["man united", "man utd"],
+  ["internazionale", "inter"], ["internazionale milano", "inter"], ["inter milan", "inter"],
+  ["paris saint germain", "psg"], ["paris st germain", "psg"]
 ]);
 
 export function normalizeClubName(value) {
   const normalized = String(value || "").toLowerCase().normalize("NFKD")
-    .replace(/\b(fc|cf|afc|sc|club|football|calcio)\b/g, " ")
+    .replace(/\b(fc|cf|afc|ac|sc|club|football|calcio)\b/g, " ")
     .replace(/[^a-z0-9а-яё]+/giu, " ").replace(/\s+/g, " ").trim();
   return aliases.get(normalized) || normalized;
 }

@@ -49,8 +49,14 @@ async function defaultFetchPage(url, { timeoutSeconds, userAgent }) {
   const timeout = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
   try {
     const response = await fetch(url, { headers: { "User-Agent": userAgent, Accept: "text/html" }, signal: controller.signal });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.text();
+    const body = await response.text();
+    if (!response.ok) {
+      const error = new Error(`HTTP ${response.status}`);
+      error.status = response.status;
+      error.body = body;
+      throw error;
+    }
+    return body;
   } finally { clearTimeout(timeout); }
 }
 
@@ -73,6 +79,9 @@ export async function fetchFootboomForecasts({ fetchPage = defaultFetchPage, tim
     const events = parseFootboomForecasts(html, { reliability, now });
     return providerResult({ status: events.length ? SourceStatus.OK : SourceStatus.NA, source: SOURCE, data: events, meta: { parsed: events.length, reason: events.length ? null : "NO_SUPPORTED_ARTICLES" } });
   } catch (error) {
+    if ([401, 403].includes(error.status) || /challenge-error-text|cf-chl-/i.test(error.body || "")) {
+      return providerResult({ status: SourceStatus.NA, source: SOURCE, data: [], meta: { reason: "CLOUDFLARE_CHALLENGE", nonFatal: true } });
+    }
     return providerResult({ status: SourceStatus.ERROR, source: SOURCE, data: [], error: { code: error.name || "ERROR", message: error.message }, meta: { nonFatal: true } });
   }
 }

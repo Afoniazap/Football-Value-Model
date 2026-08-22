@@ -48,7 +48,9 @@ export function normalizeContextEvent(input = {}) {
     competition: String(input.competition || ""),
     homeTeam: String(input.homeTeam || ""),
     awayTeam: String(input.awayTeam || ""),
+    fixtureDate: input.fixtureDate || null,
     publishedAt: input.publishedAt || null,
+    author: input.author || null,
     url: String(input.url || ""),
     title: String(input.title || ""),
     text: String(input.text || ""),
@@ -64,6 +66,7 @@ export function normalizeContextEvent(input = {}) {
     fixtureMatchConfidence: bounded(input.fixtureMatchConfidence),
     tags: [...new Set((input.tags || []).map(tag => String(tag).trim().toLowerCase()).filter(Boolean))],
     extracted: { ...extractedDefaults, ...(input.extracted || {}) },
+    evidence: input.evidence ? { ...input.evidence } : null,
     contradiction: Boolean(input.contradiction),
     independentSourcesCount: Math.max(1, Number(input.independentSourcesCount) || 1)
   };

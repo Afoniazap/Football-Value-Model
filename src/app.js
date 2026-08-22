@@ -21,6 +21,7 @@ import { buildRefreshTelemetry, createRefreshTelemetry } from "./diagnostics/ref
 import { providerErrors } from "./diagnostics/operationalErrors.js";
 import { readinessLines, readinessState, startupReadiness } from "./diagnostics/readiness.js";
 import { createContextEngine } from "./context/contextEngine.js";
+import { createContextDataset } from "./context/contextDataset.js";
 
 function createInitialState() {
   return {
@@ -114,6 +115,7 @@ export async function main() {
   const marketCache = createMarketCache(config.root, { runtimeRoot: config.runtimeRoot });
   const refreshTelemetry = createRefreshTelemetry(config.root, { runtimeRoot: config.runtimeRoot });
   const contextEngine = createContextEngine({ config: config.context, runtimeRoot: config.runtimeRoot });
+  const contextDataset = createContextDataset(config.runtimeRoot);
   const stateRef = { current: cacheStore.loadCache() };
   const bootReadiness = startupReadiness(config);
 
@@ -320,7 +322,8 @@ export async function main() {
         rejected: processed.filter(x => x.category === "rejected"),
         updatedAt: analysedAt.toISOString(),
         errors: providerErrorMessages(providerResults),
-        sourceHealth: createSourceHealth(providerResults)
+        sourceHealth: createSourceHealth(providerResults),
+        contextTelemetry: contextResult.metrics || null
       };
 
       stageStarted = Date.now();
@@ -352,6 +355,13 @@ export async function main() {
         ),
         contextAnalysis: processed.map(item => ({ fixtureId: item.id, ...item.contextAnalysis })),
         modelVersion: MODEL_VERSION
+      });
+      contextDataset.append({
+        analysisId,
+        analysedAt: analysedAt.toISOString(),
+        fixtures: processed,
+        metrics: contextResult.metrics || null,
+        unmatched: contextResult.unmatched || []
       });
       const signalEventsBefore = historyStore.readSignalEvents().length;
       historyStore.appendSignals({
