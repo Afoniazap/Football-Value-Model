@@ -48,7 +48,7 @@ function testSingleConsumerAndCommands() {
   assert.equal(PROJECT_ENV_FILE, path.join(process.cwd(), ".env"));
 }
 
-async function testContextDisabledOnAuthFailure() {
+async function testPublicContextIndependentOfBotAuth() {
   const runtimeRoot = fs.mkdtempSync(path.join(process.cwd(), ".telegram-auth-test-"));
   try {
     const engine = createContextEngine({
@@ -61,14 +61,16 @@ async function testContextDisabledOnAuthFailure() {
       },
       providers: {
         footboom: async () => providerResult({ status: SourceStatus.NA, source: "context.footboom", data: [] }),
-        officialSources: async () => ({ providerResults: [], metrics: {} })
+        officialSources: async () => ({ providerResults: [], metrics: {} }),
+        telegramPublic: async () => ({ providerResults: [], posts: [] })
       }
     });
     engine.setTelegramAuthStatus(TelegramAuthStatus.UNAUTHORIZED);
     const result = await engine.collectFixtures([]);
     const telegram = result.providerResults.find(item => item.source === "context.telegram");
     assert.equal(telegram.status, SourceStatus.NA);
-    assert.equal(telegram.meta.reason, "AUTH_ERROR");
+    assert.equal(telegram.meta.reason, "IDENTIFIERS_REQUIRED");
+    assert.equal(telegram.meta.shadowOnly, true);
   } finally {
     fs.rmSync(runtimeRoot, { recursive: true, force: true });
   }
@@ -77,5 +79,5 @@ async function testContextDisabledOnAuthFailure() {
 await testBotValidation();
 testChannelRouting();
 testSingleConsumerAndCommands();
-await testContextDisabledOnAuthFailure();
+await testPublicContextIndependentOfBotAuth();
 console.log("Stage 14 tests OK: bot auth, single polling consumer, routing, edits and existing commands.");

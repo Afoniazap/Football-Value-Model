@@ -12,6 +12,7 @@ import { createContextHttpClient } from "./requestControl.js";
 import { createTelegramSourceRegistry, OWNER_SUPPLIED_TELEGRAM_IDENTIFIERS } from "./telegramRegistry.js";
 import { createTelegramInbox } from "./telegramInbox.js";
 import { resolveTelegramIdentifiers } from "./telegramResolver.js";
+import { fetchPublicTelegramSources } from "./providers/telegramPublic.js";
 
 function emptyAnalysis(enabled, status = "NO_CONTEXT") {
   return {
@@ -76,7 +77,8 @@ export function createContextEngine({ config, runtimeRoot, providers = {}, now =
   const sourceRegistry = combineContextSourceRegistries(registry, telegramRegistry);
   const implementations = {
     footboom: providers.footboom || fetchFootboomForecasts,
-    telegram: providers.telegram || fetchTelegramContext
+    telegram: providers.telegram || fetchTelegramContext,
+    telegramPublic: providers.telegramPublic || fetchPublicTelegramSources
   };
 
   async function safeProvider(source, run) {
@@ -107,12 +109,21 @@ export function createContextEngine({ config, runtimeRoot, providers = {}, now =
       maxArticlesPerSource: config.maxArticlesPerSource, concurrency: config.sourceConcurrency
     }));
     const registeredResults = registered?.providerResults || (registered?.source ? [registered] : []);
+    const telegramPublic = await safeProvider("context.telegram-public", () => implementations.telegramPublic({
+      sources: telegramRegistry, httpClient, cache, now: now(),
+      ttlMinutes: config.sourceTtlMinutes, concurrency: config.sourceConcurrency
+    }));
+    const publicPosts = telegramPublic?.posts || [];
+    telegramInbox.appendPosts(publicPosts);
+    const telegramPublicResults = telegramPublic?.providerResults || (telegramPublic?.source ? [telegramPublic] : []);
     const results = await Promise.all([
       Promise.resolve(footboom),
       ...registeredResults,
-      telegramAuthStatus === "VALID"
-        ? safeProvider("context.telegram", () => implementations.telegram({ sources: telegramRegistry, posts: providers.telegramPosts || telegramInbox.readRecent() }))
-        : providerResult({ status: SourceStatus.NA, source: "context.telegram", data: [], meta: { reason: telegramAuthStatus === "UNAUTHORIZED" ? "AUTH_ERROR" : "DISABLED", shadowOnly: true } })
+      ...telegramPublicResults,
+      safeProvider("context.telegram", () => implementations.telegram({
+        sources: telegramRegistry,
+        posts: [...publicPosts, ...(providers.telegramPosts || telegramInbox.readRecent())]
+      }))
     ]);
     const events = results.flatMap(result => Array.isArray(result?.data) ? result.data : []);
     const analysis = analyzeContextForFixtures({ fixtures, events, now: now() });

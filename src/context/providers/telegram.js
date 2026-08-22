@@ -93,7 +93,7 @@ export function telegramPostsToFvmEvents(posts = [], sources = []) {
       tags: ["telegram", normalized.telegramPostType.toLowerCase()],
       extracted: { telegramPostType: normalized.telegramPostType, bettingPick: normalized.pick, sport: normalized.sport },
       evidence: {
-        sourceUrl: null, title: normalized.telegramPostType,
+        sourceUrl: post.sourceUrl || null, title: normalized.telegramPostType,
         publishedAt: normalized.publishedAt, snippet: normalized.text.slice(0, 260),
         speaker: normalized.author, extractionMethod: "TELEGRAM_POST_ADAPTER",
         messageId: normalized.messageId, originalPublishedAt: normalized.originalPublishedAt,

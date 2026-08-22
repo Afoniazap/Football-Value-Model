@@ -50,5 +50,22 @@ export function createTelegramInbox(runtimeRoot) {
     return [...latest.values()].slice(-limit);
   }
 
-  return { file, appendUpdate, readRecent };
+  function appendPosts(posts = []) {
+    const existing = new Map(readRecent({ limit: 2_000 }).map(post => [`${post.channelId || post.username}:${post.messageId}`, post]));
+    const added = [];
+    for (const post of posts) {
+      if (!post || post.messageId == null || !post.publishedAt) continue;
+      const key = `${post.channelId || post.username}:${post.messageId}`;
+      const previous = existing.get(key);
+      if (previous && previous.text === post.text && previous.editedAt === post.editedAt) continue;
+      added.push(post); existing.set(key, post);
+    }
+    if (added.length) {
+      fs.mkdirSync(directory, { recursive: true });
+      fs.appendFileSync(file, `${added.map(post => JSON.stringify(post)).join("\n")}\n`, "utf8");
+    }
+    return added;
+  }
+
+  return { file, appendUpdate, appendPosts, readRecent };
 }

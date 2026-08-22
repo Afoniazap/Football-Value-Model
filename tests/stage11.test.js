@@ -112,7 +112,8 @@ async function testEngineShadowAndNonFatalFailure() {
       config: { enabled: true, debug: false, footboomTtlMinutes: 60, timeoutSeconds: 5, telegramChannels: [], reliability: { FOOTBOOM: 60 } },
       providers: {
         footboom: async () => { throw new Error("provider down"); },
-        officialSources: async () => ({ providerResults: [], events: [], metrics: {} })
+        officialSources: async () => ({ providerResults: [], events: [], metrics: {} }),
+        telegramPublic: async () => ({ providerResults: [], posts: [] })
       }
     });
     const result = await engine.collectFixtures([fixture]);
