@@ -22,11 +22,12 @@ export function parseFootboomForecasts(html, { reliability = 60, now = new Date(
     const teams = (attr(attrs, "match") || title).split(/\s+(?:vs\.?|v|[-–—])\s+/i);
     const url = body.match(/<a[^>]+href=["']([^"']+)["']/i)?.[1] || "";
     const publishedAt = attr(attrs, "published-at") || body.match(/<time[^>]+datetime=["']([^"']+)/i)?.[1] || null;
+    const author = attr(attrs, "author") || null;
     const oddsRaw = attr(attrs, "odds") || text(body.match(/(?:odds|коэффициент)[^0-9]*([0-9]+[.,][0-9]+)/i)?.[1]);
     const event = normalizeContextEvent({
       source: "footboom", sourceType: ContextCategory.EXPERT_FORECAST, evidenceType: EvidenceType.EXPERT_OPINION,
       homeTeam: teams[0] || attr(attrs, "home"), awayTeam: teams[1] || attr(attrs, "away"),
-      publishedAt, url, title, text: text(body), category: ContextCategory.EXPERT_FORECAST,
+      publishedAt, author, url, title, text: text(body), category: ContextCategory.EXPERT_FORECAST,
       sentiment: ContextSentiment.NEUTRAL, target: ContextTarget.MATCH,
       sourceReliability: reliability, relevance: 70, freshness: publishedAt ? 100 : 0,
       contextConfidence: publishedAt ? 55 : 40,
@@ -35,9 +36,10 @@ export function parseFootboomForecasts(html, { reliability = 60, now = new Date(
         market: attr(attrs, "market") || null,
         selection: attr(attrs, "selection") || null,
         odds: Number(String(oddsRaw).replace(",", ".")) || null,
-        author: attr(attrs, "author") || null,
+        author,
         reasoning: text(body.match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1]) || null
-      }
+      },
+      evidence: { sourceUrl: url, title, publishedAt, author, extractionMethod: "FOOTBOOM_FORECAST_PAGE" }
     });
     if (publishedAt && new Date(publishedAt) > now) event.freshness = 0;
     return event;

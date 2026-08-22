@@ -57,10 +57,28 @@ function testParsingQuoteSignalsAndEvidence() {
   assert.equal(event.evidenceType, "QUOTE");
   assert.equal(event.author, "Official Club Media");
   assert.equal(event.category, "COACH_INTERVIEW");
+  assert.equal(event.eventType, "COACH_INTERVIEW");
+  assert.equal(event.informationLevel, "HIGH");
   assert.equal(event.evidence.sourceUrl, article.url);
   assert.equal(event.evidence.speaker, "Marco Testa");
   assert.equal(event.extracted.coachQuote, quote.quoteText);
   assert.equal(event.extracted.tacticalHint, true);
+}
+
+function testGenericMotivationIsLowInformation() {
+  const event = classifyArticle({
+    article: {
+      title: "Coach speaks before Monza",
+      publishedAt: "2026-08-21T12:00:00Z",
+      author: "Official Club Media",
+      url: "https://official.test/generic",
+      text: 'Marco Testa said "We will give everything and fight until the end."'
+    },
+    source, fixture, target: "HOME"
+  });
+  assert.equal(event.eventType, "COACH_INTERVIEW");
+  assert.equal(event.informationLevel, "LOW_INFORMATION");
+  assert.equal(event.relevance, 20);
 }
 
 function testAliases() {
@@ -123,6 +141,7 @@ async function testProviderCacheTemporalWindowAndFailure() {
 testSourceRegistry();
 testDiscoveryAndDuplicateLinks();
 testParsingQuoteSignalsAndEvidence();
+testGenericMotivationIsLowInformation();
 testAliases();
 await testRateLimitAndConcurrency();
 await testProviderCacheTemporalWindowAndFailure();

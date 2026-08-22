@@ -16,6 +16,26 @@ export const ContextCategory = Object.freeze({
   OTHER: "OTHER"
 });
 
+export const ContextEventType = Object.freeze({
+  COACH_INTERVIEW: "COACH_INTERVIEW",
+  PLAYER_INTERVIEW: "PLAYER_INTERVIEW",
+  PRESIDENT_VISIT: "PRESIDENT_VISIT",
+  BONUS_PROMISE: "BONUS_PROMISE",
+  PUBLIC_PRESSURE: "PUBLIC_PRESSURE",
+  MANAGEMENT_CONFLICT: "MANAGEMENT_CONFLICT",
+  ROTATION_EXPECTED: "ROTATION_EXPECTED",
+  REST_PRIORITY: "REST_PRIORITY",
+  TRAVEL_ISSUE: "TRAVEL_ISSUE",
+  SQUAD_NEWS: "SQUAD_NEWS",
+  MOTIVATION_HIGH: "MOTIVATION_HIGH",
+  MOTIVATION_LOW: "MOTIVATION_LOW",
+  OTHER: "OTHER"
+});
+
+export const ContextInformationLevel = Object.freeze({
+  HIGH: "HIGH", STANDARD: "STANDARD", LOW_INFORMATION: "LOW_INFORMATION"
+});
+
 export const ContextSentiment = Object.freeze({ POSITIVE: "POSITIVE", NEGATIVE: "NEGATIVE", NEUTRAL: "NEUTRAL" });
 export const ContextTarget = Object.freeze({ HOME: "HOME", AWAY: "AWAY", MATCH: "MATCH", UNKNOWN: "UNKNOWN" });
 export const EvidenceType = Object.freeze({ FACT: "FACT", QUOTE: "QUOTE", REPORT: "REPORT", RUMOUR: "RUMOUR", EXPERT_OPINION: "EXPERT_OPINION" });
@@ -37,6 +57,9 @@ export function normalizeContextEvent(input = {}) {
   const sentiment = Object.values(ContextSentiment).includes(input.sentiment) ? input.sentiment : ContextSentiment.NEUTRAL;
   const target = Object.values(ContextTarget).includes(input.target) ? input.target : ContextTarget.UNKNOWN;
   const evidenceType = Object.values(EvidenceType).includes(input.evidenceType) ? input.evidenceType : EvidenceType.REPORT;
+  const eventType = Object.values(ContextEventType).includes(input.eventType) ? input.eventType : ContextEventType.OTHER;
+  const informationLevel = Object.values(ContextInformationLevel).includes(input.informationLevel)
+    ? input.informationLevel : ContextInformationLevel.STANDARD;
   const reliability = bounded(input.sourceReliability ?? input.reliability);
   const relevance = bounded(input.relevance);
   const freshness = bounded(input.freshness);
@@ -55,6 +78,8 @@ export function normalizeContextEvent(input = {}) {
     title: String(input.title || ""),
     text: String(input.text || ""),
     category,
+    eventType,
+    informationLevel,
     sentiment,
     target,
     sourceReliability: reliability,

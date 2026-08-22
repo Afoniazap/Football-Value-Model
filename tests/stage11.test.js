@@ -84,6 +84,8 @@ function testFootboomParser() {
   assert.equal(parsed[0].extracted.market, "DNB");
   assert.equal(parsed[0].extracted.selection, "Marseille");
   assert.equal(parsed[0].extracted.odds, 1.85);
+  assert.equal(parsed[0].author, parsed[0].extracted.author);
+  assert.equal(parsed[0].evidence.extractionMethod, "FOOTBOOM_FORECAST_PAGE");
 }
 
 async function testProviderTimeoutAndCloudflare() {
