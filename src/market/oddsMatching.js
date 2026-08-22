@@ -1,4 +1,8 @@
+import { normalizeClubName } from "../context/fixtureMatching.js";
+
 function normalize(value) {
+  const shared = normalizeClubName(value);
+  if (shared) return shared.replaceAll(" ", "");
   return String(value || "")
     .toLowerCase()
     .replaceAll(/[^a-z0-9а-яё]/gi, "")

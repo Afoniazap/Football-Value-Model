@@ -3,6 +3,7 @@ import path from "node:path";
 import { providerResult, SourceStatus } from "../providerResult.js";
 import { ODDS_API_IO_LEAGUE_SLUGS } from "../../config/competitions.js";
 import { resolveRuntimeRoot } from "../../storage/runtime.js";
+import { normalizeClubName } from "../../context/fixtureMatching.js";
 
 export const ODDS_API_IO_SOURCE = "ODDS_API_IO";
 
@@ -24,6 +25,8 @@ function cacheFresh(payload, now, cacheMinutes) {
 }
 
 function normalizeName(value) {
+  const shared = normalizeClubName(value);
+  if (shared) return shared.replaceAll(" ", "");
   return String(value || "")
     .toLowerCase()
     .replaceAll(/[^a-z0-9а-яё]/gi, "")

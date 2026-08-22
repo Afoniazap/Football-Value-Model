@@ -7,6 +7,7 @@ import { aggregateMarket } from "../src/providers/market/aggregateMarket.js";
 import { createMarketCache } from "../src/providers/market/marketCache.js";
 import { matchOddsApiIoEvent, oddsProviderOddsApiIo } from "../src/providers/market/oddsApiIo.js";
 import { oddsProviderSecondary } from "../src/providers/market/secondaryOdds.js";
+import { matchOddsEvent } from "../src/market/oddsMatching.js";
 
 function root() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "fvm-stage8a-"));
@@ -191,6 +192,28 @@ function testOddsApiIoEventMatchingRequiresTeamsAndTime() {
   assert.equal(late.event, null);
   assert.equal(late.diagnostic, "MATCH_NOT_FOUND");
   assert.equal(wrongTeam.event, null);
+}
+
+function testOddsApiIoUsesSharedClubAliases() {
+  const interFixture = {
+    ...fixture("inter"),
+    competitionCode: "SA",
+    home: "FC Internazionale Milano",
+    away: "AC Monza",
+    utcDate: "2026-08-22T16:30:00Z"
+  };
+  const event = {
+    id: "inter-1",
+    home: "Inter Milano",
+    away: "AC Monza",
+    date: "2026-08-22T16:30:00Z",
+    league: { slug: "italy-serie-a" }
+  };
+  const match = matchOddsApiIoEvent(interFixture, [event]);
+  assert.equal(match.event.id, "inter-1");
+  assert.equal(match.confidence, 1);
+  const normalized = { home_team: event.home, away_team: event.away, commence_time: event.date, sport_key: "football" };
+  assert.equal(matchOddsEvent({ ...interFixture, sportKey: "football" }, [normalized]).event, normalized);
 }
 
 async function testNoOddsApiIoKeyIsNA() {
@@ -547,6 +570,7 @@ await testSecondaryRawCacheReused();
 await testApiFootballPlanErrorIsUnavailable();
 await testOddsApiIoNormalizationAndBatching();
 testOddsApiIoEventMatchingRequiresTeamsAndTime();
+testOddsApiIoUsesSharedClubAliases();
 await testNoOddsApiIoKeyIsNA();
 await testOddsApiIoRequiresConfiguredBookmakersForOdds();
 await testOddsApiIoInvalidBookmakerIsUnavailable();

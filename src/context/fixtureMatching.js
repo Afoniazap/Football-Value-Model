@@ -2,7 +2,7 @@ const aliases = new Map([
   ["olympique marseille", "marseille"], ["olympique de marseille", "marseille"],
   ["rc strasbourg alsace", "strasbourg"], ["strasbourg alsace", "strasbourg"],
   ["manchester united", "man utd"], ["man united", "man utd"],
-  ["internazionale", "inter"], ["internazionale milano", "inter"], ["inter milan", "inter"],
+  ["internazionale", "inter"], ["internazionale milano", "inter"], ["inter milan", "inter"], ["inter milano", "inter"],
   ["paris saint germain", "psg"], ["paris st germain", "psg"]
 ]);
 
