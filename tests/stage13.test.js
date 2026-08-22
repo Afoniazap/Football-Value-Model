@@ -28,6 +28,8 @@ function testMandatoryRegistryAndOwnerMappings() {
   assert.equal(OWNER_SUPPLIED_TELEGRAM_IDENTIFIERS.length, 9);
   assert.equal(registry.find(source => source.id === "owner-telegram-1").username, "@MethodFidch");
   assert.equal(registry.find(source => source.id === "owner-telegram-5").username, "@luxebetanalyt");
+  assert.equal(String(registry.find(source => source.id === "owner-telegram-1").channelId), "-1001326262387");
+  assert.equal(String(registry.find(source => source.id === "owner-telegram-5").channelId), "-1001462182022");
   assert.equal(telegramSourcesMissingIdentifiers(registry).length, 4);
   assert.ok(registry.every(source => source.reliability === null && source.reliabilityStatus === "UNRATED"));
   assert.ok(registry.every(source => JSON.stringify(source.performance) === JSON.stringify(EMPTY_TELEGRAM_PERFORMANCE)));

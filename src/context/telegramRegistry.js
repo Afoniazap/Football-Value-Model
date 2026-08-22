@@ -20,11 +20,11 @@ export const OWNER_SUPPLIED_TELEGRAM_IDENTIFIERS = Object.freeze([
 ]);
 
 const mandatory = [
-  { id: "owner-telegram-1", channelName: "Метод Фидча. Курилка.", sport: TelegramSport.UNKNOWN, username: "@MethodFidch" },
+  { id: "owner-telegram-1", channelName: "Метод Фидча. Курилка.", sport: TelegramSport.UNKNOWN, username: "@MethodFidch", channelId: "-1001326262387", chatType: "channel", accessibility: "ACCESSIBLE" },
   { id: "owner-telegram-2", channelName: "game. set. press 🎾", sport: TelegramSport.TENNIS },
   { id: "owner-telegram-3", channelName: "Теннис🎾Чатик 💬", sport: TelegramSport.TENNIS },
   { id: "owner-telegram-4", channelName: "Бегущий по линии | Прогноз…", sport: TelegramSport.UNKNOWN },
-  { id: "owner-telegram-5", channelName: "LUXEBET ANALYTICS ⚽️🏒", sport: TelegramSport.MULTISPORT, username: "@luxebetanalyt" },
+  { id: "owner-telegram-5", channelName: "LUXEBET ANALYTICS ⚽️🏒", sport: TelegramSport.MULTISPORT, username: "@luxebetanalyt", channelId: "-1001462182022", chatType: "channel", accessibility: "ACCESSIBLE" },
   { id: "owner-telegram-6", channelName: "Dychkovsky 🎾", sport: TelegramSport.TENNIS }
 ];
 
