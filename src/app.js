@@ -23,6 +23,9 @@ import { readinessLines, readinessState, startupReadiness } from "./diagnostics/
 import { createContextEngine } from "./context/contextEngine.js";
 import { createContextDataset } from "./context/contextDataset.js";
 import { createTelegramClient, validateTelegramBot } from "./telegram/client.js";
+import { createContextHttpClient } from "./context/requestControl.js";
+import { createContextCache } from "./context/contextCache.js";
+import { compareFlashscoreFacts, fetchFlashscoreVerification } from "./providers/flashscore.js";
 
 function createInitialState() {
   return {
@@ -104,6 +107,11 @@ export async function main() {
   const refreshTelemetry = createRefreshTelemetry(config.root, { runtimeRoot: config.runtimeRoot });
   const contextEngine = createContextEngine({ config: config.context, runtimeRoot: config.runtimeRoot });
   const contextDataset = createContextDataset(config.runtimeRoot);
+  const flashscoreHttpClient = createContextHttpClient({
+    timeoutSeconds: config.requestTimeoutSeconds,
+    minHostIntervalMs: config.flashscoreMinHostIntervalMs
+  });
+  const flashscoreCache = createContextCache(config.runtimeRoot);
   const stateRef = { current: cacheStore.loadCache() };
   const bootReadiness = startupReadiness(config);
 
@@ -221,6 +229,22 @@ export async function main() {
       timings.apiFootball = Date.now() - stageStarted;
 
       stageStarted = Date.now();
+      const flashscoreResult = await fetchFlashscoreVerification({
+        fixtures,
+        httpClient: flashscoreHttpClient,
+        cache: flashscoreCache,
+        now: analysedAt,
+        enabled: config.flashscoreEnabled,
+        indexTtlMinutes: config.flashscoreCacheMinutes,
+        detailTtlMinutes: config.flashscoreDetailCacheMinutes
+      });
+      providerResults.push(flashscoreResult);
+      const flashscoreByFixture = Object.fromEntries(
+        (flashscoreResult.data || []).map(item => [String(item.fixtureId), item])
+      );
+      timings.flashscore = Date.now() - stageStarted;
+
+      stageStarted = Date.now();
       const contextResult = await contextEngine.collectFixtures(fixtures);
       providerResults.push(...contextResult.providerResults);
       timings.context = Date.now() - stageStarted;
@@ -232,6 +256,7 @@ export async function main() {
         const oddsEvent = marketByFixtureId[fixture.id] || null;
         const classified = applyMarketFreshnessGuard(classify(modelled, oddsEvent, config), oddsEvent);
         const apiFootballResult = apiFootballByFixture[fixture.id];
+        const flashscore = flashscoreByFixture[String(fixture.id)] || null;
         const fixtureProviders = providerResults.filter(result =>
           result.source === "football-data.fixtures" ||
           result.source === `football-data.context.${fixture.competitionCode}` ||
@@ -295,6 +320,23 @@ export async function main() {
               meta: apiFootballResult.meta,
               injuryCount: apiFootballResult.data?.injuries?.length || 0,
               lineupsCount: apiFootballResult.data?.lineups?.length || 0
+            },
+            flashscore: {
+              status: flashscore ? "OK" : flashscoreResult.status,
+              outcome: flashscoreResult.meta?.outcome || null,
+              shadowOnly: true,
+              matchConfidence: flashscore?.matchConfidence || null,
+              facts: flashscore?.facts || null,
+              sourceComparison: compareFlashscoreFacts({
+                fixture,
+                primary: {
+                  score: fixture.score?.fullTime || null,
+                  scoreSource: "FOOTBALL_DATA",
+                  lineups: apiFootballResult.data?.lineups || null,
+                  lineupSource: "API_FOOTBALL"
+                },
+                flashscore: flashscore?.facts || null
+              })
             }
           }
         };
