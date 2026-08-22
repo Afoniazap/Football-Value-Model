@@ -7,8 +7,9 @@ import { normalizeContextEvent } from "./contextTypes.js";
 import { fetchFootboomForecasts } from "./providers/footboom.js";
 import { fetchTelegramContext } from "./providers/telegram.js";
 import { fetchRegisteredContextSources } from "./providers/officialSources.js";
-import { createSourceRegistry, DEFAULT_CONTEXT_SOURCES } from "./sourceRegistry.js";
+import { combineContextSourceRegistries, createSourceRegistry, DEFAULT_CONTEXT_SOURCES } from "./sourceRegistry.js";
 import { createContextHttpClient } from "./requestControl.js";
+import { createTelegramSourceRegistry } from "./telegramRegistry.js";
 
 function emptyAnalysis(enabled, status = "NO_CONTEXT") {
   return {
@@ -66,6 +67,8 @@ export function createContextEngine({ config, runtimeRoot, providers = {}, now =
     reliabilityByType: config.reliability
   });
   const httpClient = providers.httpClient || createContextHttpClient({ timeoutSeconds: config.timeoutSeconds, minHostIntervalMs: config.minHostIntervalMs });
+  const telegramRegistry = createTelegramSourceRegistry({ additionalNames: config.telegramChannels });
+  const sourceRegistry = combineContextSourceRegistries(registry, telegramRegistry);
   const implementations = {
     footboom: providers.footboom || fetchFootboomForecasts,
     telegram: providers.telegram || fetchTelegramContext
@@ -102,7 +105,7 @@ export function createContextEngine({ config, runtimeRoot, providers = {}, now =
     const results = await Promise.all([
       Promise.resolve(footboom),
       ...registeredResults,
-      safeProvider("context.telegram", () => implementations.telegram({ channels: config.telegramChannels }))
+      safeProvider("context.telegram", () => implementations.telegram({ sources: telegramRegistry, posts: providers.telegramPosts || [] }))
     ]);
     const events = results.flatMap(result => Array.isArray(result?.data) ? result.data : []);
     const analysis = analyzeContextForFixtures({ fixtures, events, now: now() });
@@ -113,5 +116,5 @@ export function createContextEngine({ config, runtimeRoot, providers = {}, now =
     return { ...analysis, metrics, providerResults: results };
   }
 
-  return { collectFixtures, cacheFile: cache.file, registry };
+  return { collectFixtures, cacheFile: cache.file, registry, telegramRegistry, sourceRegistry };
 }

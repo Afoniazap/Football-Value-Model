@@ -64,3 +64,7 @@ export function sourcesForFixtures(registry, fixtures = []) {
     source.competitions.some(code => competitions.has(code)) &&
     (!source.teams.length || source.teams.some(team => teams.has(team))));
 }
+
+export function combineContextSourceRegistries(webSources = [], telegramSources = []) {
+  return [...webSources, ...telegramSources];
+}
