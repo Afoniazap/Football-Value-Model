@@ -22,6 +22,7 @@ import { providerErrors } from "./diagnostics/operationalErrors.js";
 import { readinessLines, readinessState, startupReadiness } from "./diagnostics/readiness.js";
 import { createContextEngine } from "./context/contextEngine.js";
 import { createContextDataset } from "./context/contextDataset.js";
+import { createTelegramClient, validateTelegramBot } from "./telegram/client.js";
 
 function createInitialState() {
   return {
@@ -62,20 +63,6 @@ function createRequest(timeoutSeconds) {
   };
 }
 
-function createTelegramRequest(config, request) {
-  const tgApi = `https://api.telegram.org/bot${config.telegramToken}`;
-
-  return async function tg(method, body = {}) {
-    const data = await request(`${tgApi}/${method}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    if (!data.ok) throw new Error(`${method}: ${data.description}`);
-    return data.result;
-  };
-}
-
 function providerErrorMessages(results) {
   return providerErrors(results)
     .map(error => `${error.source}: ${error.code}: ${error.message}`);
@@ -109,7 +96,8 @@ export async function main() {
   }
 
   const request = createRequest(config.requestTimeoutSeconds);
-  const tg = createTelegramRequest(config, request);
+  const telegramClient = createTelegramClient({ token: config.telegramToken, request });
+  const tg = telegramClient.call;
   const cacheStore = createCacheStore(config.root, createInitialState(), { runtimeRoot: config.runtimeRoot });
   const historyStore = createHistoryStore(config.root, { runtimeRoot: config.runtimeRoot });
   const marketCache = createMarketCache(config.root, { runtimeRoot: config.runtimeRoot });
@@ -497,8 +485,27 @@ export async function main() {
   console.log(`Рабочая папка: ${config.root}`);
 
   console.log(readinessLines(bootReadiness).join("\n"));
+  const telegramAuth = await validateTelegramBot(telegramClient);
+  contextEngine.setTelegramAuthStatus(telegramAuth.status);
+  if (telegramAuth.status === "VALID") {
+    await contextEngine.resolveTelegramAccess(telegramClient.getChat, telegramClient.getChatMember, telegramAuth.bot.id);
+  }
+  const telegramReady = contextEngine.telegramReadiness();
+  console.log([
+    "Telegram Context:",
+    `Bot API: ${telegramAuth.status}`,
+    `Bot: ${telegramAuth.bot?.username || "N/A"}`,
+    `Registered sources: ${telegramReady.registeredSources} | identifiers: ${telegramReady.suppliedIdentifiers}`,
+    `Resolved: ${telegramReady.resolved} | Accessible: ${telegramReady.accessible}`,
+    `Waiting for channel posts: ${telegramReady.waitingForChannelPosts ? "YES" : "NO"}`
+  ].join("\n"));
   await refreshData();
   setInterval(refreshData, config.refreshMinutes * 60_000);
+
+  if (telegramAuth.status !== "VALID") {
+    console.error(`Telegram UI отключён: ${telegramAuth.status}. Фоновое обновление FVM продолжает работать.`);
+    return;
+  }
 
   while (true) {
     try {

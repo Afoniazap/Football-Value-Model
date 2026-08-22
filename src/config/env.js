@@ -41,7 +41,7 @@ export function loadConfig() {
   return {
     root: ROOT,
     runtimeRoot: resolveRuntimeRoot(ROOT, process.env.FVM_RUNTIME_DIR),
-    telegramToken: requireSecret("TELEGRAM_BOT_TOKEN"),
+    telegramToken: process.env.TELEGRAM_BOT_TOKEN?.trim() || "",
     footballDataToken: requireSecret("FOOTBALL_DATA_TOKEN"),
     apiFootballKey: process.env.API_FOOTBALL_KEY?.trim() || "",
     sportmonksApiKey: process.env.SPORTMONKS_API_KEY?.trim() || "",

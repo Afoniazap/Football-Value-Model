@@ -9,8 +9,9 @@ import { fetchTelegramContext } from "./providers/telegram.js";
 import { fetchRegisteredContextSources } from "./providers/officialSources.js";
 import { combineContextSourceRegistries, createSourceRegistry, DEFAULT_CONTEXT_SOURCES } from "./sourceRegistry.js";
 import { createContextHttpClient } from "./requestControl.js";
-import { createTelegramSourceRegistry } from "./telegramRegistry.js";
+import { createTelegramSourceRegistry, OWNER_SUPPLIED_TELEGRAM_IDENTIFIERS } from "./telegramRegistry.js";
 import { createTelegramInbox } from "./telegramInbox.js";
+import { resolveTelegramIdentifiers } from "./telegramResolver.js";
 
 function emptyAnalysis(enabled, status = "NO_CONTEXT") {
   return {
@@ -70,6 +71,8 @@ export function createContextEngine({ config, runtimeRoot, providers = {}, now =
   const httpClient = providers.httpClient || createContextHttpClient({ timeoutSeconds: config.timeoutSeconds, minHostIntervalMs: config.minHostIntervalMs });
   const telegramRegistry = createTelegramSourceRegistry({ additionalNames: config.telegramChannels });
   const telegramInbox = createTelegramInbox(runtimeRoot);
+  let telegramAuthStatus = providers.telegramAuthStatus || (providers.telegram ? "VALID" : "UNKNOWN");
+  let telegramAccess = [];
   const sourceRegistry = combineContextSourceRegistries(registry, telegramRegistry);
   const implementations = {
     footboom: providers.footboom || fetchFootboomForecasts,
@@ -107,10 +110,9 @@ export function createContextEngine({ config, runtimeRoot, providers = {}, now =
     const results = await Promise.all([
       Promise.resolve(footboom),
       ...registeredResults,
-      safeProvider("context.telegram", () => implementations.telegram({
-        sources: telegramRegistry,
-        posts: providers.telegramPosts || telegramInbox.readRecent()
-      }))
+      telegramAuthStatus === "VALID"
+        ? safeProvider("context.telegram", () => implementations.telegram({ sources: telegramRegistry, posts: providers.telegramPosts || telegramInbox.readRecent() }))
+        : providerResult({ status: SourceStatus.NA, source: "context.telegram", data: [], meta: { reason: telegramAuthStatus === "UNAUTHORIZED" ? "AUTH_ERROR" : "DISABLED", shadowOnly: true } })
     ]);
     const events = results.flatMap(result => Array.isArray(result?.data) ? result.data : []);
     const analysis = analyzeContextForFixtures({ fixtures, events, now: now() });
@@ -124,6 +126,26 @@ export function createContextEngine({ config, runtimeRoot, providers = {}, now =
   return {
     collectFixtures, cacheFile: cache.file, registry, telegramRegistry, sourceRegistry,
     telegramInboxFile: telegramInbox.file,
-    ingestTelegramUpdate: update => telegramInbox.appendUpdate(update, telegramRegistry)
+    ingestTelegramUpdate: update => telegramInbox.appendUpdate(update, telegramRegistry),
+    setTelegramAuthStatus: status => { telegramAuthStatus = status; },
+    resolveTelegramAccess: async (getChat, getChatMember, botId) => {
+      const resolution = await resolveTelegramIdentifiers({ identifiers: OWNER_SUPPLIED_TELEGRAM_IDENTIFIERS, registry: telegramRegistry, getChat });
+      if (getChatMember && botId != null) {
+        for (const item of resolution.results.filter(result => result.accessibility === "ACCESSIBLE" && result.channelId != null)) {
+          try {
+            const membership = await getChatMember(item.channelId, botId);
+            item.membership = membership.status || "UNKNOWN";
+            item.administrator = ["administrator", "creator"].includes(membership.status);
+            item.canReceiveChannelPosts = item.chatType === "channel" ? item.administrator : !["left", "kicked"].includes(item.membership);
+          } catch {
+            item.membership = "UNKNOWN"; item.administrator = null; item.canReceiveChannelPosts = null;
+          }
+        }
+      }
+      telegramRegistry.splice(0, telegramRegistry.length, ...resolution.registry);
+      telegramAccess = resolution.results;
+      return telegramAccess;
+    },
+    telegramReadiness: () => ({ authStatus: telegramAuthStatus, registeredSources: telegramRegistry.length, suppliedIdentifiers: OWNER_SUPPLIED_TELEGRAM_IDENTIFIERS.length, resolved: telegramRegistry.filter(source => source.resolutionStatus === "RESOLVED").length, accessible: telegramAccess.filter(item => item.accessibility === "ACCESSIBLE").length, waitingForChannelPosts: telegramAuthStatus === "VALID" })
   };
 }
