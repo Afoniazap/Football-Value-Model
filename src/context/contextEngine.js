@@ -5,7 +5,7 @@ import { dedupeContextEvents } from "./dedupe.js";
 import { matchContextEventToFixture } from "./fixtureMatching.js";
 import { normalizeContextEvent } from "./contextTypes.js";
 import { fetchFootboomForecasts } from "./providers/footboom.js";
-import { fetchTelegramContext } from "./providers/telegram.js";
+import { fetchTelegramContext, normalizeTelegramPost } from "./providers/telegram.js";
 import { fetchRegisteredContextSources } from "./providers/officialSources.js";
 import { combineContextSourceRegistries, createSourceRegistry, DEFAULT_CONTEXT_SOURCES } from "./sourceRegistry.js";
 import { createContextHttpClient } from "./requestControl.js";
@@ -126,7 +126,17 @@ export function createContextEngine({ config, runtimeRoot, providers = {}, now =
   return {
     collectFixtures, cacheFile: cache.file, registry, telegramRegistry, sourceRegistry,
     telegramInboxFile: telegramInbox.file,
-    ingestTelegramUpdate: update => telegramInbox.appendUpdate(update, telegramRegistry),
+    ingestTelegramUpdate: update => {
+      const post = telegramInbox.appendUpdate(update, telegramRegistry);
+      if (!post) return null;
+      const source = telegramRegistry.find(item => item.id === post.sourceId);
+      const normalized = normalizeTelegramPost(post, source);
+      return {
+        source: source.channelName, messageId: normalized.messageId,
+        sport: normalized.sport, type: normalized.telegramPostType,
+        pickExtracted: Boolean(normalized.pick)
+      };
+    },
     setTelegramAuthStatus: status => { telegramAuthStatus = status; },
     resolveTelegramAccess: async (getChat, getChatMember, botId) => {
       const resolution = await resolveTelegramIdentifiers({ identifiers: OWNER_SUPPLIED_TELEGRAM_IDENTIFIERS, registry: telegramRegistry, getChat });

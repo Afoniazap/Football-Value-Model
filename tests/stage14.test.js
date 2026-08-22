@@ -40,6 +40,7 @@ function testSingleConsumerAndCommands() {
   const app = fs.readFileSync(path.join(process.cwd(), "src", "app.js"), "utf8");
   assert.equal((app.match(/tg\("getUpdates"/g) || []).length, 1);
   assert.match(app, /"channel_post", "edited_channel_post"/);
+  assert.match(app, /Telegram Context: received \$\{delivery\.source\} messageId=\$\{delivery\.messageId\} sport=\$\{delivery\.sport\} type=\$\{delivery\.type\}/);
   const ui = fs.readFileSync(path.join(process.cwd(), "src", "ui", "telegram.js"), "utf8");
   for (const command of ["/start", "/dashboard", "/refresh"]) assert.ok(ui.includes(command));
   const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"));

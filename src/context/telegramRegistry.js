@@ -14,7 +14,7 @@ export const EMPTY_TELEGRAM_PERFORMANCE = Object.freeze({
 export const OWNER_SUPPLIED_TELEGRAM_IDENTIFIERS = Object.freeze([
   { kind: "USERNAME", value: "@luxebetanalyt", sourceId: "owner-telegram-5", resolutionStatus: TelegramResolutionStatus.RESOLVED },
   { kind: "USERNAME", value: "@MethodFidch", sourceId: "owner-telegram-1", resolutionStatus: TelegramResolutionStatus.RESOLVED },
-  { kind: "USERNAME", value: "@jagsunci17", sourceId: null, resolutionStatus: TelegramResolutionStatus.UNRESOLVED },
+  { kind: "USERNAME", value: "@jagsunci17", sourceId: "owner-telegram-7", resolutionStatus: TelegramResolutionStatus.RESOLVED },
   ...["-2129463592", "-1323146821", "-1274755089", "-1688959852", "-2100234097", "-1383890914"]
     .map(value => ({ kind: "CHANNEL_ID", value, sourceId: null, resolutionStatus: TelegramResolutionStatus.UNRESOLVED }))
 ]);
@@ -27,6 +27,17 @@ const mandatory = [
   { id: "owner-telegram-5", channelName: "LUXEBET ANALYTICS ⚽️🏒", sport: TelegramSport.MULTISPORT, username: "@luxebetanalyt", channelId: "-1001462182022", chatType: "channel", accessibility: "ACCESSIBLE" },
   { id: "owner-telegram-6", channelName: "Dychkovsky 🎾", sport: TelegramSport.TENNIS }
 ];
+
+export const VERIFIED_ADDITIONAL_TELEGRAM_SOURCES = Object.freeze([
+  Object.freeze({
+    id: "owner-telegram-7", platform: "TELEGRAM", mandatory: false, enabled: true,
+    suppliedByOwner: true, channelName: "Kashin Bet | Теннис 🎾 ⚽️🥇", sport: TelegramSport.MULTISPORT,
+    username: "@jagsunci17", channelId: "-1001237651098", chatType: "channel",
+    accessibility: "ACCESSIBLE", resolutionStatus: TelegramResolutionStatus.RESOLVED,
+    reliability: null, reliabilityStatus: TelegramReliabilityStatus.UNRATED,
+    historicalStats: null, performance: { ...EMPTY_TELEGRAM_PERFORMANCE }
+  })
+]);
 
 export const MANDATORY_TELEGRAM_SOURCES = Object.freeze(mandatory.map(source => Object.freeze({
   platform: "TELEGRAM", mandatory: true, enabled: true,
@@ -90,7 +101,7 @@ export function createTelegramSourceRegistry({ additionalNames = [], resolvedMet
     historicalStats: null, performance: { ...EMPTY_TELEGRAM_PERFORMANCE }
   }));
   const byName = new Map();
-  for (const source of [...MANDATORY_TELEGRAM_SOURCES, ...additional]) {
+  for (const source of [...MANDATORY_TELEGRAM_SOURCES, ...VERIFIED_ADDITIONAL_TELEGRAM_SOURCES, ...additional]) {
     if (!byName.has(source.channelName)) byName.set(source.channelName, { ...source, performance: { ...source.performance } });
   }
   return mergeResolvedTelegramMetadata([...byName.values()], resolvedMetadata);

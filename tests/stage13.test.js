@@ -23,7 +23,7 @@ const expectedNames = [
 
 function testMandatoryRegistryAndOwnerMappings() {
   const registry = createTelegramSourceRegistry();
-  assert.deepEqual(registry.map(source => source.channelName), expectedNames);
+  assert.deepEqual(registry.filter(source => source.mandatory).map(source => source.channelName), expectedNames);
   assert.equal(MANDATORY_TELEGRAM_SOURCES.length, 6);
   assert.equal(OWNER_SUPPLIED_TELEGRAM_IDENTIFIERS.length, 9);
   assert.equal(registry.find(source => source.id === "owner-telegram-1").username, "@MethodFidch");
@@ -31,6 +31,9 @@ function testMandatoryRegistryAndOwnerMappings() {
   assert.equal(String(registry.find(source => source.id === "owner-telegram-1").channelId), "-1001326262387");
   assert.equal(String(registry.find(source => source.id === "owner-telegram-5").channelId), "-1001462182022");
   assert.equal(telegramSourcesMissingIdentifiers(registry).length, 4);
+  const kashin = registry.find(source => source.username === "@jagsunci17");
+  assert.equal(kashin.channelId, "-1001237651098");
+  assert.equal(kashin.sport, TelegramSport.MULTISPORT);
   assert.ok(registry.every(source => source.reliability === null && source.reliabilityStatus === "UNRATED"));
   assert.ok(registry.every(source => JSON.stringify(source.performance) === JSON.stringify(EMPTY_TELEGRAM_PERFORMANCE)));
 }
@@ -41,7 +44,7 @@ function testMatchingAndDeduplication() {
   assert.equal(matchTelegramMetadata({ title: "  LUXEBET ANALYTICS ⚽️🏒  " }, registry).id, "owner-telegram-5");
   assert.equal(matchTelegramMetadata({ title: "not registered" }, registry), null);
   const withId = mergeResolvedTelegramMetadata(registry, [{ username: "@luxebetanalyt", channelId: -10055, type: "channel" }]);
-  assert.equal(withId.length, 6);
+  assert.equal(withId.length, 7);
   assert.equal(matchTelegramMetadata({ channelId: -10055 }, withId).username, "@luxebetanalyt");
 }
 

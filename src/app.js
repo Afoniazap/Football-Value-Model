@@ -517,7 +517,12 @@ export async function main() {
 
       for (const update of updates) {
         offset = update.update_id + 1;
-        if (update.channel_post || update.edited_channel_post) contextEngine.ingestTelegramUpdate(update);
+        if (update.channel_post || update.edited_channel_post) {
+          const delivery = contextEngine.ingestTelegramUpdate(update);
+          if (delivery) {
+            console.log(`Telegram Context: received ${delivery.source} messageId=${delivery.messageId} sport=${delivery.sport} type=${delivery.type}`);
+          }
+        }
         if (update.message) await ui.handleMessage(update.message);
         if (update.callback_query) await ui.handleCallback(update.callback_query);
       }
