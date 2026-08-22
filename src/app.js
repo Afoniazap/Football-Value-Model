@@ -21,12 +21,13 @@ import { buildRefreshTelemetry, createRefreshTelemetry } from "./diagnostics/ref
 import { providerErrors } from "./diagnostics/operationalErrors.js";
 import { readinessLines, readinessState, startupReadiness } from "./diagnostics/readiness.js";
 import { createContextEngine } from "./context/contextEngine.js";
-import { collectContextWithinDeadline } from "./context/deadline.js";
+import { collectContextWithinDeadline, runWithinDeadline } from "./context/deadline.js";
 import { createContextDataset } from "./context/contextDataset.js";
 import { createTelegramClient, validateTelegramBot } from "./telegram/client.js";
 import { createContextHttpClient } from "./context/requestControl.js";
 import { createContextCache } from "./context/contextCache.js";
 import { compareFlashscoreFacts, fetchFlashscoreVerification } from "./providers/flashscore.js";
+import { providerResult, SourceStatus } from "./providers/providerResult.js";
 
 function createInitialState() {
   return {
@@ -230,29 +231,38 @@ export async function main() {
       timings.apiFootball = Date.now() - stageStarted;
 
       stageStarted = Date.now();
-      const flashscoreResult = await fetchFlashscoreVerification({
-        fixtures,
-        httpClient: flashscoreHttpClient,
-        cache: flashscoreCache,
-        now: analysedAt,
-        enabled: config.flashscoreEnabled,
-        indexTtlMinutes: config.flashscoreCacheMinutes,
-        detailTtlMinutes: config.flashscoreDetailCacheMinutes
-      });
+      const [flashscoreResult, contextResult] = await Promise.all([
+        runWithinDeadline({
+          run: () => fetchFlashscoreVerification({
+            fixtures,
+            httpClient: flashscoreHttpClient,
+            cache: flashscoreCache,
+            now: analysedAt,
+            enabled: config.flashscoreEnabled,
+            indexTtlMinutes: config.flashscoreCacheMinutes,
+            detailTtlMinutes: config.flashscoreDetailCacheMinutes
+          }),
+          timeoutMs: Math.max(15_000, config.requestTimeoutSeconds * 2_000),
+          timeoutValue: providerResult({
+            status: SourceStatus.PARTIAL,
+            source: "flashscore.verification",
+            data: [],
+            meta: { outcome: "TIMEOUT", reason: "SHADOW_DEADLINE", shadowOnly: true, nonFatal: true }
+          })
+        }),
+        collectContextWithinDeadline({
+          collect: contextEngine.collectFixtures,
+          fixtures,
+          timeoutMs: Math.max(15_000, config.context.timeoutSeconds * 3_000)
+        })
+      ]);
       providerResults.push(flashscoreResult);
       const flashscoreByFixture = Object.fromEntries(
         (flashscoreResult.data || []).map(item => [String(item.fixtureId), item])
       );
-      timings.flashscore = Date.now() - stageStarted;
-
-      stageStarted = Date.now();
-      const contextResult = await collectContextWithinDeadline({
-        collect: contextEngine.collectFixtures,
-        fixtures,
-        timeoutMs: Math.max(15_000, config.context.timeoutSeconds * 3_000)
-      });
       providerResults.push(...contextResult.providerResults);
-      timings.context = Date.now() - stageStarted;
+      timings.flashscore = Date.now() - stageStarted;
+      timings.context = timings.flashscore;
 
       stageStarted = Date.now();
       processed = fixtures.map(fixture => {

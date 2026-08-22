@@ -7,7 +7,7 @@ import { dedupeContextEvents } from "../src/context/dedupe.js";
 import { aggregateContext, freshnessScore } from "../src/context/contextScore.js";
 import { matchContextEventToFixture } from "../src/context/fixtureMatching.js";
 import { analyzeContextForFixtures, createContextEngine } from "../src/context/contextEngine.js";
-import { collectContextWithinDeadline } from "../src/context/deadline.js";
+import { collectContextWithinDeadline, runWithinDeadline } from "../src/context/deadline.js";
 import { fetchFootboomForecasts, parseFootboomForecasts } from "../src/context/providers/footboom.js";
 import { SourceStatus } from "../src/providers/providerResult.js";
 
@@ -144,5 +144,6 @@ assert.equal(deadlineResult.providerResults[0].status, SourceStatus.PARTIAL);
 assert.equal(deadlineResult.providerResults[0].meta.reason, "CONTEXT_TIMEOUT");
 assert.equal(deadlineResult.byFixtureId[fixture.id].status, "TIMEOUT");
 assert.equal(deadlineResult.byFixtureId[fixture.id].shadowOnly, true);
+assert.equal(await runWithinDeadline({ run: () => new Promise(() => {}), timeoutMs: 5, timeoutValue: "TIMEOUT" }), "TIMEOUT");
 
 console.log("Stage 11 tests OK: context normalization, scoring, dedupe, contradictions, matching, FootBoom and non-fatal shadow engine.");

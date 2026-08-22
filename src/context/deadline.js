@@ -35,3 +35,13 @@ export async function collectContextWithinDeadline({ collect, fixtures = [], tim
   clearTimeout(timer);
   return result;
 }
+
+export async function runWithinDeadline({ run, timeoutMs, timeoutValue }) {
+  let timer;
+  const deadline = new Promise(resolve => {
+    timer = setTimeout(() => resolve(timeoutValue), timeoutMs);
+  });
+  const result = await Promise.race([Promise.resolve().then(run), deadline]);
+  clearTimeout(timer);
+  return result;
+}
