@@ -154,15 +154,15 @@ async function testZeroInjuriesAndLineupsNotPublishedAreNotErrors() {
 function testUtf8LabelsAndKyivFormatter() {
   assert.equal(providerHealthLabel({ status: "N/A", meta: { reason: "NO_ODDS" } }), "N/A (NO_ODDS)");
   assert.equal(providerHealthLabel(null), "N/A (NOT_REPORTED)");
-  assert.equal(UI_LABELS.value, "VALUE");
-  assert.equal(UI_LABELS.near, "NEAR");
-  assert.equal(UI_LABELS.wait, "WAIT");
-  assert.equal(UI_LABELS.noBet, "NO BET");
-  assert.equal(UI_LABELS.risks, "Риски");
-  assert.equal(UI_LABELS.metrics, "Метрики");
-  assert.equal(UI_LABELS.sources, "Источники");
-  assert.equal(UI_LABELS.whyNoValue, "Почему нет VALUE?");
-  assert.equal(UI_LABELS.statistics, "Статистика");
+  assert.equal(UI_LABELS.value, "🎯 VALUE");
+  assert.equal(UI_LABELS.near, "👀 NEAR");
+  assert.equal(UI_LABELS.wait, "⏳ WAIT");
+  assert.equal(UI_LABELS.noBet, "❌ NO BET");
+  assert.equal(UI_LABELS.risks, "⚠️ Риски");
+  assert.equal(UI_LABELS.metrics, "📐 Показатели");
+  assert.equal(UI_LABELS.sources, "🌐 Источники");
+  assert.equal(UI_LABELS.whyNoValue, "❓ Почему нет VALUE?");
+  assert.equal(UI_LABELS.statistics, "📊 Статистика");
   assert.equal(UI_LABELS.updated, "Обновлено");
   assert.equal(UI_LABELS.kyiv, "Киев");
   assert.ok(formatKyivDateLabel("2026-08-18T12:00:00Z").endsWith("Europe/Kyiv"));

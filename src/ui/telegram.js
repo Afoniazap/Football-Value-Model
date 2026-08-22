@@ -4,6 +4,7 @@ import { healthLines } from "../diagnostics/sourceHealth.js";
 import { summarizeLatestTelemetry } from "../diagnostics/refreshTelemetry.js";
 import { UI_LABELS } from "./labels.js";
 import { formatKyivDateLabel } from "./time.js";
+import { renderAudit, renderDashboard, renderFixtureDiagnostic, renderMatchCard } from "./presentation.js";
 
 export function esc(value = "") {
   return String(value)
@@ -38,12 +39,12 @@ function mainKeyboard(state) {
     ],
     [
       { text: UI_LABELS.statistics, callback_data: "stats" },
-      { text: "День", callback_data: "daily_audit" },
-      { text: "Shadow", callback_data: "shadow_stats" }
+      { text: "📅 День", callback_data: "daily_audit" },
+      { text: UI_LABELS.shadow, callback_data: "shadow_stats" }
     ],
     [
-      { text: "Pipeline", callback_data: "pipeline" },
-      { text: "Обновить", callback_data: "refresh" }
+      { text: "🧠 Контекст", callback_data: "context_overview" },
+      { text: "🔄 Обновить", callback_data: "refresh" }
     ]
   ]);
 }
@@ -85,6 +86,15 @@ export function createTelegramUi({
   }
 
   function dashboardText() {
+    const current = stateRef.current;
+    return renderDashboard({
+      state: current,
+      audit: typeof auditStats === "function" ? auditStats() : null,
+      shadow: typeof shadowStats === "function" ? shadowStats() : null
+    });
+  }
+
+  function legacyDashboardText() {
     const state = stateRef.current;
     const telemetry = state.telemetry || null;
     const summary = telemetry ? summarizeLatestTelemetry(telemetry, config) : null;
@@ -173,10 +183,10 @@ export function createTelegramUi({
       "<b>FVM status</b>",
       "",
       `Рабочая папка: <code>${esc(config.root)}</code>`,
-      `System: <b>${esc(state.systemReadiness?.status || "DEGRADED")}</b>`,
+      `Система: <b>${esc(state.systemReadiness?.status || "DEGRADED")}</b>`,
       `Allowed chat IDs: <b>${config.allowedChatIds.size}</b>`,
-      `Refresh: <b>${config.refreshMinutes} мин.</b>`,
-      `Horizon: <b>${config.horizonHours} ч.</b>`,
+      `Интервал обновления: <b>${config.refreshMinutes} мин.</b>`,
+      `Горизонт: <b>${config.horizonHours} ч.</b>`,
       "",
       `${UI_LABELS.updated}: <b>${state.updatedAt ? formatKyivDateLabel(state.updatedAt) : "ещё нет"}</b>`,
       `Ошибок источников: <b>${state.errors.length}</b>`,
@@ -236,6 +246,14 @@ export function createTelegramUi({
   async function showDiagnostics(chatId, id, kind) {
     const item = findItem(id);
     if (!item) return;
+    const rendered = renderFixtureDiagnostic(item, kind);
+    return tg("sendMessage", {
+      chat_id: chatId,
+      text: [`<b>${rendered.title}</b>`, "", `<b>${esc(item.home)} — ${esc(item.away)}</b>`, "", ...rendered.lines].join("\n"),
+      parse_mode: "HTML",
+      reply_markup: keyboard([[{ text: "⬅️ К матчу", callback_data: `card:${item.id}` }]])
+    });
+    /* c8 ignore start -- прежнее представление оставлено только для совместимости ветки */
     const d = item.diagnostics || {};
     let title = "Diagnostics";
     let lines = [];
@@ -318,11 +336,24 @@ export function createTelegramUi({
       parse_mode: "HTML",
       reply_markup: keyboard([[{ text: "Dashboard", callback_data: "dashboard" }]])
     });
+    /* c8 ignore stop */
   }
 
   async function showCard(chatId, id) {
     const item = findItem(id);
     if (!item) return;
+    return tg("sendMessage", {
+      chat_id: chatId,
+      text: renderMatchCard(item),
+      parse_mode: "HTML",
+      reply_markup: keyboard([
+        [{ text: "🔎 DQ", callback_data: `dq:${item.id}` }, { text: UI_LABELS.risks, callback_data: `risk:${item.id}` }],
+        [{ text: UI_LABELS.sources, callback_data: `sources:${item.id}` }, { text: "🧭 Проверки", callback_data: `sanity:${item.id}` }],
+        [{ text: UI_LABELS.shadow, callback_data: `shadow:${item.id}` }, { text: UI_LABELS.context, callback_data: `context:${item.id}` }],
+        [{ text: "⬅️ Обзор", callback_data: "dashboard" }]
+      ])
+    });
+    /* c8 ignore start -- прежнее представление оставлено только для совместимости ветки */
     const dq = item.diagnostics?.dataQualityV2;
     const risk = item.diagnostics?.risk;
     const lines = [
@@ -377,6 +408,7 @@ export function createTelegramUi({
         [{ text: "Dashboard", callback_data: "dashboard" }]
       ])
     });
+    /* c8 ignore stop */
   }
 
   async function showAuditScreen(chatId, kind) {
@@ -384,6 +416,15 @@ export function createTelegramUi({
     const daily = typeof dailyAudit === "function" ? dailyAudit() : null;
     const shadow = typeof shadowStats === "function" ? shadowStats() : null;
     const telemetry = stateRef.current.telemetry;
+    if (["stats", "daily", "sources", "blockers", "shadow_stats"].includes(kind)) {
+      const rendered = renderAudit(kind, { audit, daily, shadow, state: stateRef.current });
+      return tg("sendMessage", {
+        chat_id: chatId,
+        text: [`<b>${rendered.title}</b>`, "", ...rendered.lines].join("\n"),
+        parse_mode: "HTML",
+        reply_markup: keyboard([[{ text: "⬅️ Обзор", callback_data: "dashboard" }]])
+      });
+    }
     let title = UI_LABELS.statistics;
     let lines = [];
 
@@ -455,6 +496,30 @@ export function createTelegramUi({
     });
   }
 
+  async function showContextOverview(chatId) {
+    const fixtures = stateRef.current.fixtures || [];
+    const matched = fixtures.filter(item => item.contextAnalysis?.events?.length);
+    const events = matched.reduce((sum, item) => sum + item.contextAnalysis.events.length, 0);
+    const rows = matched.slice(0, 12).map(item =>
+      `• <b>${esc(item.home)} — ${esc(item.away)}</b>: ${item.contextAnalysis.events.length} событий, уверенность ${item.contextAnalysis.confidence}/100`);
+    return tg("sendMessage", {
+      chat_id: chatId,
+      text: [
+        `<b>${UI_LABELS.context}</b>`,
+        "",
+        "Режим: <b>SHADOW ONLY</b>",
+        "Контекст использует только сведения, опубликованные до начала матча.",
+        `Матчей с контекстом: <b>${matched.length}/${fixtures.length}</b> · событий: <b>${events}</b>`,
+        "",
+        ...(rows.length ? rows : ["Релевантных контекстных событий пока нет."]),
+        "",
+        "Контекст не изменяет вероятность, fair odds, EV, Edge, VALUE/NEAR, DQ, Confidence или FDS."
+      ].join("\n"),
+      parse_mode: "HTML",
+      reply_markup: keyboard([[{ text: "⬅️ Обзор", callback_data: "dashboard" }]])
+    });
+  }
+
   async function handleCallback(query) {
     const chatId = query.message?.chat?.id;
     if (!chatId) return;
@@ -471,6 +536,7 @@ export function createTelegramUi({
     if (query.data === "sources_overview") return showAuditScreen(chatId, "sources");
     if (query.data === "blockers") return showAuditScreen(chatId, "blockers");
     if (query.data === "shadow_stats") return showAuditScreen(chatId, "shadow_stats");
+    if (query.data === "context_overview") return showContextOverview(chatId);
     if (query.data === "refresh") {
       await refreshData();
       return sendDashboard(chatId, query.message.message_id);

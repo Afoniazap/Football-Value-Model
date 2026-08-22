@@ -1,0 +1,68 @@
+import assert from "node:assert/strict";
+import { renderAudit, renderDashboard, renderFixtureDiagnostic, renderMatchCard } from "../src/ui/presentation.js";
+
+const state = {
+  loading: false,
+  updatedAt: "2026-08-22T12:00:00Z",
+  systemReadiness: { status: "READY" },
+  fixtures: [], value: [], near: [], wait: [], rejected: [],
+  sourceHealth: {
+    "football-data.fixtures": { status: "OK" },
+    "odds-api-io": { status: "N/A", meta: { reason: "NO_MATCHED_EVENTS" } }
+  },
+  telemetry: {
+    finishedAt: "2026-08-22T12:00:00Z",
+    fixturesInsideExactHorizon: 33,
+    coverage: { market: { numerator: 3, denominator: 33, percent: 9.1 }, apiFootball: { numerator: 33, denominator: 33 }, lineups: { numerator: 0, denominator: 33 }, xg: { numerator: 0, denominator: 33, status: "N/A" } },
+    dqDistribution: { average: 61.2, high: 4, mid: 20, low: 9 },
+    categories: { VALUE: 0, NEAR: 1, WAIT: 32, NO_BET: 0 },
+    blockers: { top: [{ reason: "NO_MARKET", count: 30 }] }
+  }
+};
+
+const fixture = {
+  id: "f1", home: "Марсель", away: "Страсбург", competition: "Ligue 1", utcDate: "2026-08-22T18:00:00Z",
+  category: "near", confidence: 72, bookmaker: "bet365",
+  model: { home: 0.5, draw: 0.28, away: 0.22 },
+  candidate: { side: "П1", odds: 2.15, fairOdds: 2, edge: 3.2, ev: 7.5 },
+  shadow: { shadowStatus: "OK", disagreementStatus: "LOW", challenger: { probabilities: { home: 0.48, draw: 0.29, away: 0.23 } } },
+  diagnostics: {
+    market: { source: "ODDS_API_IO", freshness: "FRESH" },
+    dataQualityV2: { scoreNormalized: 76, rawScore: 61, availableMax: 80, components: [{ name: "История", score: 20, max: 20 }] },
+    risk: { score: 82, modelAgreement: 85, redFlags: [] }, providerHealth: state.sourceHealth, sanityWarnings: []
+  },
+  contextAnalysis: { scoreHome: 1, scoreAway: 0, confidence: 40, independentSources: 1, contradictions: 0, events: [] }
+};
+
+const emptyAudit = {
+  overall: { officialBets: 0, settledBets: 0, win: 0, loss: 0, push: 0, netUnits: 0, roi: null },
+  integrity: { pending: 0 }, byMarket: {}, byOddsBand: {}
+};
+
+const dashboard = renderDashboard({ state, audit: emptyAudit, shadow: { sampleSize: 0 } });
+assert.match(dashboard, /FVM — обзор/);
+assert.match(dashboard, /Рынки: <b>3\/33/);
+assert.match(dashboard, /Недостаточно данных/);
+
+const card = renderMatchCard(fixture);
+assert.match(card, /Марсель — Страсбург/);
+assert.match(card, /Edge: <b>3\.2%/);
+assert.match(card, /EV: <b>7\.5%/);
+assert.match(card, /SHADOW ONLY/);
+
+const dq = renderFixtureDiagnostic(fixture, "dq");
+assert.equal(dq.title, "🔎 Качество данных");
+assert.match(dq.lines.join("\n"), /76\/100/);
+
+const statistics = renderAudit("stats", { audit: emptyAudit, daily: null, shadow: null, state });
+assert.match(statistics.lines.join("\n"), /append-only/);
+assert.match(statistics.lines.join("\n"), /Недостаточно данных \(n=0\)/);
+
+const sources = renderAudit("sources", { audit: null, daily: null, shadow: null, state });
+assert.match(sources.lines.join("\n"), /NO_MATCHED_EVENTS/);
+assert.match(sources.lines.join("\n"), /3\/33/);
+
+const blockers = renderAudit("blockers", { audit: null, daily: null, shadow: null, state });
+assert.match(blockers.lines.join("\n"), /нет подтверждённых рыночных котировок/);
+
+console.log("Stage 17 tests OK: Russian product UI, real zero-sample handling, diagnostics and provider reasons.");
