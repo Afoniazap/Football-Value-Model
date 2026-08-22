@@ -6,6 +6,7 @@ import { createTelegramSourceRegistry, mergeResolvedTelegramMetadata } from "../
 import { telegramUpdateToPost } from "../src/context/telegramInbox.js";
 import { createContextEngine } from "../src/context/contextEngine.js";
 import { providerResult, SourceStatus } from "../src/providers/providerResult.js";
+import { PROJECT_ENV_FILE } from "../src/config/env.js";
 
 async function testBotValidation() {
   const valid = createTelegramClient({
@@ -43,6 +44,7 @@ function testSingleConsumerAndCommands() {
   for (const command of ["/start", "/dashboard", "/refresh"]) assert.ok(ui.includes(command));
   const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
   assert.equal(pkg.scripts.start, "node src/app.js");
+  assert.equal(PROJECT_ENV_FILE, path.join(process.cwd(), ".env"));
 }
 
 async function testContextDisabledOnAuthFailure() {

@@ -1,4 +1,4 @@
-import "dotenv/config";
+import dotenv from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -11,6 +11,8 @@ import { contextConfigFromEnv } from "../context/config.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, "../..");
+export const PROJECT_ENV_FILE = path.join(ROOT, ".env");
+dotenv.config({ path: PROJECT_ENV_FILE, override: true });
 
 function numberFromEnv(name, fallback) {
   const value = Number(process.env[name] || fallback);

@@ -1,11 +1,12 @@
-﻿import "dotenv/config";
 import fs from "node:fs";
+import dotenv from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, "..");
+dotenv.config({ path: path.join(ROOT, ".env"), override: true });
 const DATA_DIR = path.join(ROOT, "data");
 const LOGS_DIR = path.join(ROOT, "logs");
 const CACHE_FILE = path.join(DATA_DIR, "cache.json");
