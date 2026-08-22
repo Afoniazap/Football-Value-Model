@@ -21,6 +21,7 @@ import { buildRefreshTelemetry, createRefreshTelemetry } from "./diagnostics/ref
 import { providerErrors } from "./diagnostics/operationalErrors.js";
 import { readinessLines, readinessState, startupReadiness } from "./diagnostics/readiness.js";
 import { createContextEngine } from "./context/contextEngine.js";
+import { collectContextWithinDeadline } from "./context/deadline.js";
 import { createContextDataset } from "./context/contextDataset.js";
 import { createTelegramClient, validateTelegramBot } from "./telegram/client.js";
 import { createContextHttpClient } from "./context/requestControl.js";
@@ -245,7 +246,11 @@ export async function main() {
       timings.flashscore = Date.now() - stageStarted;
 
       stageStarted = Date.now();
-      const contextResult = await contextEngine.collectFixtures(fixtures);
+      const contextResult = await collectContextWithinDeadline({
+        collect: contextEngine.collectFixtures,
+        fixtures,
+        timeoutMs: Math.max(15_000, config.context.timeoutSeconds * 3_000)
+      });
       providerResults.push(...contextResult.providerResults);
       timings.context = Date.now() - stageStarted;
 
