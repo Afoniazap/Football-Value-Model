@@ -14,6 +14,7 @@ import { createSourceHealth } from "./diagnostics/sourceHealth.js";
 import { createTelegramUi } from "./ui/telegram.js";
 import { createLivePreMatchContext } from "./shadow/liveContext.js";
 import { buildShadowComparison } from "./shadow/comparison.js";
+import { applyShadowDisagreementGate } from "./shadow/gate.js";
 import { aggregateMarket } from "./providers/market/aggregateMarket.js";
 import { createMarketCache } from "./providers/market/marketCache.js";
 import { auditExactHorizon } from "./diagnostics/horizon.js";
@@ -307,20 +308,29 @@ export async function main() {
           config,
           providerHealth
         });
+        const shadowGated = applyShadowDisagreementGate({
+          item: classified,
+          shadow,
+          risk,
+          config
+        });
+        const finalItem = shadowGated.item;
+        const finalRisk = shadowGated.risk;
 
         return {
-          ...classified,
+          ...finalItem,
           shadow,
           contextAnalysis: contextResult.byFixtureId[fixture.id],
           diagnostics: {
             dataQualityV2,
-            risk,
-            decisionConfidenceV2: calculateDecisionConfidenceV2({
+            risk: finalRisk,
+            shadowGate: shadowGated.gate,
+            decisionConfidenceV2: Math.max(0, calculateDecisionConfidenceV2({
               dataQuality: dataQualityV2,
-              risk,
-              modelAgreement: risk.modelAgreement,
+              risk: finalRisk,
+              modelAgreement: finalRisk.modelAgreement,
               marketQuality
-            }),
+            }) - shadowGated.gate.confidencePenalty),
             sanityWarnings,
             providerHealth,
             market: {

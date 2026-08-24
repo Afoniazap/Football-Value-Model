@@ -75,6 +75,23 @@ export function buildRefreshTelemetry({
     baselineModelsCalculated: processed.filter(item => item.model).length,
     challengerModelsCalculated: processed.filter(item => item.shadow?.shadowStatus === "OK").length,
     challengerNA: processed.filter(item => item.shadow?.shadowStatus !== "OK").length,
+    shadowGates: processed.filter(item => item.shadowGateStatus && item.shadowGateStatus !== "N/A").map(item => ({
+      fixtureId: item.id,
+      match: `${item.home} - ${item.away}`,
+      selection: item.candidate?.side || null,
+      mainProbability: item.mainProbability,
+      shadowProbability: item.shadowProbability,
+      modelDisagreementPp: item.modelDisagreementPp,
+      shadowGateStatus: item.shadowGateStatus,
+      shadowGateReason: item.shadowGateReason,
+      category: item.category,
+      confidence: item.confidence,
+      risk: item.diagnostics?.risk?.score ?? null,
+      rawImpliedProbability: item.candidate?.rawImpliedProbability ?? null,
+      noVigProbability: item.candidate?.noVigProbability ?? null,
+      edgePp: item.candidate?.edgePp ?? null,
+      odds: item.candidate?.odds ?? null
+    })),
     market: {
       primaryFixtures: marketUsage.PRIMARY || 0,
       secondaryFixtures: (marketUsage.ODDS_API_IO || 0) + (marketUsage.SECONDARY || 0),

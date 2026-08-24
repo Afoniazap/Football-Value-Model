@@ -12,6 +12,7 @@ import { calculateDataQuality } from "../src/quality/dataQuality.js";
 import { calculateRisk, calculateDecisionConfidenceV2 } from "../src/risk/riskScore.js";
 import { runSanityChecks } from "../src/model/sanityChecks.js";
 import { buildShadowComparison } from "../src/shadow/comparison.js";
+import { applyShadowDisagreementGate } from "../src/shadow/gate.js";
 import { aggregateMarket } from "../src/providers/market/aggregateMarket.js";
 import { createMarketCache } from "../src/providers/market/marketCache.js";
 import { createCacheStore } from "../src/storage/cache.js";
@@ -155,13 +156,15 @@ export async function runLiveRefresh({ commit = true } = {}) {
     const risk = calculateRisk({ item: classified, oddsEvent, apiFootballResult, providerStatuses: fixtureProviders });
     const providerHealth = createSourceHealth(fixtureProviders);
     const shadow = buildShadowComparison({ fixture, context, baseline: classified, oddsEvent, config, providerHealth });
+    const shadowGated = applyShadowDisagreementGate({ item: classified, shadow, risk, config });
     return {
-      ...classified,
+      ...shadowGated.item,
       shadow,
       diagnostics: {
         dataQualityV2,
-        risk,
-        decisionConfidenceV2: calculateDecisionConfidenceV2({ dataQuality: dataQualityV2, risk, modelAgreement: risk.modelAgreement, marketQuality: oddsEvent ? 100 : 0 }),
+        risk: shadowGated.risk,
+        shadowGate: shadowGated.gate,
+        decisionConfidenceV2: Math.max(0, calculateDecisionConfidenceV2({ dataQuality: dataQualityV2, risk: shadowGated.risk, modelAgreement: shadowGated.risk.modelAgreement, marketQuality: oddsEvent ? 100 : 0 }) - shadowGated.gate.confidencePenalty),
         sanityWarnings: runSanityChecks({ item: classified, dataQuality: dataQualityV2, minDataQuality: config.minDataQuality }),
         providerHealth,
         market: {
@@ -269,6 +272,7 @@ if (isCli) {
     dqDistribution: telemetry.dqDistribution,
     riskDistribution: telemetry.riskDistribution,
     categories: telemetry.categories,
+    shadowGates: telemetry.shadowGates,
     topBlockers: telemetry.blockers.top.slice(0, 10),
     providerHealth: telemetry.providerHealth,
     requestCounts: telemetry.requestCounts,

@@ -35,6 +35,8 @@ export function loadConfig() {
 
   const oddsFreshMinutes = Math.max(1, numberFromEnv("ODDS_FRESH_MINUTES", 15));
   const oddsStaleMinutes = Math.max(1, numberFromEnv("ODDS_STALE_MINUTES", 60));
+  const shadowDisagreementWarnPp = Math.max(0, numberFromEnv("SHADOW_DISAGREEMENT_WARN_PP", 5));
+  const shadowDisagreementRejectPp = Math.max(shadowDisagreementWarnPp, numberFromEnv("SHADOW_DISAGREEMENT_REJECT_PP", 7));
 
   if (oddsFreshMinutes >= oddsStaleMinutes) {
     throw new Error("ODDS_FRESH_MINUTES must be lower than ODDS_STALE_MINUTES");
@@ -70,6 +72,8 @@ export function loadConfig() {
     marketMatchMinConfidence: Math.max(0.5, Math.min(1, numberFromEnv("MARKET_MATCH_MIN_CONFIDENCE", 0.7))),
     minEdgePercent: numberFromEnv("MIN_EDGE_PERCENT", 4),
     minDataQuality: numberFromEnv("MIN_DATA_QUALITY", 65),
+    shadowDisagreementWarnPp,
+    shadowDisagreementRejectPp,
     refreshMinutes: Math.max(5, numberFromEnv("REFRESH_MINUTES", 30)),
     requestTimeoutSeconds: Math.max(
       5,

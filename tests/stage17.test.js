@@ -23,16 +23,19 @@ const state = {
 
 const fixture = {
   id: "f1", home: "Марсель", away: "Страсбург", competition: "Ligue 1", utcDate: "2026-08-22T18:00:00Z",
-  category: "near", confidence: 72, bookmaker: "bet365",
+  category: "near", confidence: 64, bookmaker: "bet365",
+  mainProbability: 0.5, shadowProbability: 0.44, modelDisagreementPp: 6,
+  shadowGateStatus: "WARN", shadowGateReason: "Main/Shadow disagreement too high: 6.0 pp > 5.0 pp",
+  confidencePenalty: 3, riskPenalty: 3,
   dataQuality: 76,
   model: { home: 0.5, draw: 0.28, away: 0.22 },
   marketProbability: { home: 0.468, draw: 0.29, away: 0.242 },
-  candidate: { side: "П1", key: "home", probability: 0.5, odds: 2.15, fairOdds: 2, edge: 3.2, ev: 7.5 },
+  candidate: { side: "П1", key: "home", probability: 0.5, odds: 2.15, fairOdds: 2, edge: 3.2, edgePp: 3.2, ev: 7.5, rawImpliedProbability: 1 / 2.15, noVigProbability: 0.468 },
   shadow: { shadowStatus: "OK", disagreementStatus: "LOW", challenger: { probabilities: { home: 0.48, draw: 0.29, away: 0.23 } } },
   diagnostics: {
     market: { source: "ODDS_API_IO", freshness: "FRESH" },
     dataQualityV2: { scoreNormalized: 76, rawScore: 61, availableMax: 80, components: [{ name: "История", score: 20, max: 20 }] },
-    risk: { score: 82, modelAgreement: 65, redFlags: [
+    risk: { score: 79, modelAgreement: 65, redFlags: [
       { code: "SOURCE_PARTIAL", severity: "LOW", source: "football-data.context.FL1" },
       { code: "MODEL_DISAGREEMENT", severity: "MEDIUM", source: "model" }
     ] }, providerHealth: state.sourceHealth, sanityWarnings: []
@@ -55,6 +58,7 @@ assert.match(card, /Марсель — Страсбург/);
 assert.match(card, /Edge: <b>3\.2%/);
 assert.match(card, /EV: <b>7\.5%/);
 assert.match(card, /SHADOW ONLY/);
+assert.match(card, /Model gap: <b>6\.0 pp<\/b> ⚠️/);
 
 const dq = renderFixtureDiagnostic(fixture, "dq");
 assert.equal(dq.title, "📚 DQ");
@@ -67,10 +71,12 @@ assert.match(confidence.lines.join("\n"), /порог VALUE/);
 
 const risk = renderFixtureDiagnostic(fixture, "risk");
 assert.match(risk.lines.join("\n"), /100 — лучше/);
-assert.match(risk.lines.join("\n"), /100 − 6 − 12 − 0 = <b>82<\/b>/);
+assert.match(risk.lines.join("\n"), /100 − 6 − 12 − 0 − 3 = <b>79<\/b>/);
 
 const edge = renderFixtureDiagnostic(fixture, "edge", { minDataQuality: 65, minEdgePercent: 4 });
 assert.match(edge.lines.join("\n"), /50\.0% − 46\.8%/);
+assert.match(edge.lines.join("\n"), /Сырая implied probability/);
+assert.match(edge.lines.join("\n"), /No-vig probability/);
 assert.match(edge.lines.join("\n"), /Не хватает <b>0\.8%/);
 
 const ev = renderFixtureDiagnostic(fixture, "ev");

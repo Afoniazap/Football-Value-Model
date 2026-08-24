@@ -11,6 +11,7 @@ import {
 } from "../src/shadow/comparison.js";
 import { createHistoryStore } from "../src/storage/history.js";
 import { scoreFinishedShadow } from "../src/shadow/scoring.js";
+import { applyShadowDisagreementGate } from "../src/shadow/gate.js";
 
 function fixture(id = "20") {
   return {
@@ -81,7 +82,53 @@ function oddsEvent(home = 2.2, draw = 3.3, away = 3.1) {
   };
 }
 
-const config = { minDataQuality: 50, minEdgePercent: 3 };
+const config = { minDataQuality: 50, minEdgePercent: 3, shadowDisagreementWarnPp: 5, shadowDisagreementRejectPp: 7 };
+
+function gateCase(gapPp, confidence = 82) {
+  const mainProbability = 0.297;
+  return applyShadowDisagreementGate({
+    item: {
+      category: "value", confidence,
+      candidate: { key: "home", side: "П1", probability: mainProbability, odds: 5.29, edge: 11.7, ev: 57.3, fairOdds: 1 / mainProbability }
+    },
+    shadow: { challenger: { probabilities: { home: mainProbability - gapPp / 100, draw: 0.281, away: 0.521 } } },
+    risk: { score: 88, modelAgreement: 90, redFlags: [] },
+    config
+  });
+}
+
+function testShadowValueGate() {
+  const gap2 = gateCase(2);
+  assert.equal(gap2.item.category, "value");
+  assert.equal(gap2.gate.shadowGateStatus, "OK");
+  assert.equal(gap2.item.confidence, 82);
+
+  const gap5 = gateCase(5);
+  assert.equal(gap5.item.category, "value");
+  assert.equal(gap5.gate.shadowGateStatus, "OK");
+
+  const gap6 = gateCase(6);
+  assert.equal(gap6.gate.shadowGateStatus, "WARN");
+  assert.equal(gap6.item.category, "value");
+  assert.ok(gap6.item.confidence < 82);
+  assert.ok(gap6.risk.score < 88);
+
+  const gap8 = gateCase(8);
+  assert.equal(gap8.gate.shadowGateStatus, "BLOCK");
+  assert.notEqual(gap8.item.category, "value");
+
+  const udineseComo = applyShadowDisagreementGate({
+    item: { category: "value", confidence: 82, candidate: { key: "home", side: "П1", probability: 0.297, odds: 5.29, edge: 11.7, ev: 57.3, fairOdds: 3.36 } },
+    shadow: { challenger: { probabilities: { home: 0.198, draw: 0.281, away: 0.521 } } },
+    risk: { score: 88, modelAgreement: 90, redFlags: [] }, config
+  });
+  assert.equal(udineseComo.item.modelDisagreementPp, 9.9);
+  assert.equal(udineseComo.item.shadowGateStatus, "BLOCK");
+  assert.equal(udineseComo.item.category, "near");
+  assert.equal(udineseComo.item.reason, "Main/Shadow disagreement too high: 9.9 pp > 7.0 pp");
+  assert.equal(udineseComo.item.candidate.probability, 0.297);
+  assert.equal(udineseComo.item.candidate.fairOdds, 3.36);
+}
 
 function classifiedBaseline(event = oddsEvent()) {
   const f = fixture();
@@ -98,6 +145,9 @@ function classifiedBaseline(event = oddsEvent()) {
 function testIdenticalFixtureInputAndOddsDoNotEnterChallenger() {
   const first = classifiedBaseline(oddsEvent(2.2, 3.3, 3.1));
   const second = classifiedBaseline(oddsEvent(9.5, 9.5, 1.2));
+  assert.equal(first.baseline.candidate.rawImpliedProbability, 1 / first.baseline.candidate.odds);
+  assert.equal(first.baseline.candidate.noVigProbability, first.baseline.marketProbability[first.baseline.candidate.key]);
+  assert.equal(first.baseline.candidate.edgePp, first.baseline.candidate.edge);
   const shadowA = buildShadowComparison({
     fixture: first.f,
     context: first.c,
@@ -209,5 +259,6 @@ testDisagreementThresholds();
 testShadowHistoryAppendRevision();
 testFinishedResultScoring();
 testQuotaLeavesModelProbabilityAvailableAndMarketNA();
+testShadowValueGate();
 
 console.log("Stage 5 tests OK: live shadow separation, history, quota and result audit.");

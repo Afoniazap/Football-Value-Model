@@ -27,6 +27,9 @@ export function classify(item, event, config) {
     { side: "П2", key: "away", probability: item.model.away, odds: odds.away }
   ].map(candidate => ({
     ...candidate,
+    rawImpliedProbability: 1 / candidate.odds,
+    noVigProbability: market[candidate.key],
+    edgePp: (candidate.probability - market[candidate.key]) * 100,
     edge: (candidate.probability - market[candidate.key]) * 100,
     ev: (candidate.probability * candidate.odds - 1) * 100,
     fairOdds: 1 / candidate.probability

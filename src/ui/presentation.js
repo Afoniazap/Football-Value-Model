@@ -47,6 +47,7 @@ const DQ_COMPONENTS = Object.freeze({
 const FLAG_TEXT = Object.freeze({
   LINEUPS_NOT_CONFIRMED: "Подтверждённые составы пока недоступны; баллы не снимаются.",
   INJURIES_REPORTED: "Есть явно опубликованные травмы/отсутствия; без оценки важности игрока баллы не снимаются.",
+  SHADOW_MODEL_DISAGREEMENT: "Основная и теневая модели сильно расходятся по выбранному исходу.",
   SOURCE_PARTIAL: "Источник вернул неполные данные.",
   MODEL_DISAGREEMENT: "Компоненты внутренней модели расходятся.",
   MARKET_DISAGREEMENT: "Котировки букмекеров заметно расходятся."
@@ -95,6 +96,8 @@ function confidenceDiagnostic(item) {
   ] };
   const dqPart = item.dataQuality * 0.55;
   const edgePart = Math.max(0, c.edge) * 2.4;
+  const beforeShadow = Math.round(Math.min(88, dqPart + edgePart + 18));
+  const shadowPenalty = item.confidencePenalty || 0;
   return { title: "🎛 Confidence", lines: [
     "Показывает уверенность production-решения с учётом данных базовой модели и преимущества над рынком.",
     `Текущее значение: <b>${value}/100</b> · порог VALUE <b>70/100</b>.`,
@@ -103,8 +106,9 @@ function confidenceDiagnostic(item) {
     `• Положительный Edge: max(0; ${fixed(c.edge, 1)}) × 2,4 = <b>${fixed(edgePart, 1)}</b> — модель FVM и букмекерский рынок`,
     "• Базовая добавка: <b>18,0</b> — внутренний расчёт FVM",
     `• Ограничение сверху: <b>88</b>`,
-    "• Context не входит в Confidence и остаётся SHADOW ONLY",
-    "", `<b>Расчёт</b>: round(min(88; ${fixed(dqPart, 1)} + ${fixed(edgePart, 1)} + 18)) = <b>${value}</b>.`,
+    `• Штраф Shadow gate: <b>−${shadowPenalty}</b> при gap ${item.modelDisagreementPp === null || item.modelDisagreementPp === undefined ? "N/A" : `${fixed(item.modelDisagreementPp, 1)} pp`}`,
+    "• Context Intelligence не входит в Confidence и остаётся SHADOW ONLY",
+    "", `<b>Расчёт</b>: ${beforeShadow} − ${shadowPenalty} = <b>${value}</b>.`,
     gap(value, 70)
   ] };
 }
@@ -116,6 +120,7 @@ function riskDiagnostic(item) {
   const sourcePenalty = deductions.filter(flag => flag.code === "SOURCE_PARTIAL").reduce((sum, flag) => sum + (flag.severity === "MEDIUM" ? 12 : 6), 0);
   const modelPenalty = deductions.some(flag => flag.code === "MODEL_DISAGREEMENT") ? 12 : 0;
   const marketPenalty = deductions.some(flag => flag.code === "MARKET_DISAGREEMENT") ? 6 : 0;
+  const shadowPenalty = item.riskPenalty || 0;
   return { title: "🛡 Risk", lines: [
     "Шкала обратная привычному слову «риск»: <b>100 — лучше и устойчивее, 0 — хуже</b>.",
     `Текущее значение: <b>${risk.score}/100</b> · диагностический проходной уровень <b>70/100</b>.`,
@@ -124,8 +129,9 @@ function riskDiagnostic(item) {
     `• Неполные/ошибочные источники: <b>−${sourcePenalty}</b> — статусы Football-Data, API-Football и market providers`,
     `• Расхождение компонентов модели: <b>−${modelPenalty}</b> — внутренний расчёт FVM; согласие ${risk.modelAgreement}/100`,
     `• Расхождение букмекеров: <b>−${marketPenalty}</b> — реальные котировки рынка`,
+    `• Main/Shadow gap: <b>−${shadowPenalty}</b> — независимая контрольная модель FVM`,
     "", ...(risk.redFlags?.length ? risk.redFlags.map(flag => `• ${escHtml(FLAG_TEXT[flag.code] || flag.message || flag.code)} [${escHtml(flag.source || "FVM")}]`) : ["✅ Флаги риска отсутствуют."]),
-    "", `<b>Расчёт</b>: 100 − ${sourcePenalty} − ${modelPenalty} − ${marketPenalty} = <b>${risk.score}</b>.`,
+    "", `<b>Расчёт</b>: 100 − ${sourcePenalty} − ${modelPenalty} − ${marketPenalty} − ${shadowPenalty} = <b>${risk.score}</b>.`,
     gap(risk.score, 70)
   ] };
 }
@@ -149,7 +155,9 @@ function marketMetricDiagnostic(item, kind, thresholds) {
     "Показывает разницу между вероятностью FVM и очищенной от маржи вероятностью рынка.",
     `Текущее значение: <b>${fixed(c.edge, 1)}%</b> · порог VALUE <b>${thresholds.minEdgePercent}%</b>.`,
     `• Вероятность FVM: <b>${fixed(c.probability * 100, 1)}%</b> — Football-Data и внутренняя модель FVM`,
-    `• Вероятность рынка без маржи: <b>${marketProbability === undefined ? "N/A" : `${fixed(marketProbability * 100, 1)}%`}</b> — ${escHtml(source)} / ${escHtml(item.bookmaker || "букмекер")}`,
+    `• Сырая implied probability: <b>${fixed((c.rawImpliedProbability ?? (1 / c.odds)) * 100, 2)}%</b> (= 1 / ${fixed(c.odds)})`,
+    `• No-vig probability: <b>${marketProbability === undefined ? "N/A" : `${fixed(marketProbability * 100, 1)}%`}</b> — нормализация рынка 1X2 без маржи`,
+    `• Источник: ${escHtml(source)} / ${escHtml(item.bookmaker || "букмекер")}`,
     `Расчёт: ${fixed(c.probability * 100, 1)}% − ${fixed((marketProbability ?? 0) * 100, 1)}% = <b>${fixed(c.edge, 1)}%</b>.`,
     gap(c.edge, thresholds.minEdgePercent, "%")
   ] };
@@ -196,6 +204,7 @@ function reasonText(reason) {
     MARKET_EVENT_NOT_MATCHED: "рыночное событие не сопоставлено с матчем",
     MARKET_STALE: "котировка устарела",
     SOURCE_PARTIAL: "источник вернул неполные данные",
+    SHADOW_MODEL_DISAGREEMENT: "слишком большое расхождение основной и теневой моделей",
     SANITY_REVIEW: "требуется ручная проверка согласованности",
     NO_VALUE: "условия VALUE не выполнены"
   };
@@ -241,6 +250,10 @@ export function renderMatchCard(item) {
     "<b>Вероятности</b>",
     probabilityLine("Основная модель", item.model),
     probabilityLine("Теневая модель", item.shadow?.challenger?.probabilities),
+    item.modelDisagreementPp === null || item.modelDisagreementPp === undefined
+      ? "Model gap: <b>N/A</b>"
+      : `Model gap: <b>${fixed(item.modelDisagreementPp, 1)} pp</b> ${item.shadowGateStatus === "OK" ? "✅" : "⚠️"}`,
+    `Shadow gate: <b>${escHtml(item.shadowGateStatus || "N/A")}</b>`,
     "",
     "<b>Рынок и оценка</b>",
     `Источник: <b>${escHtml(d.market?.source || "N/A")}</b> · букмекер: <b>${escHtml(item.bookmaker || "N/A")}</b>`,
@@ -270,7 +283,13 @@ export function renderFixtureDiagnostic(item, kind, thresholds = { minDataQualit
   if (kind === "sanity") return { title: "🧭 Проверки здравого смысла", lines: d.sanityWarnings?.length ? d.sanityWarnings.map(w => `• ${escHtml(w.message || w.reason)}`) : ["✅ Предупреждений нет."] };
   if (kind === "shadow") {
     const s = item.shadow;
-    return { title: "🧪 Shadow", lines: ["Официальное решение всегда формирует основная модель.", `Статус: <b>${escHtml(s?.shadowStatus || "N/A")}</b>`, `Согласие: <b>${escHtml(s?.disagreementStatus || "N/A")}</b>`, "Теневая модель не влияет на production-решение."] };
+    return { title: "🧪 Shadow", lines: [
+      "Вероятность, Fair Odds и EV всегда рассчитывает основная модель.",
+      `Статус модели: <b>${escHtml(s?.shadowStatus || "N/A")}</b>`,
+      `Разница выбранного исхода: <b>${item.modelDisagreementPp === null || item.modelDisagreementPp === undefined ? "N/A" : `${fixed(item.modelDisagreementPp, 1)} pp`}</b>`,
+      `Shadow gate: <b>${escHtml(item.shadowGateStatus || "N/A")}</b>`,
+      item.shadowGateReason ? escHtml(item.shadowGateReason) : "Отдельного ограничения нет."
+    ] };
   }
   const c = item.contextAnalysis;
   return { title: "🧠 Контекст", lines: c ? [

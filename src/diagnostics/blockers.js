@@ -24,6 +24,7 @@ export function blockerReasons(item, config) {
   if ((risk?.score ?? 100) < 70 || hasRedFlag(item, "MARKET_DISAGREEMENT")) reasons.add("HIGH_RISK");
   if (sanity.length) reasons.add("SANITY_REVIEW");
   if (hasRedFlag(item, "SOURCE_PARTIAL")) reasons.add("SOURCE_PARTIAL");
+  if (item.shadowGateStatus === "BLOCK") reasons.add("SHADOW_MODEL_DISAGREEMENT");
   if (!reasons.size && item.category !== "value") reasons.add("OTHER");
   return [...reasons];
 }
@@ -43,6 +44,7 @@ export function blockerSummary(processed = [], config) {
     HIGH_RISK: 0,
     SANITY_REVIEW: 0,
     SOURCE_PARTIAL: 0,
+    SHADOW_MODEL_DISAGREEMENT: 0,
     OTHER: 0
   };
   const byFixture = {};
