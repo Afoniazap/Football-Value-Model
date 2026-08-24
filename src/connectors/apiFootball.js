@@ -1,12 +1,44 @@
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+
 const BASE = "https://v3.football.api-sports.io";
+const DAY_MS = 86_400_000;
+let runtime={cacheDir:null,fetchImpl:(...args)=>fetch(...args),now:()=>Date.now(),minGapMs:7000};
+let inFlight=new Map(), dailyLimitUntil=0, telemetry=freshTelemetry();
+let networkQueue=Promise.resolve();
+
+function freshTelemetry(){return {requests:0,cacheHits:0,staleHits:0,avoided:0,deduplicated:0,dailyLimit:false};}
+export function configureApiFootball(options={}){runtime={...runtime,...options};if(runtime.cacheDir)fs.mkdirSync(runtime.cacheDir,{recursive:true});loadQuotaState();}
+export function beginApiFootballRefresh(){telemetry=freshTelemetry();}
+export function getApiFootballTelemetry(refreshMinutes=30){const perDay=Math.ceil(1440/Math.max(5,Number(refreshMinutes)||30));return {...telemetry,estimatedDailyRequests:telemetry.requests*perDay};}
+export class ApiFootballError extends Error{constructor(code,message){super(message);this.name="ApiFootballError";this.code=code;}}
+function cacheFile(key){if(!runtime.cacheDir)return null;return path.join(runtime.cacheDir,`${crypto.createHash("sha256").update(key).digest("hex")}.json`);}
+function readCache(key){const file=cacheFile(key);if(!file)return null;try{return JSON.parse(fs.readFileSync(file,"utf8"));}catch{return null;}}
+function writeCache(key,data){const file=cacheFile(key);if(file)fs.writeFileSync(file,JSON.stringify({savedAt:runtime.now(),data}),"utf8");}
+function quotaFile(){return runtime.cacheDir?path.join(runtime.cacheDir,"quota-state.json"):null;}
+function loadQuotaState(){const file=quotaFile();if(!file)return;try{dailyLimitUntil=Number(JSON.parse(fs.readFileSync(file,"utf8")).until)||0;}catch{dailyLimitUntil=0;}}
+function persistQuotaState(){const file=quotaFile();if(file)fs.writeFileSync(file,JSON.stringify({until:dailyLimitUntil}),"utf8");}
+function markDailyLimit(){const now=new Date(runtime.now());dailyLimitUntil=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()+1);telemetry.dailyLimit=true;persistQuotaState();}
+function apiError(data){
+  const errors=data?.errors;
+  if(!errors||(Array.isArray(errors)&&errors.length===0)||(!Array.isArray(errors)&&Object.keys(errors).length===0))return null;
+  const requestMessage=!Array.isArray(errors)?errors.requests:null;
+  if(requestMessage&&/request limit|requests limit|limit.*day/i.test(String(requestMessage)))return new ApiFootballError("DAILY_LIMIT","API-Football: DAILY LIMIT");
+  return new ApiFootballError("API_ERROR",`API-Football: ${Array.isArray(errors)?errors.join("; "):Object.keys(errors).join(", ")}`);
+}
 
 async function getJson(path, key) {
   if (!key) return null;
-  const response = await fetch(`${BASE}${path}`, {
+  telemetry.requests++;
+  const response = await runtime.fetchImpl(`${BASE}${path}`, {
     headers: { "x-apisports-key": key }
   });
   if (!response.ok) throw new Error(`api-football ${response.status}: ${await response.text()}`);
-  return response.json();
+  const data=await response.json();
+  const error=apiError(data);
+  if(error){if(error.code==="DAILY_LIMIT")markDailyLimit();throw error;}
+  return data;
 }
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -14,7 +46,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 let lastApiCallAt = 0;
 
 async function rateLimitedGetJson(path, key) {
-  const minGap = 7000;
+  const minGap = runtime.minGapMs;
   const wait = Math.max(0, minGap - (Date.now() - lastApiCallAt));
 
   if (wait > 0) {
@@ -36,12 +68,33 @@ async function rateLimitedGetJson(path, key) {
   }
 }
 
-export async function getFixtureRisk(key, apiFootballFixtureId) {
+function queuedGetJson(requestPath,key){
+  const run=networkQueue.then(()=>rateLimitedGetJson(requestPath,key));
+  networkQueue=run.catch(()=>{});
+  return run;
+}
+
+async function requestJson(requestPath,key,{ttlMs=0,staleMs=0}={}){
+  const cache=readCache(requestPath),age=cache?runtime.now()-Number(cache.savedAt):Infinity;
+  if(cache&&age<=ttlMs){telemetry.cacheHits++;return cache.data;}
+  if(dailyLimitUntil>runtime.now()){
+    telemetry.dailyLimit=true;telemetry.avoided++;
+    if(cache&&age<=staleMs){telemetry.staleHits++;return cache.data;}
+    throw new ApiFootballError("DAILY_LIMIT","API-Football: DAILY LIMIT");
+  }
+  if(inFlight.has(requestPath)){telemetry.deduplicated++;telemetry.avoided++;return inFlight.get(requestPath);}
+  const promise=(async()=>{try{const data=await queuedGetJson(requestPath,key);writeCache(requestPath,data);return data;}catch(error){if(cache&&age<=staleMs){telemetry.staleHits++;return cache.data;}throw error;}finally{inFlight.delete(requestPath);}})();
+  inFlight.set(requestPath,promise);return promise;
+}
+
+export async function getFixtureRisk(key, apiFootballFixtureId, kickoff=null) {
   if (!key || !apiFootballFixtureId) return null;
-  const [injuries, lineups] = await Promise.all([
-    getJson(`/injuries?fixture=${apiFootballFixtureId}`, key).catch(() => null),
-    getJson(`/fixtures/lineups?fixture=${apiFootballFixtureId}`, key).catch(() => null)
-  ]);
+  const injuriesPromise=requestJson(`/injuries?fixture=${apiFootballFixtureId}`,key,{ttlMs:2*3600_000,staleMs:6*3600_000});
+  const minutesToKickoff=kickoff?(new Date(kickoff).getTime()-runtime.now())/60_000:0;
+  const requestLineups=!kickoff||minutesToKickoff<=120;
+  if(!requestLineups)telemetry.avoided++;
+  const lineupsPromise=requestLineups?requestJson(`/fixtures/lineups?fixture=${apiFootballFixtureId}`,key,{ttlMs:10*60_000,staleMs:30*60_000}):Promise.resolve(null);
+  const [injuries,lineups]=await Promise.all([injuriesPromise,lineupsPromise]);
   return {
     injuries: injuries?.response || [],
     lineups: lineups?.response || []
@@ -74,7 +127,7 @@ export async function findApiFootballFixture(key, fixture) {
   if(!key || !fixture?.utcDate) return null;
 
   const date=new Date(fixture.utcDate).toISOString().slice(0,10);
-  const data=await getJson(`/fixtures?date=${date}`,key);
+  const data=await requestJson(`/fixtures?date=${date}`,key,{ttlMs:30*60_000,staleMs:2*3600_000});
   const matches=data?.response || [];
 
   let best=null;
@@ -108,7 +161,7 @@ export async function getUpcomingApiFootballMatches(key, horizonHours = 24) {
   const all = [];
 
   for (const date of dates) {
-    const data = await rateLimitedGetJson(`/fixtures?date=${date}`, key);
+    const data = await requestJson(`/fixtures?date=${date}`,key,{ttlMs:30*60_000,staleMs:2*3600_000});
     all.push(...(data?.response || []));
   }
 
@@ -167,7 +220,7 @@ export async function getUpcomingApiFootballMatches(key, horizonHours = 24) {
 export async function getFixtureOdds(key, fixtureId) {
   if (!key || !fixtureId) return null;
 
-  const data = await rateLimitedGetJson(`/odds?fixture=${fixtureId}`, key);
+  const data = await requestJson(`/odds?fixture=${fixtureId}`,key,{ttlMs:10*60_000,staleMs:0});
   const row = data?.response?.[0];
   if (!row) return null;
 
@@ -249,9 +302,10 @@ export async function getFixtureOdds(key, fixtureId) {
 export async function getApiFootballCompetitionContext(key, leagueId, season) {
   if (!key || !leagueId || !season) return null;
 
-  const data = await rateLimitedGetJson(
+  const data = await requestJson(
     `/fixtures?league=${leagueId}&season=${season}`,
-    key
+    key,
+    {ttlMs:6*3600_000,staleMs:24*3600_000}
   );
 
   const raw = data?.response || [];
@@ -366,9 +420,10 @@ export async function getApiFootballCompetitionContext(key, leagueId, season) {
 export async function getFinishedFixturesForDate(key, date) {
   if (!key || !date) return [];
 
-  const data = await rateLimitedGetJson(
+  const data = await requestJson(
     `/fixtures?date=${date}`,
-    key
+    key,
+    {ttlMs:24*3600_000,staleMs:7*DAY_MS}
   );
 
   return (data?.response || [])

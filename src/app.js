@@ -5,13 +5,14 @@ import { fileURLToPath } from "node:url";
 import { getUpcomingMatches, getCompetitionContext } from "./connectors/footballData.js";
 import { getOddsForCompetition, matchOddsEvent, extractMarkets } from "./connectors/odds.js";
 import { analyseFixture } from "./engine/analyse.js";
-import { getUpcomingApiFootballMatches, getFixtureRisk, getFixtureOdds, getApiFootballCompetitionContext, getFinishedFixturesForDate } from "./connectors/apiFootball.js";
+import { getUpcomingApiFootballMatches, getFixtureRisk, getFixtureOdds, getApiFootballCompetitionContext, getFinishedFixturesForDate, configureApiFootball, beginApiFootballRefresh, getApiFootballTelemetry } from "./connectors/apiFootball.js";
 import { dashboardText, dashboardKeyboard, listText, listKeyboard, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard } from "./ui/telegram.js";
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const DATA=path.join(ROOT,"data");
 const LOGS=path.join(ROOT,"logs");
 fs.mkdirSync(DATA,{recursive:true}); fs.mkdirSync(LOGS,{recursive:true});
+configureApiFootball({cacheDir:path.join(DATA,"api-football-cache")});
 
 const env=process.env;
 for(const key of ["TELEGRAM_BOT_TOKEN","FOOTBALL_DATA_TOKEN","THE_ODDS_API_KEY"]){
@@ -29,7 +30,7 @@ const config={
   maxRecommendations:Number(env.MAX_RECOMMENDATIONS||5)
 };
 let offset=0;
-let state={loading:false,stage:"0/9",updatedAt:null,results:[],errors:[]};
+let state={loading:false,stage:"0/9",updatedAt:null,results:[],errors:[],providers:{}};
 
 async function tg(method,body={}){
   const r=await fetch(`${TG}/${method}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
@@ -97,7 +98,7 @@ async function updateLocalHistory(){
 async function refresh(){
   console.log("DEBUG: refresh start");
   if(state.loading)return;
-  state.loading=true; state.errors=[]; state.stage="1/9 Data Integrity";
+  state.loading=true; state.errors=[]; state.stage="1/9 Data Integrity"; beginApiFootballRefresh();
   try{
     console.log("DEBUG: before history");
     const historyStatus=await updateLocalHistory().catch(e=>{
@@ -192,7 +193,8 @@ async function refresh(){
           console.log("DEBUG: risk", f.home, "-", f.away);
           const risk=await getFixtureRisk(
             env.API_FOOTBALL_KEY.trim(),
-            f.apiFootballFixtureId
+            f.apiFootballFixtureId,
+            f.utcDate
           );
 
           squadData={
@@ -254,9 +256,15 @@ async function refresh(){
     const values=results.filter(x=>x.category==="VALUE").sort((a,b)=>(b.best?.fds||0)-(a.best?.fds||0));
     const allowedIds=new Set(values.slice(0,config.maxRecommendations).map(x=>x.id));
     state.results=results.map(x=>x.category==="VALUE"&&!allowedIds.has(x.id)?{...x,category:"NEAR",reason:"Не вошёл в лимит лучших рекомендаций дня."}:x);
+    state.providers.apiFootball=getApiFootballTelemetry(env.REFRESH_MINUTES||30);
     state.updatedAt=new Date().toISOString(); state.stage="9/9 Complete"; save();
+    console.log(`API-Football: req ${state.providers.apiFootball.requests} | cache ${state.providers.apiFootball.cacheHits+state.providers.apiFootball.staleHits} | saved ${state.providers.apiFootball.avoided} | est/day ${state.providers.apiFootball.estimatedDailyRequests}`);
     console.log(`FVM: ${state.results.length} matches | VALUE ${state.results.filter(x=>x.category==="VALUE").length}`);
-  }catch(e){state.errors.push(e.message);console.error(e);save();}
+  }catch(e){
+    state.providers.apiFootball=getApiFootballTelemetry(env.REFRESH_MINUTES||30);
+    if(e?.code==="DAILY_LIMIT")console.error("API-Football: DAILY LIMIT");
+    state.errors.push(e.message);console.error(e);save();
+  }
   finally{state.loading=false;}
 }
 async function dashboard(chatId,msgId){

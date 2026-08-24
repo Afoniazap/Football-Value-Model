@@ -9,6 +9,8 @@ export function dashboardText(state) {
   const processedMarkets = state.results.reduce((s,x)=>s+x.markets.length,0);
   const health = total ? Math.round(state.results.reduce((s,x)=>s+x.dataQuality,0)/total) : 0;
   const opportunity = total ? Math.round(Math.min(100,(counts.VALUE*20+counts.NEAR*8)/total*100)) : 0;
+  const api = state.providers?.apiFootball;
+  const fixtureCount = api?.dailyLimit && !state.updatedAt ? "N/A" : total;
   return [
     "⚽ <b>FOOTBALL VALUE MODEL v1.0</b>",
     "",
@@ -18,7 +20,7 @@ export function dashboardText(state) {
     `Health Score: <b>${health}/100</b>`,
     `Opportunity Index: <b>${opportunity}/100</b>`,
     "",
-    `Матчей на 24 часа: <b>${total}</b>`,
+    `Матчей на 24 часа: <b>${fixtureCount}</b>`,
     `Рынков рассчитано: <b>${processedMarkets}</b>`,
     `✅ VALUE: <b>${counts.VALUE}</b>`,
     `🟡 Near Value: <b>${counts.NEAR}</b>`,
@@ -26,8 +28,9 @@ export function dashboardText(state) {
     `❌ NO BET: <b>${counts.NO_BET}</b>`,
     "",
     `Обновлено: <b>${state.updatedAt ? localDate(state.updatedAt) : "—"}</b>`,
-    state.errors.length ? `⚠️ Ошибок источников: <b>${state.errors.length}</b>` : "Источники: ✅"
-  ].join("\n");
+    state.errors.length ? `⚠️ Ошибок источников: <b>${state.errors.length}</b>` : "Источники: ✅",
+    api ? `API-Football: <b>${api.dailyLimit ? "DAILY LIMIT" : "OK"}</b> · req ${api.requests} · cache ${api.cacheHits + api.staleHits} · saved ${api.avoided}` : null
+  ].filter(Boolean).join("\n");
 }
 
 export function dashboardKeyboard(state) {
