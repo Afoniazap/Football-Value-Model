@@ -2,6 +2,13 @@
 title FVM v0.4
 cd /d "%~dp0"
 
+rem Support the portable Node.js installation used by the Windows FVM bundle.
+if not exist "%~d0\IT\js\node.exe" goto node_path_ready
+where node >nul 2>nul
+if not errorlevel 1 goto node_path_ready
+set "PATH=%~d0\IT\js;%PATH%"
+:node_path_ready
+
 where node >nul 2>nul
 if errorlevel 1 (
   echo Node.js is not installed or is not available in PATH.
