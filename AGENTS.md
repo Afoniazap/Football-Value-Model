@@ -536,3 +536,20 @@ The owner should primarily receive:
 - completed results;
 - important blockers;
 - requests for genuinely significant decisions.
+
+---
+
+# OWNER-CONTROLLED POLICY
+
+AGENTS.md is OWNER-CONTROLLED POLICY.
+
+You must NOT autonomously modify, rewrite, delete, weaken, bypass, or reinterpret AGENTS.md.
+
+Any change to AGENTS.md requires explicit owner approval BEFORE the change.
+
+Do not include AGENTS.md in autonomous commits unless the owner explicitly requested that exact policy change.
+
+If work appears to require changing AGENTS.md:
+STOP and report APPROVAL REQUIRED.
+
+No code change, refactor, migration, test failure, runtime issue, or operational objective may override this rule.
