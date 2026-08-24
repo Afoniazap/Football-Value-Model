@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { getUpcomingMatches, getCompetitionContext } from "./connectors/footballData.js";
 import { getOddsForCompetition, matchOddsEvent, extractMarkets } from "./connectors/odds.js";
 import { analyseFixture } from "./engine/analyse.js";
+import { getUpcomingApiFootballMatches, getFixtureRisk, getFixtureOdds, getApiFootballCompetitionContext, getFinishedFixturesForDate } from "./connectors/apiFootball.js";
 import { dashboardText, dashboardKeyboard, listText, listKeyboard, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard } from "./ui/telegram.js";
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
@@ -37,25 +38,217 @@ async function tg(method,body={}){
 function permitted(id){return allowed.size===0||allowed.has(String(id));}
 function save(){fs.writeFileSync(path.join(DATA,"state.json"),JSON.stringify(state,null,2),"utf8");}
 
+async function updateLocalHistory(){
+  const historyFile=path.join(DATA,"history.json");
+
+  let history=[];
+  try{
+    history=JSON.parse(fs.readFileSync(historyFile,"utf8"));
+    if(!Array.isArray(history)) history=[];
+  }catch{
+    history=[];
+  }
+
+  const yesterday=new Date(Date.now()-86400000)
+    .toISOString()
+    .slice(0,10);
+
+  const alreadyLoaded=history.some(
+    x=>String(x.utcDate||"").slice(0,10)===yesterday
+  );
+
+  if(alreadyLoaded){
+    return {
+      added:0,
+      total:history.length,
+      skipped:true
+    };
+  }
+
+  const finished=await getFinishedFixturesForDate(
+    env.API_FOOTBALL_KEY.trim(),
+    yesterday
+  );
+
+  const byId=new Map(
+    history.map(x=>[String(x.id),x])
+  );
+
+  for(const m of finished){
+    byId.set(String(m.id),m);
+  }
+
+  const merged=[...byId.values()]
+    .sort((a,b)=>new Date(a.utcDate)-new Date(b.utcDate));
+
+  fs.writeFileSync(
+    historyFile,
+    JSON.stringify(merged,null,2),
+    "utf8"
+  );
+
+  return {
+    added:Math.max(0,merged.length-history.length),
+    total:merged.length,
+    skipped:false
+  };
+}
+
 async function refresh(){
+  console.log("DEBUG: refresh start");
   if(state.loading)return;
   state.loading=true; state.errors=[]; state.stage="1/9 Data Integrity";
   try{
-    const fixtures=await getUpcomingMatches(env.FOOTBALL_DATA_TOKEN.trim(),config.horizon);
+    console.log("DEBUG: before history");
+    const historyStatus=await updateLocalHistory().catch(e=>{
+      state.errors.push(`Local history: ${e.message}`);
+      return {added:0,total:0};
+    });
+
+    console.log("DEBUG: before fixtures");
+    const fixtures=await getUpcomingApiFootballMatches(env.API_FOOTBALL_KEY.trim(),config.horizon);
+    console.log("DEBUG: fixtures loaded", fixtures.length);
     state.stage="2/9 Match Classification";
     const codes=[...new Set(fixtures.map(x=>x.competitionCode).filter(Boolean))];
     const contexts={}, odds={};
+
+    const contextKeys=[...new Set(
+      fixtures
+        .filter(f=>f.apiFootballLeagueId && f.seasonStart)
+        .map(f=>`${f.apiFootballLeagueId}|${f.seasonStart}`)
+    )];
+
+    for(const contextKey of contextKeys){
+      console.log("DEBUG: context", contextKey);
+      const [leagueId,season]=contextKey.split("|");
+
+      state.stage=`3/9 API-Football Context: ${leagueId}`;
+
+      contexts[contextKey]=await getApiFootballCompetitionContext(
+        env.API_FOOTBALL_KEY.trim(),
+        Number(leagueId),
+        season
+      ).catch(e=>{
+        state.errors.push(`API-Football context ${contextKey}: ${e.message}`);
+        return null;
+      });
+
+      if(!contexts[contextKey]){
+        const sample=fixtures.find(f =>
+          String(f.apiFootballLeagueId)===String(leagueId) &&
+          String(f.seasonStart)===String(season)
+        );
+
+        if(sample?.competitionCode){
+          contexts[contextKey]=await getCompetitionContext(
+            env.FOOTBALL_DATA_TOKEN.trim(),
+            sample.competitionCode
+          ).catch(()=>null);
+        }
+      }
+    }
+
+    // The Odds API temporarily disabled: quota exhausted.
+    // API-Football odds are used below per fixture.
     for(const code of codes){
-      state.stage=`3/9 Collectors: ${code}`;
-      contexts[code]=await getCompetitionContext(env.FOOTBALL_DATA_TOKEN.trim(),code);
-      odds[code]=await getOddsForCompetition(env.THE_ODDS_API_KEY.trim(),env.ODDS_REGION||"eu",code).catch(e=>{state.errors.push(e.message);return[]});
+      odds[code]=[];
     }
     state.stage="4/9 Independent Models";
+
+    let localHistory=[];
+    try{
+      localHistory=JSON.parse(
+        fs.readFileSync(path.join(DATA,"history.json"),"utf8")
+      );
+      if(!Array.isArray(localHistory)) localHistory=[];
+    }catch{
+      localHistory=[];
+    }
+
     const results=[];
     for(const f of fixtures){
+      console.log("DEBUG: fixture", f.home, "-", f.away, f.apiFootballFixtureId);
       const event=matchOddsEvent(f,odds[f.competitionCode]||[]);
-      const marketData=event?extractMarkets(event):null;
-      results.push(analyseFixture(f,contexts[f.competitionCode],marketData,config));
+      let marketData=event?extractMarkets(event):null;
+
+      if(!marketData && env.API_FOOTBALL_KEY && f.apiFootballFixtureId){
+        try{
+          console.log("DEBUG: odds", f.home, "-", f.away);
+          marketData=await getFixtureOdds(
+            env.API_FOOTBALL_KEY.trim(),
+            f.apiFootballFixtureId
+          );
+        }catch(e){
+          state.errors.push(
+            `API-Football odds ${f.home}-${f.away}: ${e.message}`
+          );
+        }
+      }
+
+      let squadData=null;
+
+      if(env.API_FOOTBALL_KEY && marketData && f.apiFootballFixtureId){
+        try{
+          console.log("DEBUG: risk", f.home, "-", f.away);
+          const risk=await getFixtureRisk(
+            env.API_FOOTBALL_KEY.trim(),
+            f.apiFootballFixtureId
+          );
+
+          squadData={
+            apiFixtureId:f.apiFootballFixtureId,
+            injuries:risk?.injuries || [],
+            lineups:risk?.lineups || [],
+            injuriesAvailable:!!risk,
+            lineupsAvailable:(risk?.lineups || []).length>0,
+            confirmedLineups:(risk?.lineups || []).length>=2
+          };
+        }catch(e){
+          state.errors.push(
+            `API-Football ${f.home}-${f.away}: ${e.message}`
+          );
+        }
+      }
+
+      const baseContext=
+        contexts[`${f.apiFootballLeagueId}|${f.seasonStart}`] || {
+          standings:null,
+          finished:[],
+          scheduled:[]
+        };
+
+      const relevantLocal=localHistory.filter(m =>
+        m.homeTeam?.id===f.homeId ||
+        m.awayTeam?.id===f.homeId ||
+        m.homeTeam?.id===f.awayId ||
+        m.awayTeam?.id===f.awayId
+      );
+
+      const mergedFinished=[
+        ...(baseContext.finished || []),
+        ...relevantLocal
+      ];
+
+      const uniqueFinished=[
+        ...new Map(
+          mergedFinished.map(m=>[String(m.id),m])
+        ).values()
+      ];
+
+      const mergedContext={
+        ...baseContext,
+        finished:uniqueFinished
+      };
+
+      results.push(
+        analyseFixture(
+          f,
+          mergedContext,
+          marketData,
+          config,
+          squadData
+        )
+      );
     }
     state.stage="7/9 Recommendation Engine";
     const values=results.filter(x=>x.category==="VALUE").sort((a,b)=>(b.best?.fds||0)-(a.best?.fds||0));

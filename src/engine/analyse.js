@@ -2,7 +2,7 @@ import { classifyMatch, teamStrengthModel, formModel, scheduleCongestion, consen
 import { evaluateMarkets, decisionMetrics } from "./markets.js";
 import { clamp } from "./utils.js";
 
-export function analyseFixture(fixture, context, oddsData, config) {
+export function analyseFixture(fixture, context, oddsData, config, squadData=null) {
   const stage = {};
   stage.classification = classifyMatch(fixture,context);
   const strength = teamStrengthModel(fixture,context);
@@ -38,9 +38,23 @@ const marketScore = oddsData
 const freshnessScore =
   (context?.finished || []).length ? 10 : 0;
 
-// Пока реальных источников xG и составов нет — не выдумываем данные.
+// Настоящий xG пока не подключён.
 const xgScore = 0;
-const squadScore = 0;
+
+// API-Football: травмы и составы.
+const injuriesAvailable = !!squadData?.injuriesAvailable;
+const lineupsAvailable = !!squadData?.lineupsAvailable;
+const confirmedLineups = !!squadData?.confirmedLineups;
+const injuryCount = squadData?.injuries?.length || 0;
+
+// Максимум 10 баллов за squad data:
+// 3 — API вернул injuries
+// 3 — доступны lineups
+// 4 — составы обеих команд подтверждены
+const squadScore =
+  (injuriesAvailable ? 3 : 0) +
+  (lineupsAvailable ? 3 : 0) +
+  (confirmedLineups ? 4 : 0);
 
 const dataQuality = Math.round(
   clamp(
@@ -63,11 +77,27 @@ const dataQualityV2 = {
   formScore,
   marketScore,
   xgScore,
-  squadScore
+  squadScore,
+  injuriesAvailable,
+  lineupsAvailable,
+  confirmedLineups,
+  injuryCount,
+  apiFixtureId: squadData?.apiFixtureId || null
 };
   const sciPenalty = sci.known ? Math.min(15,Math.abs(sci.differential)*0.12) : 8;
   const stability = Math.round(clamp(cons.agreement - sciPenalty,0,100));
   const redFlags = [];
+
+  if (!squadData)
+    redFlags.push("API-Football: матч не сопоставлен");
+  else {
+    if (!injuriesAvailable)
+      redFlags.push("API-Football: injuries N/A");
+
+    if (!lineupsAvailable)
+      redFlags.push("API-Football: lineups N/A");
+  }
+
   if (!oddsData) redFlags.push("Нет рыночной линии");
   if (!sci.known) redFlags.push("SCI неполный");
   if (dataQuality < config.minDataQuality) redFlags.push("Data Quality ниже порога");

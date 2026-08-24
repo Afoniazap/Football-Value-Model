@@ -12,7 +12,11 @@ const SPORT_KEYS = {
   PPL: "soccer_portugal_primeira_liga",
   ELC: "soccer_efl_champ",
   BSA: "soccer_brazil_campeonato",
-  MLS: "soccer_usa_mls"
+  MLS: "soccer_usa_mls",
+  CLI: "soccer_conmebol_copa_libertadores",
+  SUD: "soccer_conmebol_copa_sudamericana",
+  LEAGUES: "soccer_concacaf_leagues_cup",
+  BSB: "soccer_brazil_serie_b",
 };
 
 async function getJson(url) {
