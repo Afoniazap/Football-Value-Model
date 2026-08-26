@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dashboardText, cardText } from "../src/ui/telegram.js";
+import { dashboardText, cardText, metricText } from "../src/ui/telegram.js";
 
 test("dashboard does not present provider failure as genuine zero fixtures",()=>{
   const text=dashboardText({
@@ -16,9 +16,12 @@ test("dashboard does not present provider failure as genuine zero fixtures",()=>
 });
 
 test("WAIT card distinguishes an available quote from a missing model candidate",()=>{
-  const text=cardText({id:"2",home:"A",away:"B",competition:"Ligue 1",utcDate:"2026-08-26T18:00:00Z",category:"WAIT",reason:"Недостаточно данных",best:null,marketAvailable:true,dataQuality:42,stability:35,consensusScore:0,redFlags:["Недостаточно данных модели"]});
+  const fixture={id:"2",home:"A",away:"B",competition:"Ligue 1",utcDate:"2026-08-26T18:00:00Z",category:"WAIT",reason:"Недостаточно данных",best:null,marketAvailable:true,marketSource:"API_FOOTBALL",marketDiagnostic:{normalizedBookmakers:3,marketSelection:"BLOCKED_NO_MODEL_CONTEXT"},dataQuality:42,stability:35,consensusScore:0,redFlags:["Недостаточно данных модели"]};
+  const text=cardText(fixture);
   assert.match(text,/Confidence <b>N\/A — нет модельного кандидата<\/b>/);
   assert.match(text,/Risk flags <b>1<\/b>/);
+  assert.match(text,/Рынок: <b>API_FOOTBALL<\/b> · букмекеров 3/);
+  assert.match(metricText("EV",fixture),/недостаточно реального competition\/team context/);
 });
 
 test("WAIT card keeps real model metrics visible without market odds",()=>{

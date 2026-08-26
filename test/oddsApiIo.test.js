@@ -30,3 +30,16 @@ test("odds-api.io does not attach an event with reversed teams",async()=>{
   assert.equal(result.matched,0);
   assert.deepEqual(result.byFixtureId,{});
 });
+
+test("odds-api.io falls back to public sport discovery when a league slug is unavailable",async()=>{
+  const calls=[];
+  const request=async url=>{
+    calls.push(url.searchParams.has("league")?"league":"sport");
+    if(calls.length===1)return {ok:false,status:404,text:async()=>'{"error":"League not found"}'};
+    if(url.pathname.endsWith("/events"))return response([{id:20,home:"Celje",away:"Slovan Bratislava",date:"2026-08-26T19:00:00Z"}]);
+    return response([{eventId:20,bookmakers:{b:[{name:"1x2",odds:[{home:2,draw:3,away:4}]}]}}]);
+  };
+  const result=await getOddsApiIoMarkets({apiKey:"secret",fixtures:[{id:"f2",competitionCode:"CL",home:"Celje",away:"Slovan Bratislava",utcDate:"2026-08-26T19:00:00Z"}],cacheDir:fs.mkdtempSync(path.join(os.tmpdir(),"fvm-odds-")),request});
+  assert.deepEqual(calls.slice(0,2),["league","sport"]);
+  assert.equal(result.matched,1);
+});

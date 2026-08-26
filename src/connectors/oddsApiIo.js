@@ -63,7 +63,14 @@ export async function getOddsApiIoMarkets({apiKey,bookmakers,fixtures,cacheDir,c
       const times=group.fixtures.map(f=>new Date(f.utcDate).getTime()).filter(Number.isFinite);
       const from=new Date(Math.min(...times)-180*60_000).toISOString(),to=new Date(Math.max(...times)+180*60_000).toISOString();
       const url=new URL(`${BASE}/events`);url.searchParams.set("apiKey",apiKey);url.searchParams.set("sport","football");url.searchParams.set("league",group.slug);url.searchParams.set("status","pending");url.searchParams.set("from",from);url.searchParams.set("to",to);
-      const result=await cachedJson(url,cacheDir,cacheMinutes*60_000,request);if(result.cacheHit)cacheHits++;else requests++;
+      let result;
+      try{result=await cachedJson(url,cacheDir,cacheMinutes*60_000,request);}
+      catch(error){
+        if(!/404.*League not found/i.test(error.message))throw error;
+        url.searchParams.delete("league");
+        result=await cachedJson(url,cacheDir,cacheMinutes*60_000,request);
+      }
+      if(result.cacheHit)cacheHits++;else requests++;
       for(const fixture of group.fixtures){const found=match(fixture,rows(result.data));if(found&&found.score>=.7)matches.push({fixture,event:found.event});}
     }catch(error){errors.push(`${group.slug}: ${error.message}`);}
   }

@@ -273,15 +273,22 @@ async function refresh(){
         finished:uniqueFinished
       };
 
-      results.push(
-        analyseFixture(
-          f,
+      const fixtureWithMarketDiagnostic={...f,marketDiagnostic:{
+        primary:event?"MATCHED":primaryHealth.status,
+        oddsApiIo:oddsApiIoEvent?"MATCHED":oddsApiIo.status,
+        apiFootballOdds:marketData?.source==="API_FOOTBALL"?"MATCHED":marketData?"NOT_NEEDED":"NO_QUOTES",
+        selectedSource:marketData?.source||null,
+        normalizedBookmakers:marketData?.bookmakers?.length||0
+      }};
+      const analysis=analyseFixture(
+          fixtureWithMarketDiagnostic,
           mergedContext,
           marketData,
           config,
           squadData
-        )
-      );
+        );
+      analysis.marketDiagnostic.marketSelection=analysis.markets.length?"CALCULATED":analysis.marketAvailable?"BLOCKED_NO_MODEL_CONTEXT":"NO_QUOTES";
+      results.push(analysis);
     }
     state.errors.push(...marketErrors);
     state.stage="7/9 Recommendation Engine";

@@ -112,6 +112,8 @@ export function cardText(x) {
     `Consensus <b>${Number.isFinite(x.consensusScore) ? x.consensusScore+"/100" : "N/A"}</b> · Confidence <b>${Number.isFinite(b?.confidence) ? b.confidence+"/100" : x.marketAvailable ? "N/A — нет модельного кандидата" : "N/A — нет цены"}</b>`,
     `Risk flags <b>${Array.isArray(x.redFlags) ? x.redFlags.length : "N/A"}</b>`
   );
+  if(x.marketAvailable)lines.push(`Рынок: <b>${esc(x.marketSource || "получен")}</b> · букмекеров ${x.marketDiagnostic?.normalizedBookmakers ?? "N/A"}`);
+  if(x.marketDiagnostic?.marketSelection==="BLOCKED_NO_MODEL_CONTEXT")lines.push("Расчёт Fair/Edge/EV заблокирован: недостаточно context для вероятности 1X2.");
 
   if (b) {
     const gates = [
@@ -205,6 +207,16 @@ export function metricText(code,x){
   const fp = b.fdsParts || {};
   const sv = x.stabilityV2 || {};
   const sci = x.sci || {};
+  const blockedMetric=["Model","Fair","Edge","EV","Conf","FDS","MAI"].includes(code)&&!x.best;
+  if(blockedMetric){
+    const market=x.marketAvailable
+      ? `Рыночная цена получена: <b>${esc(x.marketSource || "да")}</b>.`
+      : "Рыночная цена отсутствует.";
+    const reason=x.marketAvailable&&x.marketDiagnostic?.marketSelection==="BLOCKED_NO_MODEL_CONTEXT"
+      ? "Расчёт заблокирован до market selection: недостаточно реального competition/team context для вероятности 1X2. Поэтому Fair Odds, Edge, EV, Confidence, MAI и FDS не вычисляются."
+      : "Метрика недоступна, потому что не сформирован рыночный кандидат.";
+    return `<b>${esc(code)} — недоступно</b>\n\n${market}\n${reason}`;
+  }
 
   if (code === "Risks") {
     const flags = x.redFlags || [];
