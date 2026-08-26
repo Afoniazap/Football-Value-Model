@@ -3,8 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getUpcomingMatches, getCompetitionContext } from "./connectors/footballData.js";
-import { getOddsForCompetition, matchOddsEvent, extractMarkets } from "./connectors/odds.js";
+import { getOddsForCompetitionResult, matchOddsEvent, extractMarkets } from "./connectors/odds.js";
+import { getOddsApiIoMarkets } from "./connectors/oddsApiIo.js";
 import { analyseFixture } from "./engine/analyse.js";
+import { alignContextTeamIds } from "./engine/contextIds.js";
 import { getUpcomingApiFootballMatches, getFixtureRisk, getFixtureOdds, getApiFootballCompetitionContext, getFinishedFixturesForDate, configureApiFootball, beginApiFootballRefresh, getApiFootballTelemetry } from "./connectors/apiFootball.js";
 import { dashboardText, dashboardKeyboard, listText, listKeyboard, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard } from "./ui/telegram.js";
 
@@ -112,6 +114,7 @@ async function refresh(){
     state.stage="2/9 Match Classification";
     const codes=[...new Set(fixtures.map(x=>x.competitionCode).filter(Boolean))];
     const contexts={}, odds={};
+    state.providers.context={fallbacks:[],failures:[]};
 
     const contextKeys=[...new Set(
       fixtures
@@ -125,12 +128,13 @@ async function refresh(){
 
       state.stage=`3/9 API-Football Context: ${leagueId}`;
 
+      let contextError=null;
       contexts[contextKey]=await getApiFootballCompetitionContext(
         env.API_FOOTBALL_KEY.trim(),
         Number(leagueId),
         season
       ).catch(e=>{
-        state.errors.push(`API-Football context ${contextKey}: ${e.message}`);
+        contextError=e;
         return null;
       });
 
@@ -147,13 +151,36 @@ async function refresh(){
           ).catch(()=>null);
         }
       }
+      const usableContext=Boolean(contexts[contextKey]?.standings||(contexts[contextKey]?.finished||[]).length);
+      if(contextError&&usableContext)state.providers.context.fallbacks.push(`${contextKey}:FOOTBALL_DATA`);
+      if(contextError&&!usableContext){
+        const message=`API-Football context ${contextKey}: ${contextError.message}`;
+        state.providers.context.failures.push(message);state.errors.push(message);
+      }
     }
 
-    // The Odds API temporarily disabled: quota exhausted.
-    // API-Football odds are used below per fixture.
+    const primaryHealth={status:"NOT_NEEDED",requests:0,cacheHits:0,reasons:[]};
     for(const code of codes){
-      odds[code]=[];
+      const result=await getOddsForCompetitionResult(
+        env.THE_ODDS_API_KEY.trim(),env.ODDS_REGION||"eu",code,
+        {cacheDir:path.join(DATA,"market-cache","the-odds-api")}
+      );
+      odds[code]=result.events;
+      primaryHealth.requests+=result.requests;primaryHealth.cacheHits+=result.cacheHits;
+      if(result.status!=="OK")primaryHealth.reasons.push(`${code}:${result.reason||result.status}`);
+      if(primaryHealth.status==="NOT_NEEDED"||result.status==="OK")primaryHealth.status=result.status;
     }
+    const primaryCovered=new Set(fixtures.filter(f=>matchOddsEvent(f,odds[f.competitionCode]||[])).map(f=>f.id));
+    const oddsApiIo=await getOddsApiIoMarkets({
+      apiKey:env.ODDS_API_IO_KEY?.trim(),
+      bookmakers:env.ODDS_API_IO_BOOKMAKERS?.trim(),
+      fixtures:fixtures.filter(f=>!primaryCovered.has(f.id)),
+      cacheDir:path.join(DATA,"market-cache","odds-api-io")
+    });
+    const marketErrors=new Set();
+    if(primaryHealth.reasons.length)marketErrors.add(`The Odds API: ${primaryHealth.reasons.join(", ")}`);
+    if(oddsApiIo.errors.length)marketErrors.add(`odds-api.io: ${oddsApiIo.errors.join(", ")}`);
+    state.providers.market={primary:primaryHealth,oddsApiIo:{status:oddsApiIo.status,requests:oddsApiIo.requests,cacheHits:oddsApiIo.cacheHits,supported:oddsApiIo.supported,matched:oddsApiIo.matched},apiFootballOdds:{status:"NOT_NEEDED",requests:0,matched:0,reasons:[]}};
     state.stage="4/9 Independent Models";
 
     let localHistory=[];
@@ -170,20 +197,24 @@ async function refresh(){
     for(const f of fixtures){
       console.log("DEBUG: fixture", f.home, "-", f.away, f.apiFootballFixtureId);
       const event=matchOddsEvent(f,odds[f.competitionCode]||[]);
-      let marketData=event?extractMarkets(event):null;
+      const oddsApiIoEvent=oddsApiIo.byFixtureId[f.id]||null;
+      let marketData=event?{...extractMarkets(event),source:"THE_ODDS_API"}:oddsApiIoEvent?{...extractMarkets(oddsApiIoEvent),source:"ODDS_API_IO"}:null;
 
       if(!marketData && env.API_FOOTBALL_KEY && f.apiFootballFixtureId){
         try{
           console.log("DEBUG: odds", f.home, "-", f.away);
-          marketData=await getFixtureOdds(
+          const apiFootballMarket=await getFixtureOdds(
             env.API_FOOTBALL_KEY.trim(),
             f.apiFootballFixtureId
           );
+          marketData=apiFootballMarket?{...apiFootballMarket,source:"API_FOOTBALL"}:null;
         }catch(e){
-          state.errors.push(
-            `API-Football odds ${f.home}-${f.away}: ${e.message}`
-          );
+          state.providers.market.apiFootballOdds.status=e.code||"ERROR";
+          state.providers.market.apiFootballOdds.reasons.push(`${f.home}-${f.away}: ${e.message}`);
+          marketErrors.add(`API-Football odds: ${e.message}`);
         }
+        state.providers.market.apiFootballOdds.requests++;
+        if(marketData){state.providers.market.apiFootballOdds.status="OK";state.providers.market.apiFootballOdds.matched++;}
       }
 
       let squadData=null;
@@ -212,12 +243,12 @@ async function refresh(){
         }
       }
 
-      const baseContext=
+      const baseContext=alignContextTeamIds(
         contexts[`${f.apiFootballLeagueId}|${f.seasonStart}`] || {
           standings:null,
           finished:[],
           scheduled:[]
-        };
+        },f);
 
       const relevantLocal=localHistory.filter(m =>
         m.homeTeam?.id===f.homeId ||
@@ -252,6 +283,7 @@ async function refresh(){
         )
       );
     }
+    state.errors.push(...marketErrors);
     state.stage="7/9 Recommendation Engine";
     const values=results.filter(x=>x.category==="VALUE").sort((a,b)=>(b.best?.fds||0)-(a.best?.fds||0));
     const allowedIds=new Set(values.slice(0,config.maxRecommendations).map(x=>x.id));
@@ -325,4 +357,8 @@ async function main(){
     }catch(e){console.error(e.message);await new Promise(r=>setTimeout(r,3000))}
   }
 }
-main();
+export { refresh, state };
+
+if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+  main();
+}

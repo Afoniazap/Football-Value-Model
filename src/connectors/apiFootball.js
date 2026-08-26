@@ -291,6 +291,8 @@ export async function getFixtureOdds(key, fixtureId) {
     }
   }
 
+  if(!Object.keys(best.h2h).length&&!Object.keys(best.totals).length&&!Object.keys(best.spreads).length)return null;
+
   return {
     bookmakers:books,
     best,

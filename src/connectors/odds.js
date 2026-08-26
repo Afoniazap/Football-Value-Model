@@ -1,4 +1,6 @@
 import { similarity } from "../engine/utils.js";
+import fs from "node:fs";
+import path from "node:path";
 
 const SPORT_KEYS = {
   PL: "soccer_epl",
@@ -23,6 +25,28 @@ async function getJson(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`odds ${response.status}: ${await response.text()}`);
   return response.json();
+}
+
+function read(file){try{return JSON.parse(fs.readFileSync(file,"utf8"));}catch{return null;}}
+function write(file,data){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify(data),"utf8");}
+
+export async function getOddsForCompetitionResult(apiKey,region,competitionCode,{cacheDir,cacheMinutes=15}={}){
+  const sport=SPORT_KEYS[competitionCode];
+  if(!apiKey)return {status:"NOT_CONFIGURED",events:[],reason:"KEY_NOT_CONFIGURED",requests:0,cacheHits:0};
+  if(!sport)return {status:"NOT_SUPPORTED",events:[],reason:"COMPETITION_NOT_MAPPED",requests:0,cacheHits:0};
+  const backoffFile=cacheDir?path.join(cacheDir,"quota-backoff.json"):null,backoff=backoffFile?read(backoffFile):null;
+  if(Number(backoff?.until)>Date.now())return {status:"QUOTA",events:[],reason:"QUOTA_BACKOFF",requests:0,cacheHits:0};
+  const cacheFile=cacheDir?path.join(cacheDir,`${competitionCode}.json`):null,cached=cacheFile?read(cacheFile):null;
+  if(cached&&Date.now()-Number(cached.fetchedAt)<=cacheMinutes*60_000)return {status:"OK",events:cached.events||[],reason:null,requests:0,cacheHits:1};
+  try{
+    const events=await getOddsForCompetition(apiKey,region,competitionCode);
+    if(cacheFile)write(cacheFile,{fetchedAt:Date.now(),events});
+    return {status:events.length?"OK":"NO_ODDS",events,reason:events.length?null:"EMPTY_RESPONSE",requests:1,cacheHits:0};
+  }catch(error){
+    const quota=/odds 429|quota|usage limit/i.test(error.message);
+    if(quota&&backoffFile)write(backoffFile,{until:Date.now()+24*3600_000,reason:"QUOTA"});
+    return {status:quota?"QUOTA":"ERROR",events:[],reason:quota?"QUOTA":error.message,requests:1,cacheHits:0};
+  }
 }
 
 export async function getOddsForCompetition(apiKey, region, competitionCode) {

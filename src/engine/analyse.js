@@ -13,7 +13,9 @@ export function analyseFixture(fixture, context, oddsData, config, squadData=nul
   if (!strength || !cons) {
     return {
       ...fixture, category:"WAIT", reason:"Недостаточно реальных данных для независимой модели.",
-      dataQuality:42, stability:35, consensusScore:0, sci, markets:[]
+      dataQuality:42, stability:35, consensusScore:0, sci, markets:[],
+      marketAvailable:!!oddsData, marketSource:oddsData?.source || null,
+      redFlags:["Недостаточно данных модели",...(!oddsData?["Нет рыночной линии"]:[])]
     };
   }
 
@@ -147,7 +149,7 @@ const dataQualityV2 = {
     marketAgreement:oddsData?.agreement ?? null,
     sci, redFlags, models:cons.models.map(m=>({name:m.name,quality:m.quality,explanation:m.explanation})),
     consensusProbability:cons.probability,
-    markets:ranked,
+    markets:ranked, marketAvailable:!!oddsData, marketSource:oddsData?.source || null,
     best
   };
 }

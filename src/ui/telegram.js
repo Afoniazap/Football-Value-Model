@@ -6,10 +6,11 @@ function kb(rows) { return {inline_keyboard:rows}; }
 export function dashboardText(state) {
   const total = state.results.length;
   const counts = Object.fromEntries(["VALUE","NEAR","WAIT","NO_BET"].map(k=>[k,state.results.filter(x=>x.category===k).length]));
-  const processedMarkets = state.results.reduce((s,x)=>s+x.markets.length,0);
+  const processedMarkets = state.results.filter(x=>x.marketAvailable).length;
   const health = total ? Math.round(state.results.reduce((s,x)=>s+x.dataQuality,0)/total) : 0;
   const opportunity = total ? Math.round(Math.min(100,(counts.VALUE*20+counts.NEAR*8)/total*100)) : 0;
   const api = state.providers?.apiFootball;
+  const market = state.providers?.market;
   const fixtureCount = api?.dailyLimit && !state.updatedAt ? "N/A" : total;
   return [
     "⚽ <b>FOOTBALL VALUE MODEL v1.0</b>",
@@ -21,7 +22,7 @@ export function dashboardText(state) {
     `Opportunity Index: <b>${opportunity}/100</b>`,
     "",
     `Матчей на 24 часа: <b>${fixtureCount}</b>`,
-    `Рынков рассчитано: <b>${processedMarkets}</b>`,
+    `Рынок доступен: <b>${processedMarkets}/${total}</b>`,
     `✅ VALUE: <b>${counts.VALUE}</b>`,
     `🟡 Near Value: <b>${counts.NEAR}</b>`,
     `🟠 WAIT: <b>${counts.WAIT}</b>`,
@@ -29,7 +30,8 @@ export function dashboardText(state) {
     "",
     `Обновлено: <b>${state.updatedAt ? localDate(state.updatedAt) : "—"}</b>`,
     state.errors.length ? `⚠️ Ошибок источников: <b>${state.errors.length}</b>` : "Источники: ✅",
-    api ? `API-Football: <b>${api.dailyLimit ? "DAILY LIMIT" : "OK"}</b> · req ${api.requests} · cache ${api.cacheHits + api.staleHits} · saved ${api.avoided}` : null
+    api ? `API-Football: <b>${api.dailyLimit ? "DAILY LIMIT" : "OK"}</b> · req ${api.requests} · cache ${api.cacheHits + api.staleHits} · saved ${api.avoided}` : null,
+    market ? `Markets: Odds <b>${market.primary?.status || "N/A"}</b> · odds-api.io <b>${market.oddsApiIo?.status || "N/A"}</b> · AF <b>${market.apiFootballOdds?.status || "N/A"}</b>` : null
   ].filter(Boolean).join("\n");
 }
 
@@ -100,8 +102,16 @@ export function cardText(x) {
       `<b>${x.category}</b> · FDS <b>${b.fds}/100</b>`
     );
   } else {
-    lines.push("", `<b>${x.category}</b>`);
+    lines.push("", `<b>${x.category}</b>`, esc(x.reason || "Рынок недоступен."));
   }
+
+  lines.push(
+    "",
+    `<b>Доступные метрики</b>`,
+    `DQ <b>${Number.isFinite(x.dataQuality) ? x.dataQuality+"/100" : "N/A"}</b> · Stability <b>${Number.isFinite(x.stability) ? x.stability+"/100" : "N/A"}</b>`,
+    `Consensus <b>${Number.isFinite(x.consensusScore) ? x.consensusScore+"/100" : "N/A"}</b> · Confidence <b>${Number.isFinite(b?.confidence) ? b.confidence+"/100" : x.marketAvailable ? "N/A — нет модельного кандидата" : "N/A — нет цены"}</b>`,
+    `Risk flags <b>${Array.isArray(x.redFlags) ? x.redFlags.length : "N/A"}</b>`
+  );
 
   if (b) {
     const gates = [
