@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { canonicalTeamName, sameTeamIdentity } from "./teamAliases.js";
 
 const FINISHED_STATUSES = new Set(["FT", "AET", "PEN", "FINISHED"]);
 
@@ -77,7 +78,18 @@ export function loadLocalHistory(filePath, legacyFilePath = null) {
   const legacy = legacyFilePath
     ? readLegacy(legacyFilePath).map(row => normalizeHistoryMatch(row, "API_FOOTBALL", row.fetchedAt || row.utcDate)).filter(Boolean)
     : [];
-  return [...new Map([...legacy, ...rows].map(row => [row.recordKey, row])).values()];
+  const byProviderId = [...new Map([...legacy, ...rows].map(row => [row.recordKey, row])).values()];
+  const logical = new Map();
+  for (const row of byProviderId) {
+    const key = `${String(row.playedAt).slice(0, 16)}|${canonicalTeamName(row.homeTeam?.name)}|${canonicalTeamName(row.awayTeam?.name)}|${row.score?.fullTime?.home}:${row.score?.fullTime?.away}`;
+    const existing = logical.get(key);
+    if (!existing) {
+      logical.set(key, { ...row, provenance: { ...row.provenance, sources: [row.provenance?.source].filter(Boolean) } });
+      continue;
+    }
+    existing.provenance.sources = [...new Set([...existing.provenance.sources, row.provenance?.source].filter(Boolean))];
+  }
+  return [...logical.values()];
 }
 
 export function appendLocalHistory(filePath, matches, provenance, fetchedAt = new Date().toISOString()) {
@@ -99,7 +111,7 @@ export function appendLocalHistory(filePath, matches, provenance, fetchedAt = ne
 function teamMatches(row, teamId, teamName, side) {
   const team = side === "HOME" ? row.homeTeam : row.awayTeam;
   if (row.provenance?.source === "API_FOOTBALL" && teamId != null && String(team.id) === String(teamId)) return true;
-  return canonical(team.name) === canonical(teamName);
+  return sameTeamIdentity(team.name, teamName);
 }
 
 function usableBeforeKickoff(rows, fixture) {

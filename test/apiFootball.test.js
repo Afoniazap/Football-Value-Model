@@ -25,6 +25,15 @@ test("HTTP 200 with errors.requests is a daily-limit failure, not an empty resul
   assert.deepEqual(getApiFootballTelemetry(30),{requests:1,cacheHits:0,staleHits:0,avoided:1,deduplicated:0,dailyLimit:true,estimatedDailyRequests:48});
 });
 
+test("HTTP 200 with errors.rateLimit daily message also activates daily backoff",async()=>{
+  let calls=0;
+  configureApiFootball({cacheDir:tempDir(),minGapMs:0,fetchImpl:async()=>{calls++;return response({...validEmpty,errors:{rateLimit:"Too many requests. You have reached your daily request limit."}});}});
+  beginApiFootballRefresh();
+  await assert.rejects(getFinishedFixturesForDate("secret","2026-08-23"),e=>e.code==="DAILY_LIMIT");
+  await assert.rejects(getFinishedFixturesForDate("secret","2026-08-22"),e=>e.code==="DAILY_LIMIT");
+  assert.equal(calls,1);
+});
+
 test("genuine empty fixture response remains a valid empty list and is cached",async()=>{
   let calls=0;
   configureApiFootball({cacheDir:tempDir(),minGapMs:0,fetchImpl:async()=>{calls++;return response(validEmpty);}});

@@ -23,8 +23,8 @@ function markDailyLimit(){const now=new Date(runtime.now());dailyLimitUntil=Date
 function apiError(data){
   const errors=data?.errors;
   if(!errors||(Array.isArray(errors)&&errors.length===0)||(!Array.isArray(errors)&&Object.keys(errors).length===0))return null;
-  const requestMessage=!Array.isArray(errors)?errors.requests:null;
-  if(requestMessage&&/request limit|requests limit|limit.*day/i.test(String(requestMessage)))return new ApiFootballError("DAILY_LIMIT","API-Football: DAILY LIMIT");
+  const messages=Array.isArray(errors)?errors:Object.values(errors);
+  if(messages.some(message=>/daily request limit|request limit.*day|requests limit.*day|reached.*limit.*day/i.test(String(message))))return new ApiFootballError("DAILY_LIMIT","API-Football: DAILY LIMIT");
   return new ApiFootballError("API_ERROR",`API-Football: ${Array.isArray(errors)?errors.join("; "):Object.keys(errors).join(", ")}`);
 }
 

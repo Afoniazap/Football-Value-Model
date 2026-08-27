@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getUpcomingMatches, getCompetitionContext, configureFootballData } from "./connectors/footballData.js";
+import { getUpcomingMatches, getCompetitionContext, getFinishedFootballDataMatchesForDate, configureFootballData } from "./connectors/footballData.js";
 import { getOddsForCompetitionResult, matchOddsEvent, extractMarkets } from "./connectors/odds.js";
 import { getOddsApiIoMarkets } from "./connectors/oddsApiIo.js";
 import { analyseFixture } from "./engine/analyse.js";
@@ -58,32 +58,34 @@ async function updateLocalHistory(){
     .toISOString()
     .slice(0,10);
 
-  const alreadyLoaded=history.some(
+  const apiLoaded=history.some(
     x=>String(x.playedAt||"").slice(0,10)===yesterday && x.provenance?.source==="API_FOOTBALL"
   );
-
-  if(alreadyLoaded){
-    return {
-      added:0,
-      total:history.length,
-      skipped:true,
-      cacheBackfill
-    };
-  }
-
-  const finished=await getFinishedFixturesForDate(
-    env.API_FOOTBALL_KEY.trim(),
-    yesterday
+  const footballDataLoaded=history.some(
+    x=>String(x.playedAt||"").slice(0,10)===yesterday && x.provenance?.source==="FOOTBALL_DATA"
   );
-
-  const added=appendLocalHistory(HISTORY_FILE,finished,"API_FOOTBALL");
+  const errors=[];
+  let added=0;
+  if(!apiLoaded){
+    try{
+      const finished=await getFinishedFixturesForDate(env.API_FOOTBALL_KEY.trim(),yesterday);
+      added+=appendLocalHistory(HISTORY_FILE,finished,"API_FOOTBALL");
+    }catch(error){errors.push(`API_FOOTBALL:${error.message}`);}
+  }
+  if(!footballDataLoaded){
+    try{
+      const finished=await getFinishedFootballDataMatchesForDate(env.FOOTBALL_DATA_TOKEN.trim(),yesterday);
+      added+=appendLocalHistory(HISTORY_FILE,finished,"FOOTBALL_DATA");
+    }catch(error){errors.push(`FOOTBALL_DATA:${error.message}`);}
+  }
   const total=loadLocalHistory(HISTORY_FILE,LEGACY_HISTORY_FILE).length;
 
   return {
     added,
     total,
-    skipped:false,
-    cacheBackfill
+    skipped:apiLoaded&&footballDataLoaded,
+    cacheBackfill,
+    errors
   };
 }
 
@@ -192,6 +194,7 @@ async function refresh(){
       fixtures:fixtures.filter(f=>!primaryCovered.has(f.id)),
       cacheDir:path.join(DATA,"market-cache","odds-api-io")
     });
+    for(const error of historyStatus.errors||[])state.errors.push(`Daily history: ${error}`);
     const marketErrors=new Set();
     if(primaryHealth.reasons.length)marketErrors.add(`The Odds API: ${primaryHealth.reasons.join(", ")}`);
     if(oddsApiIo.errors.length)marketErrors.add(`odds-api.io: ${oddsApiIo.errors.join(", ")}`);

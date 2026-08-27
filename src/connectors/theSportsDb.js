@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { sameTeamIdentity, teamSearchAliases } from "../history/teamAliases.js";
 
 const BASE = "https://www.thesportsdb.com/api/v1/json/123";
 let runtime = { cacheDir: null, fetchImpl: (...args) => fetch(...args), now: () => Date.now(), minGapMs: 2500 };
@@ -15,15 +16,8 @@ export function configureTheSportsDb(options = {}) {
 export function resetTheSportsDbTelemetry() { telemetry = { requests: 0, cacheHits: 0, unresolved: 0 }; }
 export function getTheSportsDbTelemetry() { return { ...telemetry }; }
 
-function canonical(value = "") {
-  return String(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/\b(fc|cf|afc|sc|ac|cd|fk|rc|ca|ud|club)\b/g, " ")
-    .replace(/[^a-z0-9а-яё]+/gi, " ").trim().replace(/\s+/g, " ");
-}
-
 export function exactTeamMatch(query, candidates) {
-  const expected = canonical(query);
-  const matches = (candidates || []).filter(team => canonical(team?.strTeam) === expected);
+  const matches = (candidates || []).filter(team => sameTeamIdentity(query, team?.strTeam));
   return matches.length === 1 ? matches[0] : null;
 }
 
@@ -65,9 +59,13 @@ function normalizeEvent(event) {
 }
 
 export async function getFreeTeamPreviousEvents(teamName) {
-  const searchUrl = `${BASE}/searchteams.php?t=${encodeURIComponent(teamName)}`;
-  const search = await getJson(searchUrl, 30 * 86400_000);
-  const team = exactTeamMatch(teamName, search?.teams);
+  let team = null;
+  for (const searchName of teamSearchAliases(teamName)) {
+    const searchUrl = `${BASE}/searchteams.php?t=${encodeURIComponent(searchName)}`;
+    const search = await getJson(searchUrl, 30 * 86400_000);
+    team = exactTeamMatch(teamName, search?.teams);
+    if (team) break;
+  }
   if (!team?.idTeam) { telemetry.unresolved++; return { status: "UNRESOLVED", team: null, matches: [] }; }
   const eventsUrl = `${BASE}/eventslast.php?id=${encodeURIComponent(team.idTeam)}`;
   const events = await getJson(eventsUrl, 6 * 3600_000);

@@ -9,7 +9,8 @@ function response(data) { return { ok: true, json: async () => data }; }
 
 test("TheSportsDB mapping принимает только одно точное нормализованное имя", () => {
   assert.equal(exactTeamMatch("FC Benfica", [{ idTeam: "1", strTeam: "Benfica" }]).idTeam, "1");
-  assert.equal(exactTeamMatch("Aarhus", [{ idTeam: "1", strTeam: "AGF Aarhus" }]), null);
+  assert.equal(exactTeamMatch("Aarhus", [{ idTeam: "1", strTeam: "AGF Aarhus" }]).idTeam, "1");
+  assert.equal(exactTeamMatch("Aarhus", [{ idTeam: "2", strTeam: "Aarhus Fremad" }]), null);
   assert.equal(exactTeamMatch("Benfica", [{ idTeam: "1", strTeam: "Benfica" }, { idTeam: "2", strTeam: "Benfica FC" }]), null);
 });
 

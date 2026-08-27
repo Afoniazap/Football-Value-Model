@@ -57,3 +57,14 @@ test("один матч из local history и provider context не удваив
   assert.equal(merged.finished.length, 1);
   assert.equal(merged.standings, null);
 });
+
+test("один матч от двух провайдеров остаётся одной logical record", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fvm-history-cross-source-"));
+  const file = path.join(dir, "fixtures.jsonl");
+  const row = match(7, "2026-08-20T18:00:00Z", 1, "FC Alpha", 2, "Beta", 2, 1);
+  appendLocalHistory(file, [row], "API_FOOTBALL");
+  appendLocalHistory(file, [{ ...row, id: 900, homeTeam: { id: 100, name: "Alpha" } }], "FOOTBALL_DATA");
+  const loaded = loadLocalHistory(file);
+  assert.equal(loaded.length, 1);
+  assert.deepEqual(loaded[0].provenance.sources.sort(), ["API_FOOTBALL", "FOOTBALL_DATA"]);
+});

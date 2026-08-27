@@ -49,6 +49,13 @@ export async function getUpcomingMatches(token, horizonHours = 24) {
     }));
 }
 
+export async function getFinishedFootballDataMatchesForDate(token, date) {
+  if (!token || !date) return [];
+  const url = `${BASE}/matches?dateFrom=${date}&dateTo=${date}&status=FINISHED`;
+  const data = await getJsonCached(url, token, 24 * 3600_000);
+  return data?.matches || [];
+}
+
 export async function getCompetitionContext(token, code) {
   const errors=[];
   const [standings, finished, scheduled] = await Promise.all([
