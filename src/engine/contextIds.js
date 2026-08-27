@@ -1,9 +1,12 @@
 import { similarity } from "./utils.js";
 
+function canonical(value){return String(value||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\b(fc|cf|afc|sc|ac|cd|fk|rc|ca|ud|de)\b/g," ").replace(/[^a-z0-9а-яё]+/gi," ").trim().replace(/\s+/g," ");}
+function teamSimilarity(a,b){const x=canonical(a),y=canonical(b);if(x&&x===y)return 1;return similarity(x,y);}
+
 function fixtureIdForTeam(team,fixture){
   const name=team?.name||"";
-  if(similarity(name,fixture.home)>=0.82)return fixture.homeId;
-  if(similarity(name,fixture.away)>=0.82)return fixture.awayId;
+  if(teamSimilarity(name,fixture.home)>=0.82)return fixture.homeId;
+  if(teamSimilarity(name,fixture.away)>=0.82)return fixture.awayId;
   return team?.id;
 }
 

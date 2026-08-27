@@ -114,6 +114,7 @@ export function cardText(x) {
   );
   if(x.marketAvailable)lines.push(`Рынок: <b>${esc(x.marketSource || "получен")}</b> · букмекеров ${x.marketDiagnostic?.normalizedBookmakers ?? "N/A"}`);
   if(x.marketDiagnostic?.marketSelection==="BLOCKED_NO_MODEL_CONTEXT")lines.push("Расчёт Fair/Edge/EV заблокирован: недостаточно context для вероятности 1X2.");
+  if(x.contextDiagnostic?.status==="UNAVAILABLE")lines.push(`Context: <b>недоступен</b> · ${esc(x.contextDiagnostic.reason || "нет реальных данных")}`);
 
   if (b) {
     const gates = [

@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getUpcomingMatches, getCompetitionContext } from "./connectors/footballData.js";
+import { getUpcomingMatches, getCompetitionContext, configureFootballData } from "./connectors/footballData.js";
 import { getOddsForCompetitionResult, matchOddsEvent, extractMarkets } from "./connectors/odds.js";
 import { getOddsApiIoMarkets } from "./connectors/oddsApiIo.js";
 import { analyseFixture } from "./engine/analyse.js";
@@ -15,6 +15,7 @@ const DATA=path.join(ROOT,"data");
 const LOGS=path.join(ROOT,"logs");
 fs.mkdirSync(DATA,{recursive:true}); fs.mkdirSync(LOGS,{recursive:true});
 configureApiFootball({cacheDir:path.join(DATA,"api-football-cache")});
+configureFootballData({cacheDir:path.join(DATA,"football-data-cache")});
 
 const env=process.env;
 for(const key of ["TELEGRAM_BOT_TOKEN","FOOTBALL_DATA_TOKEN","THE_ODDS_API_KEY"]){
@@ -113,7 +114,7 @@ async function refresh(){
     console.log("DEBUG: fixtures loaded", fixtures.length);
     state.stage="2/9 Match Classification";
     const codes=[...new Set(fixtures.map(x=>x.competitionCode).filter(Boolean))];
-    const contexts={}, odds={};
+    const contexts={}, odds={}, contextDiagnostics={};
     state.providers.context={fallbacks:[],failures:[]};
 
     const contextKeys=[...new Set(
@@ -157,6 +158,9 @@ async function refresh(){
         const message=`API-Football context ${contextKey}: ${contextError.message}`;
         state.providers.context.failures.push(message);state.errors.push(message);
       }
+      contextDiagnostics[contextKey]=usableContext
+        ? {status:"OK",source:contextError?"FOOTBALL_DATA":"API_FOOTBALL",standings:Boolean(contexts[contextKey]?.standings),finished:(contexts[contextKey]?.finished||[]).length}
+        : {status:"UNAVAILABLE",source:null,reason:contextError?.message||"NO_STANDINGS_OR_HISTORY",footballDataErrors:contexts[contextKey]?.contextMeta?.errors||[]};
     }
 
     const primaryHealth={status:"NOT_NEEDED",requests:0,cacheHits:0,reasons:[]};
@@ -273,7 +277,7 @@ async function refresh(){
         finished:uniqueFinished
       };
 
-      const fixtureWithMarketDiagnostic={...f,marketDiagnostic:{
+      const fixtureWithMarketDiagnostic={...f,contextDiagnostic:contextDiagnostics[`${f.apiFootballLeagueId}|${f.seasonStart}`]||{status:"UNAVAILABLE",reason:"NO_CONTEXT_MAPPING"},marketDiagnostic:{
         primary:event?"MATCHED":primaryHealth.status,
         oddsApiIo:oddsApiIoEvent?"MATCHED":oddsApiIo.status,
         apiFootballOdds:marketData?.source==="API_FOOTBALL"?"MATCHED":marketData?"NOT_NEEDED":"NO_QUOTES",

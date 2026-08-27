@@ -16,3 +16,9 @@ test("unrelated teams retain their provider IDs",()=>{
   const aligned=alignContextTeamIds(context,{home:"Real Madrid",away:"Real Sociedad",homeId:541,awayId:548});
   assert.equal(aligned.standings.standings[0].table[0].team.id,65);
 });
+
+test("provider club prefixes do not block a conservative Celta match",()=>{
+  const context={standings:{standings:[{type:"TOTAL",table:[{team:{id:558,name:"RC Celta de Vigo"}},{team:{id:79,name:"CA Osasuna"}}]}]},finished:[]};
+  const aligned=alignContextTeamIds(context,{home:"Celta Vigo",away:"Osasuna",homeId:538,awayId:727});
+  assert.deepEqual(aligned.standings.standings[0].table.map(row=>row.team.id),[538,727]);
+});
