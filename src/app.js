@@ -9,6 +9,7 @@ import { analyseFixture } from "./engine/analyse.js";
 import { alignContextTeamIds } from "./engine/contextIds.js";
 import { getUpcomingApiFootballMatches, getFixtureRisk, getFixtureOdds, getApiFootballCompetitionContext, getFinishedFixturesForDate, configureApiFootball, beginApiFootballRefresh, getApiFootballTelemetry } from "./connectors/apiFootball.js";
 import { dashboardText, dashboardKeyboard, listText, listKeyboard, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard } from "./ui/telegram.js";
+import { appendLocalHistory, buildLocalHistoryContext, loadLocalHistory, mergeWithLocalHistory } from "./history/localHistory.js";
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const DATA=path.join(ROOT,"data");
@@ -16,6 +17,8 @@ const LOGS=path.join(ROOT,"logs");
 fs.mkdirSync(DATA,{recursive:true}); fs.mkdirSync(LOGS,{recursive:true});
 configureApiFootball({cacheDir:path.join(DATA,"api-football-cache")});
 configureFootballData({cacheDir:path.join(DATA,"football-data-cache")});
+const HISTORY_FILE=path.join(DATA,"history","fixtures.jsonl");
+const LEGACY_HISTORY_FILE=path.join(DATA,"history.json");
 
 const env=process.env;
 for(const key of ["TELEGRAM_BOT_TOKEN","FOOTBALL_DATA_TOKEN","THE_ODDS_API_KEY"]){
@@ -43,22 +46,14 @@ function permitted(id){return allowed.size===0||allowed.has(String(id));}
 function save(){fs.writeFileSync(path.join(DATA,"state.json"),JSON.stringify(state,null,2),"utf8");}
 
 async function updateLocalHistory(){
-  const historyFile=path.join(DATA,"history.json");
-
-  let history=[];
-  try{
-    history=JSON.parse(fs.readFileSync(historyFile,"utf8"));
-    if(!Array.isArray(history)) history=[];
-  }catch{
-    history=[];
-  }
+  const history=loadLocalHistory(HISTORY_FILE,LEGACY_HISTORY_FILE);
 
   const yesterday=new Date(Date.now()-86400000)
     .toISOString()
     .slice(0,10);
 
   const alreadyLoaded=history.some(
-    x=>String(x.utcDate||"").slice(0,10)===yesterday
+    x=>String(x.playedAt||"").slice(0,10)===yesterday && x.provenance?.source==="API_FOOTBALL"
   );
 
   if(alreadyLoaded){
@@ -74,26 +69,12 @@ async function updateLocalHistory(){
     yesterday
   );
 
-  const byId=new Map(
-    history.map(x=>[String(x.id),x])
-  );
-
-  for(const m of finished){
-    byId.set(String(m.id),m);
-  }
-
-  const merged=[...byId.values()]
-    .sort((a,b)=>new Date(a.utcDate)-new Date(b.utcDate));
-
-  fs.writeFileSync(
-    historyFile,
-    JSON.stringify(merged,null,2),
-    "utf8"
-  );
+  const added=appendLocalHistory(HISTORY_FILE,finished,"API_FOOTBALL");
+  const total=loadLocalHistory(HISTORY_FILE,LEGACY_HISTORY_FILE).length;
 
   return {
-    added:Math.max(0,merged.length-history.length),
-    total:merged.length,
+    added,
+    total,
     skipped:false
   };
 }
@@ -112,6 +93,7 @@ async function refresh(){
     console.log("DEBUG: before fixtures");
     const fixtures=await getUpcomingApiFootballMatches(env.API_FOOTBALL_KEY.trim(),config.horizon);
     console.log("DEBUG: fixtures loaded", fixtures.length);
+    let localHistory=loadLocalHistory(HISTORY_FILE,LEGACY_HISTORY_FILE);
     state.stage="2/9 Match Classification";
     const codes=[...new Set(fixtures.map(x=>x.competitionCode).filter(Boolean))];
     const contexts={}, odds={}, contextDiagnostics={};
@@ -126,6 +108,20 @@ async function refresh(){
     for(const contextKey of contextKeys){
       console.log("DEBUG: context", contextKey);
       const [leagueId,season]=contextKey.split("|");
+      const keyFixtures=fixtures.filter(f =>
+        String(f.apiFootballLeagueId)===String(leagueId) &&
+        String(f.seasonStart)===String(season)
+      );
+      const localReady=keyFixtures.length>0 && keyFixtures.every(f => {
+        const local=buildLocalHistoryContext(localHistory,f);
+        return Boolean(local.standings && local.contextMeta.homeMatches>=4 && local.contextMeta.awayMatches>=4);
+      });
+
+      if(localReady){
+        contexts[contextKey]={standings:null,finished:[],scheduled:[]};
+        contextDiagnostics[contextKey]={status:"OK",source:"LOCAL_HISTORY",temporalSafe:true};
+        continue;
+      }
 
       state.stage=`3/9 API-Football Context: ${leagueId}`;
 
@@ -151,6 +147,13 @@ async function refresh(){
             sample.competitionCode
           ).catch(()=>null);
         }
+      }
+      if(contexts[contextKey]?.finished?.length){
+        appendLocalHistory(
+          HISTORY_FILE,
+          contexts[contextKey].finished,
+          contextError?"FOOTBALL_DATA":"API_FOOTBALL"
+        );
       }
       const usableContext=Boolean(contexts[contextKey]?.standings||(contexts[contextKey]?.finished||[]).length);
       if(contextError&&usableContext)state.providers.context.fallbacks.push(`${contextKey}:FOOTBALL_DATA`);
@@ -187,15 +190,7 @@ async function refresh(){
     state.providers.market={primary:primaryHealth,oddsApiIo:{status:oddsApiIo.status,requests:oddsApiIo.requests,cacheHits:oddsApiIo.cacheHits,supported:oddsApiIo.supported,matched:oddsApiIo.matched},apiFootballOdds:{status:"NOT_NEEDED",requests:0,matched:0,reasons:[]}};
     state.stage="4/9 Independent Models";
 
-    let localHistory=[];
-    try{
-      localHistory=JSON.parse(
-        fs.readFileSync(path.join(DATA,"history.json"),"utf8")
-      );
-      if(!Array.isArray(localHistory)) localHistory=[];
-    }catch{
-      localHistory=[];
-    }
+    localHistory=loadLocalHistory(HISTORY_FILE,LEGACY_HISTORY_FILE);
 
     const results=[];
     for(const f of fixtures){
@@ -254,30 +249,14 @@ async function refresh(){
           scheduled:[]
         },f);
 
-      const relevantLocal=localHistory.filter(m =>
-        m.homeTeam?.id===f.homeId ||
-        m.awayTeam?.id===f.homeId ||
-        m.homeTeam?.id===f.awayId ||
-        m.awayTeam?.id===f.awayId
-      );
+      const mergedContext=mergeWithLocalHistory(baseContext,localHistory,f);
+      const localMeta=mergedContext.localHistoryMeta;
+      const hasLocalModelContext=Boolean(mergedContext.standings && localMeta?.homeMatches>=4 && localMeta?.awayMatches>=4);
+      const fixtureContextDiagnostic=hasLocalModelContext
+        ? {status:"OK",source:"LOCAL_HISTORY",finished:mergedContext.finished.length,provenance:localMeta.provenance,temporalSafe:true}
+        : contextDiagnostics[`${f.apiFootballLeagueId}|${f.seasonStart}`]||{status:"UNAVAILABLE",reason:"NO_CONTEXT_MAPPING"};
 
-      const mergedFinished=[
-        ...(baseContext.finished || []),
-        ...relevantLocal
-      ];
-
-      const uniqueFinished=[
-        ...new Map(
-          mergedFinished.map(m=>[String(m.id),m])
-        ).values()
-      ];
-
-      const mergedContext={
-        ...baseContext,
-        finished:uniqueFinished
-      };
-
-      const fixtureWithMarketDiagnostic={...f,contextDiagnostic:contextDiagnostics[`${f.apiFootballLeagueId}|${f.seasonStart}`]||{status:"UNAVAILABLE",reason:"NO_CONTEXT_MAPPING"},marketDiagnostic:{
+      const fixtureWithMarketDiagnostic={...f,contextDiagnostic:fixtureContextDiagnostic,marketDiagnostic:{
         primary:event?"MATCHED":primaryHealth.status,
         oddsApiIo:oddsApiIoEvent?"MATCHED":oddsApiIo.status,
         apiFootballOdds:marketData?.source==="API_FOOTBALL"?"MATCHED":marketData?"NOT_NEEDED":"NO_QUOTES",

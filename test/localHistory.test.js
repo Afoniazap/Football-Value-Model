@@ -1,0 +1,58 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { appendLocalHistory, buildLocalHistoryContext, loadLocalHistory, mergeWithLocalHistory, normalizeHistoryMatch } from "../src/history/localHistory.js";
+
+function match(id, date, homeId, home, awayId, away, hg = 1, ag = 0) {
+  return { id, utcDate: date, leagueId: 1, league: "Real League", season: 2026, homeTeam: { id: homeId, name: home }, awayTeam: { id: awayId, name: away }, score: { fullTime: { home: hg, away: ag } } };
+}
+
+test("append-only история сохраняет provenance и не дублирует fixture", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fvm-history-"));
+  const file = path.join(dir, "fixtures.jsonl");
+  const row = match(7, "2026-08-20T18:00:00Z", 1, "Home", 2, "Away");
+  assert.equal(appendLocalHistory(file, [row], "API_FOOTBALL", "2026-08-21T00:00:00Z"), 1);
+  assert.equal(appendLocalHistory(file, [row], "API_FOOTBALL", "2026-08-22T00:00:00Z"), 0);
+  const loaded = loadLocalHistory(file);
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0].provenance.source, "API_FOOTBALL");
+  assert.equal(loaded[0].fetchedAt, "2026-08-21T00:00:00.000Z");
+});
+
+test("неполный результат не превращается в нули", () => {
+  assert.equal(normalizeHistoryMatch({ id: 1, utcDate: "2026-08-20T18:00:00Z", homeTeam: { id: 1, name: "A" }, awayTeam: { id: 2, name: "B" }, score: { fullTime: { home: null, away: null } } }, "API_FOOTBALL"), null);
+});
+
+test("локальный context использует разные соревнования и только матчи до kickoff", () => {
+  const fixture = { homeId: 10, home: "Alpha FC", awayId: 20, away: "Beta", utcDate: "2026-08-27T18:00:00Z" };
+  const rows = [];
+  for (let index = 0; index < 5; index++) {
+    rows.push(normalizeHistoryMatch(match(`h${index}`, `2026-08-${10 + index}T18:00:00Z`, 10, "Alpha", 100 + index, `H${index}`, 2, 1), "API_FOOTBALL"));
+    rows.push(normalizeHistoryMatch(match(`a${index}`, `2026-08-${10 + index}T20:00:00Z`, 200 + index, `A${index}`, 20, "Beta", 0, 1), "API_FOOTBALL"));
+  }
+  rows.push(normalizeHistoryMatch(match("future", "2026-08-28T18:00:00Z", 10, "Alpha", 20, "Beta", 9, 9), "API_FOOTBALL"));
+  const context = buildLocalHistoryContext(rows, fixture);
+  assert.equal(context.contextMeta.homeMatches, 5);
+  assert.equal(context.contextMeta.awayMatches, 5);
+  assert.equal(context.finished.length, 10);
+  assert.equal(context.contextMeta.temporalSafe, true);
+  assert.equal(context.standings.standings.find(group => group.type === "TOTAL").table.length, 2);
+});
+
+test("имена других провайдеров сопоставляются без подмены provider ID", () => {
+  const fixture = { homeId: 10, home: "FC Alpha", awayId: 20, away: "Beta CF", utcDate: "2026-08-27T18:00:00Z" };
+  const rows = [normalizeHistoryMatch(match(1, "2026-08-20T18:00:00Z", 999, "Alpha", 888, "Opponent"), "FOOTBALL_DATA")];
+  const context = buildLocalHistoryContext(rows, fixture);
+  assert.equal(context.contextMeta.homeMatches, 1);
+  assert.deepEqual(context.contextMeta.provenance, ["FOOTBALL_DATA"]);
+});
+
+test("один матч из local history и provider context не удваивается", () => {
+  const fixture = { homeId: 10, home: "Alpha", awayId: 20, away: "Beta", utcDate: "2026-08-27T18:00:00Z" };
+  const raw = match(7, "2026-08-20T18:00:00Z", 10, "Alpha", 30, "Opponent");
+  const local = [normalizeHistoryMatch(raw, "API_FOOTBALL")];
+  const merged = mergeWithLocalHistory({ standings: null, finished: [raw], scheduled: [] }, local, fixture);
+  assert.equal(merged.finished.length, 1);
+});
