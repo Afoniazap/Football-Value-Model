@@ -157,7 +157,9 @@ export function buildLocalHistoryContext(history, fixture, limit = 20) {
   return {
     source: "LOCAL_HISTORY",
     derivedFromFinishedMatches: true,
-    standings: total.length === 2 ? { standings: groups } : null,
+    standings: total.length === 2 && homeRows.length >= 4 && awayRows.length >= 4
+      ? { standings: groups }
+      : null,
     finished: combined.map(row => ({
       id: row.recordKey,
       utcDate: row.playedAt,
@@ -172,6 +174,8 @@ export function buildLocalHistoryContext(history, fixture, limit = 20) {
       provenance: [...new Set(combined.map(row => row.provenance?.source).filter(Boolean))],
       homeMatches: homeRows.length,
       awayMatches: awayRows.length,
+      homeSources: [...new Set(homeRows.map(row => row.provenance?.source).filter(Boolean))],
+      awaySources: [...new Set(awayRows.map(row => row.provenance?.source).filter(Boolean))],
       temporalSafe: true
     }
   };

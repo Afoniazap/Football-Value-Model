@@ -55,4 +55,5 @@ test("один матч из local history и provider context не удваив
   const local = [normalizeHistoryMatch(raw, "API_FOOTBALL")];
   const merged = mergeWithLocalHistory({ standings: null, finished: [raw], scheduled: [] }, local, fixture);
   assert.equal(merged.finished.length, 1);
+  assert.equal(merged.standings, null);
 });

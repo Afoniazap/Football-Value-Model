@@ -10,6 +10,7 @@ import { alignContextTeamIds } from "./engine/contextIds.js";
 import { getUpcomingApiFootballMatches, getFixtureRisk, getFixtureOdds, getApiFootballCompetitionContext, getFinishedFixturesForDate, configureApiFootball, beginApiFootballRefresh, getApiFootballTelemetry } from "./connectors/apiFootball.js";
 import { dashboardText, dashboardKeyboard, listText, listKeyboard, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard } from "./ui/telegram.js";
 import { appendLocalHistory, buildLocalHistoryContext, loadLocalHistory, mergeWithLocalHistory } from "./history/localHistory.js";
+import { backfillFromProviderCaches } from "./history/cacheBackfill.js";
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const DATA=path.join(ROOT,"data");
@@ -19,6 +20,7 @@ configureApiFootball({cacheDir:path.join(DATA,"api-football-cache")});
 configureFootballData({cacheDir:path.join(DATA,"football-data-cache")});
 const HISTORY_FILE=path.join(DATA,"history","fixtures.jsonl");
 const LEGACY_HISTORY_FILE=path.join(DATA,"history.json");
+let cacheBackfillDone=false;
 
 const env=process.env;
 for(const key of ["TELEGRAM_BOT_TOKEN","FOOTBALL_DATA_TOKEN","THE_ODDS_API_KEY"]){
@@ -46,6 +48,10 @@ function permitted(id){return allowed.size===0||allowed.has(String(id));}
 function save(){fs.writeFileSync(path.join(DATA,"state.json"),JSON.stringify(state,null,2),"utf8");}
 
 async function updateLocalHistory(){
+  const cacheBackfill=cacheBackfillDone
+    ? {added:0,skipped:true}
+    : backfillFromProviderCaches({dataDir:DATA,historyFile:HISTORY_FILE});
+  cacheBackfillDone=true;
   const history=loadLocalHistory(HISTORY_FILE,LEGACY_HISTORY_FILE);
 
   const yesterday=new Date(Date.now()-86400000)
@@ -60,7 +66,8 @@ async function updateLocalHistory(){
     return {
       added:0,
       total:history.length,
-      skipped:true
+      skipped:true,
+      cacheBackfill
     };
   }
 
@@ -75,7 +82,8 @@ async function updateLocalHistory(){
   return {
     added,
     total,
-    skipped:false
+    skipped:false,
+    cacheBackfill
   };
 }
 
