@@ -71,6 +71,7 @@ export function statisticsText(statistics={}){
     `Средняя max P: <b>${pct(statistics.meanMaxProbability)}</b>`,"",
     "<b>Снимки по статусу</b>",
     `VALUE ${categories.VALUE||0} · NEAR ${categories.NEAR||0} · WAIT ${categories.WAIT||0} · NO BET ${categories.NO_BET||0}`,
+    ...((statistics.categories||[]).filter(row=>row.predictions).map(row=>`${row.name}: ${row.completed}/${row.predictions} · Acc ${pct(row.accuracy)}`)),
     "","<b>По лигам</b>",
     ...((statistics.leagues||[]).slice(0,8).map(row=>`${esc(row.name)}: ${row.completed}/${row.predictions} · Acc ${pct(row.accuracy)}`)),
     "","<b>По вероятности</b>",
