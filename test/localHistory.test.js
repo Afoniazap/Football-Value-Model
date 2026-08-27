@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { appendLocalHistory, buildLocalHistoryContext, loadLocalHistory, mergeWithLocalHistory, normalizeHistoryMatch } from "../src/history/localHistory.js";
+import { formModel } from "../src/engine/models.js";
 
 function match(id, date, homeId, home, awayId, away, hg = 1, ag = 0) {
   return { id, utcDate: date, leagueId: 1, league: "Real League", season: 2026, homeTeam: { id: homeId, name: home }, awayTeam: { id: awayId, name: away }, score: { fullTime: { home: hg, away: ag } } };
@@ -47,6 +48,19 @@ test("имена других провайдеров сопоставляютс�
   const context = buildLocalHistoryContext(rows, fixture);
   assert.equal(context.contextMeta.homeMatches, 1);
   assert.deepEqual(context.contextMeta.provenance, ["FOOTBALL_DATA"]);
+});
+
+test("backfilled provider IDs are aligned for Recent Form after confirmed identity matching", () => {
+  const fixture = { homeId: 10, home: "FC Alpha", awayId: 20, away: "Beta CF", utcDate: "2026-08-27T18:00:00Z" };
+  const rows = [];
+  for (let index = 0; index < 4; index++) {
+    rows.push(normalizeHistoryMatch(match(`h${index}`, `2026-08-${10 + index}T18:00:00Z`, 900 + index, "Alpha", 100 + index, `H${index}`, 2, 1), "FOOTBALL_DATA"));
+    rows.push(normalizeHistoryMatch(match(`a${index}`, `2026-08-${10 + index}T20:00:00Z`, 200 + index, `A${index}`, 800 + index, "Beta", 0, 1), "FOOTBALL_DATA"));
+  }
+  const context = buildLocalHistoryContext(rows, fixture);
+  assert.equal(context.finished.filter(row => row.homeTeam.id === fixture.homeId || row.awayTeam.id === fixture.homeId).length, 4);
+  assert.equal(context.finished.filter(row => row.homeTeam.id === fixture.awayId || row.awayTeam.id === fixture.awayId).length, 4);
+  assert.ok(formModel(fixture, context));
 });
 
 test("один матч из local history и provider context не удваивается", () => {

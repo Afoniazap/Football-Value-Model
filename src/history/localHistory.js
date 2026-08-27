@@ -174,14 +174,29 @@ export function buildLocalHistoryContext(history, fixture, limit = 20) {
     standings: total.length === 2 && homeRows.length >= 4 && awayRows.length >= 4
       ? { standings: groups }
       : null,
-    finished: combined.map(row => ({
-      id: row.recordKey,
-      utcDate: row.playedAt,
-      homeTeam: row.homeTeam,
-      awayTeam: row.awayTeam,
-      score: row.score,
-      provenance: row.provenance
-    })),
+    finished: combined.map(row => {
+      // Downstream form/SCI models use the fixture provider's team IDs. History
+      // records can carry IDs from Football-Data or TheSportsDB, so preserve
+      // names/provenance while aligning only identities already confirmed here.
+      const homeTeam = teamMatches(row, fixture.homeId, fixture.home, "HOME")
+        ? { ...row.homeTeam, id: fixture.homeId }
+        : teamMatches(row, fixture.awayId, fixture.away, "HOME")
+          ? { ...row.homeTeam, id: fixture.awayId }
+          : row.homeTeam;
+      const awayTeam = teamMatches(row, fixture.homeId, fixture.home, "AWAY")
+        ? { ...row.awayTeam, id: fixture.homeId }
+        : teamMatches(row, fixture.awayId, fixture.away, "AWAY")
+          ? { ...row.awayTeam, id: fixture.awayId }
+          : row.awayTeam;
+      return {
+        id: row.recordKey,
+        utcDate: row.playedAt,
+        homeTeam,
+        awayTeam,
+        score: row.score,
+        provenance: row.provenance
+      };
+    }),
     scheduled: [],
     contextMeta: {
       source: "LOCAL_HISTORY",
