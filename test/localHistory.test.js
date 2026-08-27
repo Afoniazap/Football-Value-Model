@@ -68,3 +68,18 @@ test("один матч от двух провайдеров остаётся о
   assert.equal(loaded.length, 1);
   assert.deepEqual(loaded[0].provenance.sources.sort(), ["API_FOOTBALL", "FOOTBALL_DATA"]);
 });
+
+test("TheSportsDB identity evidence excludes a same-name team from another sport",()=>{
+  const fixture={homeId:567,home:"Plzen",awayId:20,away:"Beta",utcDate:"2026-08-27T18:00:00Z"};
+  const hockey=normalizeHistoryMatch(match("hockey","2026-08-20T18:00:00Z","140877","Plzen","2","Sparta",2,1),"THESPORTSDB");
+  const football=normalizeHistoryMatch(match("football","2026-08-21T18:00:00Z","134015","Viktoria Plzeň","3","Slavia",1,0),"THESPORTSDB");
+  const context=buildLocalHistoryContext([hockey,football],fixture);
+  assert.equal(context.contextMeta.homeMatches,1);
+});
+
+test("TheSportsDB evidence excludes handball Ferencvarosi from football history",()=>{
+  const fixture={homeId:651,home:"Ferencvarosi TC",awayId:20,away:"Beta",utcDate:"2026-08-27T18:30:00Z"};
+  const handball=normalizeHistoryMatch(match("handball","2026-08-20T18:00:00Z","137581","Ferencvárosi TC","2","Szigetszentmiklos",2,1),"THESPORTSDB");
+  const football=normalizeHistoryMatch(match("football","2026-08-21T18:00:00Z","134620","Ferencváros","3","Ujpest",1,0),"THESPORTSDB");
+  assert.equal(buildLocalHistoryContext([handball,football],fixture).contextMeta.homeMatches,1);
+});

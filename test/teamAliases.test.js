@@ -7,6 +7,10 @@ test("подтверждённые aliases учитывают диакритик
   assert.equal(sameTeamIdentity("Lillestrom", "Lillestrøm SK"), true);
   assert.equal(sameTeamIdentity("St. Truiden", "Sint-Truiden"), true);
   assert.equal(sameTeamIdentity("Aarhus", "AGF Aarhus"), true);
+  assert.equal(sameTeamIdentity("Plzen", "Viktoria Plzeň"), true);
+  assert.equal(sameTeamIdentity("Kairat Almaty", "FK Kairat"), true);
+  assert.equal(sameTeamIdentity("Benfica", "Sport Lisboa e Benfica"), true);
+  assert.equal(sameTeamIdentity("Ferencvarosi TC", "Ferencváros"), true);
 });
 
 test("alias registry не принимает youth и соседние клубы", () => {

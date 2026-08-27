@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { configureFootballData, getCompetitionContext, getFinishedFootballDataMatchesForDate } from "../src/connectors/footballData.js";
+import { configureFootballData, getCompetitionContext, getFinishedCompetitionSeason, getFinishedFootballDataMatchesForDate } from "../src/connectors/footballData.js";
 
 test("Football-Data competition context reuses persistent endpoint cache",async()=>{
   let calls=0;
@@ -18,5 +18,13 @@ test("Football-Data daily harvest использует разрешённый da
   configureFootballData({cacheDir:fs.mkdtempSync(path.join(os.tmpdir(),"fvm-fd-daily-")),fetchImpl:async()=>{calls++;return {ok:true,json:async()=>({matches:[{id:1,status:"FINISHED"}]})};}});
   assert.equal((await getFinishedFootballDataMatchesForDate("secret","2026-08-26")).length,1);
   assert.equal((await getFinishedFootballDataMatchesForDate("secret","2026-08-26")).length,1);
+  assert.equal(calls,1);
+});
+
+test("Football-Data season backfill caches official finished competition matches",async()=>{
+  let calls=0;
+  configureFootballData({cacheDir:fs.mkdtempSync(path.join(os.tmpdir(),"fvm-fd-season-")),fetchImpl:async()=>{calls++;return {ok:true,json:async()=>({matches:[{id:1,status:"FINISHED"}]})};}});
+  assert.equal((await getFinishedCompetitionSeason("token","CL",2025)).length,1);
+  assert.equal((await getFinishedCompetitionSeason("token","CL",2025)).length,1);
   assert.equal(calls,1);
 });

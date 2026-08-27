@@ -56,6 +56,13 @@ export async function getFinishedFootballDataMatchesForDate(token, date) {
   return data?.matches || [];
 }
 
+export async function getFinishedCompetitionSeason(token,code,season){
+  if(!token||!code||!season)return [];
+  const url=`${BASE}/competitions/${encodeURIComponent(code)}/matches?season=${encodeURIComponent(season)}&status=FINISHED`;
+  const data=await getJsonCached(url,token,30*86400_000);
+  return data?.matches||[];
+}
+
 export async function getCompetitionContext(token, code) {
   const errors=[];
   const [standings, finished, scheduled] = await Promise.all([

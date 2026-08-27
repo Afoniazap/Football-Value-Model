@@ -17,7 +17,7 @@ export function resetTheSportsDbTelemetry() { telemetry = { requests: 0, cacheHi
 export function getTheSportsDbTelemetry() { return { ...telemetry }; }
 
 export function exactTeamMatch(query, candidates) {
-  const matches = (candidates || []).filter(team => sameTeamIdentity(query, team?.strTeam));
+  const matches = (candidates || []).filter(team => /^(soccer|football)$/i.test(String(team?.strSport||""))&&sameTeamIdentity(query, team?.strTeam));
   return matches.length === 1 ? matches[0] : null;
 }
 
@@ -44,6 +44,7 @@ async function getJson(url, ttlMs) {
 
 function normalizeEvent(event) {
   if (!event?.idEvent || !event.strHomeTeam || !event.strAwayTeam) return null;
+  if(event.strSport&&!/^(soccer|football)$/i.test(String(event.strSport)))return null;
   if (!/^(FT|Match Finished|Finished)$/i.test(String(event.strStatus || ""))) return null;
   const home = Number(event.intHomeScore), away = Number(event.intAwayScore);
   if (!Number.isFinite(home) || !Number.isFinite(away) || !event.dateEvent) return null;
@@ -71,7 +72,15 @@ export async function getFreeTeamPreviousEvents(teamName) {
   const events = await getJson(eventsUrl, 6 * 3600_000);
   return {
     status: "OK",
-    team: { id: String(team.idTeam), name: team.strTeam },
+    team: { id: String(team.idTeam), apiFootballId:team.idAPIfootball?String(team.idAPIfootball):null, name: team.strTeam, leagueId:team.idLeague?String(team.idLeague):null, league:team.strLeague||null },
+    currentSeason:events?.results?.[0]?.strSeason||null,
     matches: (events?.results || []).map(normalizeEvent).filter(Boolean)
   };
+}
+
+export async function getFreeLeagueRoundEvents(leagueId,season,round){
+  if(!leagueId||!season||!Number.isInteger(Number(round)))return [];
+  const url=`${BASE}/eventsround.php?id=${encodeURIComponent(leagueId)}&r=${encodeURIComponent(round)}&s=${encodeURIComponent(season)}`;
+  const data=await getJson(url,30*86400_000);
+  return (data?.events||[]).map(normalizeEvent).filter(Boolean);
 }

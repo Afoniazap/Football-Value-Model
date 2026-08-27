@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { canonicalTeamName, sameTeamIdentity } from "./teamAliases.js";
+import { canonicalTeamName, sameTeamIdentity, teamIdentityEvidence } from "./teamAliases.js";
 
 const FINISHED_STATUSES = new Set(["FT", "AET", "PEN", "FINISHED"]);
 
@@ -111,6 +111,8 @@ export function appendLocalHistory(filePath, matches, provenance, fetchedAt = ne
 function teamMatches(row, teamId, teamName, side) {
   const team = side === "HOME" ? row.homeTeam : row.awayTeam;
   if (row.provenance?.source === "API_FOOTBALL" && teamId != null && String(team.id) === String(teamId)) return true;
+  const evidence=teamIdentityEvidence(teamName);
+  if(row.provenance?.source==="THESPORTSDB"&&evidence?.source==="THESPORTSDB"&&team?.id!=null&&String(team.id)!==String(evidence.teamId))return false;
   return sameTeamIdentity(team.name, teamName);
 }
 
