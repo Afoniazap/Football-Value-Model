@@ -8,7 +8,8 @@ import {
   beginApiFootballRefresh,
   getApiFootballTelemetry,
   getFinishedFixturesForDate,
-  getFixtureRisk
+  getFixtureRisk,
+  getUpcomingApiFootballMatches
 } from "../src/connectors/apiFootball.js";
 
 function tempDir(){return fs.mkdtempSync(path.join(os.tmpdir(),"fvm-api-football-"));}
@@ -78,6 +79,19 @@ test("daily-limit response uses a safe stale finished-fixture cache",async()=>{
   assert.equal(calls,2);
   assert.equal(getApiFootballTelemetry().staleHits,1);
   assert.equal(getApiFootballTelemetry().dailyLimit,true);
+});
+
+test("daily limit keeps a stale upcoming-fixture date cache and does not discard a partial date",async()=>{
+  let now=Date.parse("2026-08-27T12:00:00Z"),limited=false,calls=0;
+  const fixture={...validEmpty,results:1,response:[{fixture:{id:7,date:"2026-08-27T18:00:00Z",status:{short:"NS"}},league:{id:3,name:"UEFA Europa League",country:"World",season:2026,round:"Play-offs"},teams:{home:{id:1,name:"A"},away:{id:2,name:"B"}}}]};
+  configureApiFootball({cacheDir:tempDir(),minGapMs:0,now:()=>now,fetchImpl:async url=>{calls++;const date=new URL(url).searchParams.get("date");return response(limited?{...validEmpty,errors:{requests:"request limit for the day"}}:date==="2026-08-27"?fixture:validEmpty);}});
+  assert.equal((await getUpcomingApiFootballMatches("secret",24)).length,1);
+  now+=3*3600_000;limited=true;beginApiFootballRefresh();
+  const cached=await getUpcomingApiFootballMatches("secret",24);
+  assert.equal(cached.length,1);
+  assert.equal(cached[0].id,"7");
+  assert.equal(getApiFootballTelemetry().dailyLimit,true);
+  assert.ok(getApiFootballTelemetry().staleHits>=1);
 });
 
 test("lineups are avoided until the fixture is close enough",async()=>{

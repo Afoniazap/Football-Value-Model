@@ -152,7 +152,7 @@ export async function findApiFootballFixture(key, fixture) {
 export async function getUpcomingApiFootballMatches(key, horizonHours = 24) {
   if (!key) return [];
 
-  const now = new Date();
+  const now = new Date(runtime.now());
   const end = new Date(now.getTime() + horizonHours * 3600_000);
 
   const dates = [...new Set([
@@ -162,10 +162,16 @@ export async function getUpcomingApiFootballMatches(key, horizonHours = 24) {
 
   const all = [];
 
+  let lastError=null;
   for (const date of dates) {
-    const data = await requestJson(`/fixtures?date=${date}`,key,{ttlMs:30*60_000,staleMs:2*3600_000});
-    all.push(...(data?.response || []));
+    try{
+      // A date snapshot is safe as a degraded fallback because the final filter
+      // below still accepts only future NS/TBD fixtures inside the live horizon.
+      const data = await requestJson(`/fixtures?date=${date}`,key,{ttlMs:30*60_000,staleMs:48*3600_000});
+      all.push(...(data?.response || []));
+    }catch(error){lastError=error;}
   }
+  if(!all.length&&lastError)throw lastError;
 
   const competitionCode = m => {
     const country = m?.league?.country || "";

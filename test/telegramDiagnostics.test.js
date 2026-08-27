@@ -15,6 +15,15 @@ test("dashboard does not present provider failure as genuine zero fixtures",()=>
   assert.doesNotMatch(text,/Матчей на 24 часа: <b>0<\/b>/);
 });
 
+test("dashboard exposes degraded fixture fallback source",()=>{
+  const text=dashboardText({
+    loading:false,updatedAt:"2026-08-27T12:00:00Z",errors:["API-Football fixtures: DAILY_LIMIT"],results:[{category:"WAIT",dataQuality:42,marketAvailable:true,markets:[]}],
+    providers:{apiFootball:{dailyLimit:true,requests:0,cacheHits:0,staleHits:0,avoided:1},fixtures:{status:"DEGRADED",source:"CACHED_STATE",reason:"DAILY_LIMIT"}}
+  });
+  assert.match(text,/Fixtures: <b>DEGRADED<\/b> · CACHED_STATE/);
+  assert.doesNotMatch(text,/24[^\n]*<b>N\/A<\/b>/);
+});
+
 test("dashboard distinguishes quote coverage from calculated markets",()=>{
   const text=dashboardText({loading:false,updatedAt:"2026-08-27T10:00:00Z",errors:[],providers:{},results:[
     {category:"WAIT",marketAvailable:true,markets:[],dataQuality:42},

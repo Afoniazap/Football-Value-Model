@@ -11,6 +11,7 @@ import { getUpcomingApiFootballMatches, getFixtureRisk, getFixtureOdds, getApiFo
 import { dashboardText, dashboardKeyboard, listText, listKeyboard, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard } from "./ui/telegram.js";
 import { appendLocalHistory, buildLocalHistoryContext, loadLocalHistory, mergeWithLocalHistory } from "./history/localHistory.js";
 import { backfillFromProviderCaches } from "./history/cacheBackfill.js";
+import { discoverFixtures } from "./fixtures/discovery.js";
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const DATA=path.join(ROOT,"data");
@@ -38,7 +39,13 @@ const config={
   maxRecommendations:Number(env.MAX_RECOMMENDATIONS||5)
 };
 let offset=0;
-let state={loading:false,stage:"0/9",updatedAt:null,results:[],errors:[],providers:{}};
+function loadSavedState(){
+  try{
+    const saved=JSON.parse(fs.readFileSync(path.join(DATA,"state.json"),"utf8"));
+    return {...saved,loading:false,results:Array.isArray(saved.results)?saved.results:[],errors:Array.isArray(saved.errors)?saved.errors:[],providers:saved.providers||{}};
+  }catch{return {loading:false,stage:"0/9",updatedAt:null,results:[],errors:[],providers:{}};}
+}
+let state=loadSavedState();
 
 async function tg(method,body={}){
   const r=await fetch(`${TG}/${method}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
@@ -92,6 +99,7 @@ async function updateLocalHistory(){
 async function refresh(){
   console.log("DEBUG: refresh start");
   if(state.loading)return;
+  const previousResults=state.results;
   state.loading=true; state.errors=[]; state.stage="1/9 Data Integrity"; beginApiFootballRefresh();
   try{
     console.log("DEBUG: before history");
@@ -101,7 +109,27 @@ async function refresh(){
     });
 
     console.log("DEBUG: before fixtures");
-    const fixtures=await getUpcomingApiFootballMatches(env.API_FOOTBALL_KEY.trim(),config.horizon);
+    const discovery=await discoverFixtures({
+      apiKey:env.API_FOOTBALL_KEY?.trim(),
+      footballDataToken:env.FOOTBALL_DATA_TOKEN?.trim(),
+      horizonHours:config.horizon,
+      previousResults,
+      apiFootball:getUpcomingApiFootballMatches,
+      footballData:getUpcomingMatches
+    });
+    const fixtures=discovery.fixtures;
+    const discoveryTelemetry=getApiFootballTelemetry();
+    if(discoveryTelemetry.dailyLimit&&discovery.health.source==="API_FOOTBALL"){
+      discovery.health.status="DEGRADED";
+      discovery.health.source="API_FOOTBALL_CACHE";
+      discovery.health.reason="DAILY_LIMIT";
+    }
+    state.providers.fixtures=discovery.health;
+    if(discovery.health.status==="DEGRADED"){
+      const detail=`API-Football fixtures: ${discovery.health.reason}; fallback ${discovery.health.source||"UNAVAILABLE"}`;
+      state.errors.push(detail);
+      console.warn(detail);
+    }
     console.log("DEBUG: fixtures loaded", fixtures.length);
     let localHistory=loadLocalHistory(HISTORY_FILE,LEGACY_HISTORY_FILE);
     state.stage="2/9 Match Classification";

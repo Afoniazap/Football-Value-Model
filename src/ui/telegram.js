@@ -11,6 +11,7 @@ export function dashboardText(state) {
   const health = total ? Math.round(state.results.reduce((s,x)=>s+x.dataQuality,0)/total) : 0;
   const opportunity = total ? Math.round(Math.min(100,(counts.VALUE*20+counts.NEAR*8)/total*100)) : 0;
   const api = state.providers?.apiFootball;
+  const fixtureProvider = state.providers?.fixtures;
   const market = state.providers?.market;
   const fixtureCount = api?.dailyLimit && !state.updatedAt ? "N/A" : total;
   return [
@@ -33,6 +34,7 @@ export function dashboardText(state) {
     `Обновлено: <b>${state.updatedAt ? localDate(state.updatedAt) : "—"}</b>`,
     state.errors.length ? `⚠️ Ошибок источников: <b>${state.errors.length}</b>` : "Источники: ✅",
     api ? `API-Football: <b>${api.dailyLimit ? "DAILY LIMIT" : "OK"}</b> · req ${api.requests} · cache ${api.cacheHits + api.staleHits} · saved ${api.avoided}` : null,
+    fixtureProvider ? `Fixtures: <b>${fixtureProvider.status}</b> · ${fixtureProvider.source || fixtureProvider.reason || "UNAVAILABLE"}` : null,
     market ? `Markets: Odds <b>${market.primary?.status || "N/A"}</b> · odds-api.io <b>${market.oddsApiIo?.status || "N/A"}</b> · AF <b>${market.apiFootballOdds?.status || "N/A"}</b>` : null
   ].filter(Boolean).join("\n");
 }
