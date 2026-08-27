@@ -25,7 +25,8 @@ function apiError(data){
   if(!errors||(Array.isArray(errors)&&errors.length===0)||(!Array.isArray(errors)&&Object.keys(errors).length===0))return null;
   const messages=Array.isArray(errors)?errors:Object.values(errors);
   if(messages.some(message=>/daily request limit|request limit.*day|requests limit.*day|reached.*limit.*day/i.test(String(message))))return new ApiFootballError("DAILY_LIMIT","API-Football: DAILY LIMIT");
-  return new ApiFootballError("API_ERROR",`API-Football: ${Array.isArray(errors)?errors.join("; "):Object.keys(errors).join(", ")}`);
+  if(messages.some(message=>/per-minute request limit|too many requests/i.test(String(message))))return new ApiFootballError("RATE_LIMIT","API-Football: RATE LIMIT");
+  return new ApiFootballError("API_ERROR",`API-Football: ${messages.map(String).join("; ")}`);
 }
 
 async function getJson(path, key) {
@@ -34,10 +35,11 @@ async function getJson(path, key) {
   const response = await runtime.fetchImpl(`${BASE}${path}`, {
     headers: { "x-apisports-key": key }
   });
-  if (!response.ok) throw new Error(`api-football ${response.status}: ${await response.text()}`);
-  const data=await response.json();
+  let data=null;
+  try{data=await response.json();}catch{}
   const error=apiError(data);
   if(error){if(error.code==="DAILY_LIMIT")markDailyLimit();throw error;}
+  if (!response.ok) throw new ApiFootballError(`HTTP_${response.status}`,`API-Football: HTTP ${response.status}`);
   return data;
 }
 
@@ -58,7 +60,7 @@ async function rateLimitedGetJson(path, key) {
     lastApiCallAt = Date.now();
     return result;
   } catch (e) {
-    if (String(e.message).includes("429")) {
+    if (e?.code==="RATE_LIMIT") {
       await sleep(15000);
       const result = await getJson(path, key);
       lastApiCallAt = Date.now();

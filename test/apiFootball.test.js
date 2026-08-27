@@ -34,6 +34,17 @@ test("HTTP 200 with errors.rateLimit daily message also activates daily backoff"
   assert.equal(calls,1);
 });
 
+test("HTTP 429 with errors.rateLimit daily message activates backoff without retry",async()=>{
+  let calls=0;
+  configureApiFootball({cacheDir:tempDir(),minGapMs:0,fetchImpl:async()=>{calls++;return response({...validEmpty,errors:{rateLimit:"Too many requests. You have reached your daily request limit."}},429);}});
+  beginApiFootballRefresh();
+  await assert.rejects(getFinishedFixturesForDate("secret","2026-08-23"),e=>e.code==="DAILY_LIMIT"&&e.message==="API-Football: DAILY LIMIT");
+  await assert.rejects(getFinishedFixturesForDate("secret","2026-08-22"),e=>e.code==="DAILY_LIMIT");
+  assert.equal(calls,1);
+  assert.equal(getApiFootballTelemetry().dailyLimit,true);
+  assert.equal(getApiFootballTelemetry().avoided,1);
+});
+
 test("genuine empty fixture response remains a valid empty list and is cached",async()=>{
   let calls=0;
   configureApiFootball({cacheDir:tempDir(),minGapMs:0,fetchImpl:async()=>{calls++;return response(validEmpty);}});

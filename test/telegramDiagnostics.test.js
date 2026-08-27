@@ -15,6 +15,15 @@ test("dashboard does not present provider failure as genuine zero fixtures",()=>
   assert.doesNotMatch(text,/Матчей на 24 часа: <b>0<\/b>/);
 });
 
+test("dashboard distinguishes quote coverage from calculated markets",()=>{
+  const text=dashboardText({loading:false,updatedAt:"2026-08-27T10:00:00Z",errors:[],providers:{},results:[
+    {category:"WAIT",marketAvailable:true,markets:[],dataQuality:42},
+    {category:"NEAR",marketAvailable:true,markets:[{}],dataQuality:70}
+  ]});
+  assert.match(text,/Котировки найдены: <b>2\/2<\/b>/);
+  assert.match(text,/Рынков рассчитано: <b>1\/2<\/b>/);
+});
+
 test("WAIT card distinguishes an available quote from a missing model candidate",()=>{
   const fixture={id:"2",home:"A",away:"B",competition:"Ligue 1",utcDate:"2026-08-26T18:00:00Z",category:"WAIT",reason:"Недостаточно данных",best:null,marketAvailable:true,marketSource:"API_FOOTBALL",marketDiagnostic:{normalizedBookmakers:3,marketSelection:"BLOCKED_NO_MODEL_CONTEXT"},dataQuality:42,stability:35,consensusScore:0,redFlags:["Недостаточно данных модели"]};
   const text=cardText(fixture);

@@ -19,6 +19,7 @@ test("odds-api.io maps a conservatively matched fixture into FVM markets",async(
   assert.equal(result.status,"OK");
   assert.deepEqual(calls,["/v3/events","/v3/odds/multi"]);
   const market=extractMarkets(result.byFixtureId.f1);
+  assert.equal(result.byFixtureId.f1.matchConfidence,1);
   assert.equal(market.best.h2h.home.odds,1.9);
   assert.equal(market.best.h2h.draw.odds,3.5);
   assert.equal(market.best.h2h.away.odds,4.2);
@@ -41,5 +42,19 @@ test("odds-api.io falls back to public sport discovery when a league slug is una
   };
   const result=await getOddsApiIoMarkets({apiKey:"secret",fixtures:[{id:"f2",competitionCode:"CL",home:"Celje",away:"Slovan Bratislava",utcDate:"2026-08-26T19:00:00Z"}],cacheDir:fs.mkdtempSync(path.join(os.tmpdir(),"fvm-odds-")),request});
   assert.deepEqual(calls.slice(0,2),["league","sport"]);
+  assert.equal(result.matched,1);
+});
+
+test("odds-api.io sends Europa League fixtures through the supported discovery cascade",async()=>{
+  const leagues=[];
+  const request=async url=>{
+    if(url.pathname.endsWith("/events")){
+      leagues.push(url.searchParams.get("league"));
+      return response([{id:30,home:"Salzburg",away:"Mjallby",date:"2026-08-27T18:00:00Z"}]);
+    }
+    return response([{eventId:30,bookmakers:{b:[{name:"1x2",odds:[{home:1.5,draw:4,away:6}]}]}}]);
+  };
+  const result=await getOddsApiIoMarkets({apiKey:"secret",fixtures:[{id:"el1",competitionCode:"EL",home:"Salzburg",away:"Mjallby",utcDate:"2026-08-27T18:00:00Z"}],cacheDir:fs.mkdtempSync(path.join(os.tmpdir(),"fvm-odds-el-")),request});
+  assert.deepEqual(leagues,["uefa-europa-league"]);
   assert.equal(result.matched,1);
 });

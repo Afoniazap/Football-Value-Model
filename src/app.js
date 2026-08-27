@@ -198,38 +198,51 @@ async function refresh(){
     const marketErrors=new Set();
     if(primaryHealth.reasons.length)marketErrors.add(`The Odds API: ${primaryHealth.reasons.join(", ")}`);
     if(oddsApiIo.errors.length)marketErrors.add(`odds-api.io: ${oddsApiIo.errors.join(", ")}`);
-    state.providers.market={primary:primaryHealth,oddsApiIo:{status:oddsApiIo.status,requests:oddsApiIo.requests,cacheHits:oddsApiIo.cacheHits,supported:oddsApiIo.supported,matched:oddsApiIo.matched},apiFootballOdds:{status:"NOT_NEEDED",requests:0,matched:0,reasons:[]}};
+    state.providers.market={primary:primaryHealth,oddsApiIo:{status:oddsApiIo.status,requests:oddsApiIo.requests,cacheHits:oddsApiIo.cacheHits,supported:oddsApiIo.supported,matched:oddsApiIo.matched},apiFootballOdds:{status:"NOT_NEEDED",attempted:0,requests:0,cacheHits:0,matched:0,reasons:[]}};
     state.stage="4/9 Independent Models";
+
+    // Сначала завершаем весь каскад рынков. Запросы injuries/lineups не должны
+    // исчерпать API-Football quota до поиска котировок для оставшихся fixtures.
+    const resolvedMarkets=new Map();
+    for(const f of fixtures){
+      const event=matchOddsEvent(f,odds[f.competitionCode]||[]);
+      const oddsApiIoEvent=oddsApiIo.byFixtureId[f.id]||null;
+      let marketData=event?{...extractMarkets(event),source:"THE_ODDS_API"}:oddsApiIoEvent?{...extractMarkets(oddsApiIoEvent),source:"ODDS_API_IO"}:null;
+      let apiFootballReason=null;
+
+      if(!marketData && env.API_FOOTBALL_KEY && f.apiFootballFixtureId){
+        const before=getApiFootballTelemetry();
+        state.providers.market.apiFootballOdds.attempted++;
+        try{
+          console.log("DEBUG: odds", f.home, "-", f.away);
+          const apiFootballMarket=await getFixtureOdds(env.API_FOOTBALL_KEY.trim(),f.apiFootballFixtureId);
+          marketData=apiFootballMarket?{...apiFootballMarket,source:"API_FOOTBALL"}:null;
+          if(!marketData)apiFootballReason="EMPTY_RESPONSE";
+        }catch(e){
+          apiFootballReason=e.code||"ERROR";
+          state.providers.market.apiFootballOdds.reasons.push(`${f.home}-${f.away}: ${e.message}`);
+          marketErrors.add(`API-Football odds: ${e.message}`);
+        }
+        const after=getApiFootballTelemetry();
+        state.providers.market.apiFootballOdds.requests+=after.requests-before.requests;
+        state.providers.market.apiFootballOdds.cacheHits+=(after.cacheHits+after.staleHits)-(before.cacheHits+before.staleHits);
+        if(marketData){state.providers.market.apiFootballOdds.matched++;}
+      }
+      resolvedMarkets.set(f.id,{event,oddsApiIoEvent,marketData,apiFootballReason});
+    }
+    const apiOdds=state.providers.market.apiFootballOdds;
+    apiOdds.status=apiOdds.reasons.some(x=>x.includes("DAILY LIMIT"))?"DAILY_LIMIT":apiOdds.reasons.length?(apiOdds.matched?"PARTIAL":"ERROR"):apiOdds.matched?"OK":apiOdds.attempted?"NO_ODDS":"NOT_NEEDED";
 
     localHistory=loadLocalHistory(HISTORY_FILE,LEGACY_HISTORY_FILE);
 
     const results=[];
     for(const f of fixtures){
       console.log("DEBUG: fixture", f.home, "-", f.away, f.apiFootballFixtureId);
-      const event=matchOddsEvent(f,odds[f.competitionCode]||[]);
-      const oddsApiIoEvent=oddsApiIo.byFixtureId[f.id]||null;
-      let marketData=event?{...extractMarkets(event),source:"THE_ODDS_API"}:oddsApiIoEvent?{...extractMarkets(oddsApiIoEvent),source:"ODDS_API_IO"}:null;
-
-      if(!marketData && env.API_FOOTBALL_KEY && f.apiFootballFixtureId){
-        try{
-          console.log("DEBUG: odds", f.home, "-", f.away);
-          const apiFootballMarket=await getFixtureOdds(
-            env.API_FOOTBALL_KEY.trim(),
-            f.apiFootballFixtureId
-          );
-          marketData=apiFootballMarket?{...apiFootballMarket,source:"API_FOOTBALL"}:null;
-        }catch(e){
-          state.providers.market.apiFootballOdds.status=e.code||"ERROR";
-          state.providers.market.apiFootballOdds.reasons.push(`${f.home}-${f.away}: ${e.message}`);
-          marketErrors.add(`API-Football odds: ${e.message}`);
-        }
-        state.providers.market.apiFootballOdds.requests++;
-        if(marketData){state.providers.market.apiFootballOdds.status="OK";state.providers.market.apiFootballOdds.matched++;}
-      }
+      const {event,oddsApiIoEvent,marketData,apiFootballReason}=resolvedMarkets.get(f.id);
 
       let squadData=null;
 
-      if(env.API_FOOTBALL_KEY && marketData && f.apiFootballFixtureId){
+      if(env.API_FOOTBALL_KEY && marketData && f.apiFootballFixtureId && !getApiFootballTelemetry().dailyLimit){
         try{
           console.log("DEBUG: risk", f.home, "-", f.away);
           const risk=await getFixtureRisk(
@@ -270,9 +283,10 @@ async function refresh(){
       const fixtureWithMarketDiagnostic={...f,contextDiagnostic:fixtureContextDiagnostic,marketDiagnostic:{
         primary:event?"MATCHED":primaryHealth.status,
         oddsApiIo:oddsApiIoEvent?"MATCHED":oddsApiIo.status,
-        apiFootballOdds:marketData?.source==="API_FOOTBALL"?"MATCHED":marketData?"NOT_NEEDED":"NO_QUOTES",
+        apiFootballOdds:marketData?.source==="API_FOOTBALL"?"MATCHED":marketData?"NOT_NEEDED":apiFootballReason||"NO_QUOTES",
         selectedSource:marketData?.source||null,
-        normalizedBookmakers:marketData?.bookmakers?.length||0
+        normalizedBookmakers:marketData?.bookmakers?.length||0,
+        matchConfidence:event?1:oddsApiIoEvent?.matchConfidence??(marketData?.source==="API_FOOTBALL"?1:null)
       }};
       const analysis=analyseFixture(
           fixtureWithMarketDiagnostic,

@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { similarity } from "../engine/utils.js";
 
 const BASE="https://api.odds-api.io/v3";
-const SLUGS={PL:"england-premier-league",PD:"spain-laliga",BL1:"germany-bundesliga",SA:"italy-serie-a",FL1:"france-ligue-1",CL:"uefa-champions-league",CLI:"international-clubs-conmebol-libertadores-knockout-stage"};
+const SLUGS={PL:"england-premier-league",PD:"spain-laliga",BL1:"germany-bundesliga",SA:"italy-serie-a",FL1:"france-ligue-1",CL:"uefa-champions-league",EL:"uefa-europa-league",CLI:"international-clubs-conmebol-libertadores-knockout-stage"};
 
 function read(file){try{return JSON.parse(fs.readFileSync(file,"utf8"));}catch{return null;}}
 function write(file,data){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify({fetchedAt:Date.now(),data}),"utf8");}
@@ -45,11 +45,11 @@ function normalizeMarket(raw,home,away){
   }
   return outcomes.length?{key,outcomes}:null;
 }
-function normalizeOdds(row,event){
+function normalizeOdds(row,event,matchConfidence=null){
   const teams=eventTeams(event);
   const entries=Array.isArray(row.bookmakers)?row.bookmakers.map(b=>[b.title||b.name,b.markets||b.bets||[]]):Object.entries(row.bookmakers||{});
   const bookmakers=entries.map(([title,markets])=>({title,markets:(markets||[]).map(m=>normalizeMarket(m,teams.home,teams.away)).filter(Boolean)})).filter(b=>b.title&&b.markets.length);
-  return {id:String(event.id||event.eventId||""),home_team:teams.home,away_team:teams.away,commence_time:eventDate(event),bookmakers};
+  return {id:String(event.id||event.eventId||""),home_team:teams.home,away_team:teams.away,commence_time:eventDate(event),bookmakers,matchConfidence};
 }
 
 export async function getOddsApiIoMarkets({apiKey,bookmakers,fixtures,cacheDir,cacheMinutes=15,request=fetch}){
@@ -71,7 +71,7 @@ export async function getOddsApiIoMarkets({apiKey,bookmakers,fixtures,cacheDir,c
         result=await cachedJson(url,cacheDir,cacheMinutes*60_000,request);
       }
       if(result.cacheHit)cacheHits++;else requests++;
-      for(const fixture of group.fixtures){const found=match(fixture,rows(result.data));if(found&&found.score>=.7)matches.push({fixture,event:found.event});}
+      for(const fixture of group.fixtures){const found=match(fixture,rows(result.data));if(found&&found.score>=.7)matches.push({fixture,event:found.event,matchConfidence:Number(found.score.toFixed(3))});}
     }catch(error){errors.push(`${group.slug}: ${error.message}`);}
   }
   const ids=[...new Set(matches.map(x=>String(x.event.id||x.event.eventId||"")).filter(Boolean))];
@@ -84,6 +84,6 @@ export async function getOddsApiIoMarkets({apiKey,bookmakers,fixtures,cacheDir,c
     }catch(error){errors.push(`odds/multi: ${error.message}`);}
   }
   const byExternal=new Map(odds.map(row=>[String(row.id||row.eventId||row.event_id||""),row])),byFixtureId={};
-  for(const item of matches){const id=String(item.event.id||item.event.eventId||""),row=byExternal.get(id);if(!row)continue;const normalized=normalizeOdds(row,item.event);if(normalized.bookmakers.length)byFixtureId[item.fixture.id]=normalized;}
+  for(const item of matches){const id=String(item.event.id||item.event.eventId||""),row=byExternal.get(id);if(!row)continue;const normalized=normalizeOdds(row,item.event,item.matchConfidence);if(normalized.bookmakers.length)byFixtureId[item.fixture.id]=normalized;}
   return {status:Object.keys(byFixtureId).length?errors.length?"PARTIAL":"OK":errors.length?"ERROR":"NO_ODDS",byFixtureId,errors,requests,cacheHits,supported:supported.length,matched:Object.keys(byFixtureId).length};
 }

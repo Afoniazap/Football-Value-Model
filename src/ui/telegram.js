@@ -7,6 +7,7 @@ export function dashboardText(state) {
   const total = state.results.length;
   const counts = Object.fromEntries(["VALUE","NEAR","WAIT","NO_BET"].map(k=>[k,state.results.filter(x=>x.category===k).length]));
   const processedMarkets = state.results.filter(x=>x.marketAvailable).length;
+  const calculatedMarkets = state.results.filter(x=>Array.isArray(x.markets)&&x.markets.length>0).length;
   const health = total ? Math.round(state.results.reduce((s,x)=>s+x.dataQuality,0)/total) : 0;
   const opportunity = total ? Math.round(Math.min(100,(counts.VALUE*20+counts.NEAR*8)/total*100)) : 0;
   const api = state.providers?.apiFootball;
@@ -22,7 +23,8 @@ export function dashboardText(state) {
     `Opportunity Index: <b>${opportunity}/100</b>`,
     "",
     `Матчей на 24 часа: <b>${fixtureCount}</b>`,
-    `Рынок доступен: <b>${processedMarkets}/${total}</b>`,
+    `Котировки найдены: <b>${processedMarkets}/${total}</b>`,
+    `Рынков рассчитано: <b>${calculatedMarkets}/${total}</b>`,
     `✅ VALUE: <b>${counts.VALUE}</b>`,
     `🟡 Near Value: <b>${counts.NEAR}</b>`,
     `🟠 WAIT: <b>${counts.WAIT}</b>`,
