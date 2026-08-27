@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dashboardText, cardText, metricText } from "../src/ui/telegram.js";
+import { dashboardText, cardText, metricText, statisticsText } from "../src/ui/telegram.js";
 
 test("dashboard does not present provider failure as genuine zero fixtures",()=>{
   const text=dashboardText({
@@ -48,4 +48,15 @@ test("WAIT card keeps real model metrics visible without market odds",()=>{
   assert.match(text,/Stability <b>71\/100<\/b>/);
   assert.match(text,/Consensus <b>79\/100<\/b>/);
   assert.match(text,/Confidence <b>N\/A — нет цены<\/b>/);
+});
+
+test("Model показывает реальные 1X2 без рыночной цены",()=>{
+  const text=metricText("Model",{best:null,marketAvailable:false,consensusProbability:{home:.51,draw:.27,away:.22}});
+  assert.match(text,/П1: 51\.0%/);assert.match(text,/X: 27\.0%/);assert.match(text,/П2: 22\.0%/);
+});
+
+test("экран статистики компактен и показывает накопительные метрики",()=>{
+  const text=statisticsText({predictions:120,completed:80,pending:40,accuracy:.55,brier:.61,logLoss:1.02,draws:20,promotionTarget:300,categoryCounts:{VALUE:2,NEAR:8,WAIT:70,NO_BET:40},bands:[{name:"<60%",completed:30,predictions:50,accuracy:.6}]});
+  assert.match(text,/80\/300/);assert.match(text,/Accuracy: <b>55\.0%/);assert.ok(text.length<4096);
+  assert.doesNotMatch(text,/<60%/);
 });

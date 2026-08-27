@@ -47,8 +47,36 @@ export function dashboardKeyboard(state) {
     [{text:`⏳ WAIT (${count("WAIT")})`,callback_data:"list:WAIT"},
      {text:`❌ NO BET (${count("NO_BET")})`,callback_data:"list:NO_BET"}],
     [{text:"⚙️ Pipeline",callback_data:"pipeline"},
-     {text:"🔄 Обновить",callback_data:"refresh"}]
+     {text:"🔄 Обновить",callback_data:"refresh"}],
+    [{text:"📈 Статистика",callback_data:"statistics"}]
   ]);
+}
+
+export function statisticsText(statistics={}){
+  const pct=value=>Number.isFinite(value)?`${(value*100).toFixed(1)}%`:"N/A";
+  const num=value=>Number.isFinite(value)?Number(value).toFixed(3):"N/A";
+  const categories=statistics.categoryCounts||{};
+  return [
+    "<b>📈 Накопительная статистика FVM</b>","",
+    `Прогнозов сохранено: <b>${statistics.predictions||0}</b>`,
+    `Матчей завершено: <b>${statistics.completed||0}</b>`,
+    `Ожидают результата: <b>${statistics.pending||0}</b>`,
+    `Прогресс выборки: <b>${statistics.completed||0}/${statistics.promotionTarget||300}</b>`,"",
+    `Accuracy: <b>${pct(statistics.accuracy)}</b>`,
+    `Brier: <b>${num(statistics.brier)}</b>`,
+    `Log Loss: <b>${num(statistics.logLoss)}</b>`,
+    `Ничьи в факте: <b>${statistics.draws||0}</b>`,"",
+    `Средняя P(X): <b>${pct(statistics.meanDrawProbability)}</b>`,
+    `Фактические ничьи: <b>${pct(statistics.actualDrawRate)}</b>`,
+    `Средняя max P: <b>${pct(statistics.meanMaxProbability)}</b>`,"",
+    "<b>Снимки по статусу</b>",
+    `VALUE ${categories.VALUE||0} · NEAR ${categories.NEAR||0} · WAIT ${categories.WAIT||0} · NO BET ${categories.NO_BET||0}`,
+    "","<b>По лигам</b>",
+    ...((statistics.leagues||[]).slice(0,8).map(row=>`${esc(row.name)}: ${row.completed}/${row.predictions} · Acc ${pct(row.accuracy)}`)),
+    "","<b>По вероятности</b>",
+    ...((statistics.bands||[]).map(row=>`${esc(row.name)}: ${row.completed}/${row.predictions} · Acc ${pct(row.accuracy)}`)),
+    "","Статистика считается только по реальным завершённым матчам."
+  ].join("\n");
 }
 
 export function listText(category, items) {
@@ -212,7 +240,7 @@ export function metricText(code,x){
   const fp = b.fdsParts || {};
   const sv = x.stabilityV2 || {};
   const sci = x.sci || {};
-  const blockedMetric=["Model","Fair","Edge","EV","Conf","FDS","MAI"].includes(code)&&!x.best;
+  const blockedMetric=["Fair","Edge","EV","Conf","FDS","MAI"].includes(code)&&!x.best;
   if(blockedMetric){
     const market=x.marketAvailable
       ? `Рыночная цена получена: <b>${esc(x.marketSource || "да")}</b>.`
@@ -323,7 +351,7 @@ Market Agreement Index.
 <b>Итог SCI: ${sci.score ?? "N/A"}</b>`,
 
     Model:
-      `<b>Model: ${pct(b.probability)}%</b>
+      `<b>Model 1X2</b>
 Вероятность выбранного исхода по FVM.
 
 1X2:

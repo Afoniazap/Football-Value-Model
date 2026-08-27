@@ -8,10 +8,11 @@ import { getOddsApiIoMarkets } from "./connectors/oddsApiIo.js";
 import { analyseFixture } from "./engine/analyse.js";
 import { alignContextTeamIds } from "./engine/contextIds.js";
 import { getUpcomingApiFootballMatches, getFixtureRisk, getFixtureOdds, getApiFootballCompetitionContext, getFinishedFixturesForDate, configureApiFootball, beginApiFootballRefresh, getApiFootballTelemetry } from "./connectors/apiFootball.js";
-import { dashboardText, dashboardKeyboard, listText, listKeyboard, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard } from "./ui/telegram.js";
+import { dashboardText, dashboardKeyboard, listText, listKeyboard, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard, statisticsText } from "./ui/telegram.js";
 import { appendLocalHistory, buildLocalHistoryContext, loadLocalHistory, mergeWithLocalHistory } from "./history/localHistory.js";
 import { backfillFromProviderCaches } from "./history/cacheBackfill.js";
 import { discoverFixtures } from "./fixtures/discovery.js";
+import { loadPredictionStatistics, updatePredictionHistory } from "./statistics/predictionHistory.js";
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const DATA=path.join(ROOT,"data");
@@ -21,6 +22,7 @@ configureApiFootball({cacheDir:path.join(DATA,"api-football-cache")});
 configureFootballData({cacheDir:path.join(DATA,"football-data-cache")});
 const HISTORY_FILE=path.join(DATA,"history","fixtures.jsonl");
 const LEGACY_HISTORY_FILE=path.join(DATA,"history.json");
+const PREDICTION_HISTORY_FILE=path.join(DATA,"statistics","predictions.jsonl");
 let cacheBackfillDone=false;
 
 const env=process.env;
@@ -46,6 +48,7 @@ function loadSavedState(){
   }catch{return {loading:false,stage:"0/9",updatedAt:null,results:[],errors:[],providers:{}};}
 }
 let state=loadSavedState();
+state.statistics=loadPredictionStatistics(PREDICTION_HISTORY_FILE);
 
 async function tg(method,body={}){
   const r=await fetch(`${TG}/${method}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
@@ -331,6 +334,7 @@ async function refresh(){
     const values=results.filter(x=>x.category==="VALUE").sort((a,b)=>(b.best?.fds||0)-(a.best?.fds||0));
     const allowedIds=new Set(values.slice(0,config.maxRecommendations).map(x=>x.id));
     state.results=results.map(x=>x.category==="VALUE"&&!allowedIds.has(x.id)?{...x,category:"NEAR",reason:"Не вошёл в лимит лучших рекомендаций дня."}:x);
+    state.statistics=updatePredictionHistory(PREDICTION_HISTORY_FILE,state.results,localHistory,new Date().toISOString());
     state.providers.apiFootball=getApiFootballTelemetry(env.REFRESH_MINUTES||30);
     state.updatedAt=new Date().toISOString(); state.stage="9/9 Complete"; save();
     console.log(`API-Football: req ${state.providers.apiFootball.requests} | cache ${state.providers.apiFootball.cacheHits+state.providers.apiFootball.staleHits} | saved ${state.providers.apiFootball.avoided} | est/day ${state.providers.apiFootball.estimatedDailyRequests}`);
@@ -353,6 +357,7 @@ async function callback(q){
   if(q.data==="dashboard")return dashboard(id,q.message.message_id);
   if(q.data==="refresh"){await refresh();return dashboard(id,q.message.message_id)}
   if(q.data==="pipeline")return tg("sendMessage",{chat_id:id,text:`⚙️ <b>Pipeline</b>\n\n${state.stage}\n\n✅ Data Integrity\n✅ Classification\n✅ Team Strength\n✅ Form\n✅ SCI\n✅ Consensus\n✅ Market Value\n✅ Risk Gates\n✅ Recommendation`,parse_mode:"HTML",reply_markup:backKeyboard()});
+  if(q.data==="statistics")return tg("sendMessage",{chat_id:id,text:statisticsText(state.statistics),parse_mode:"HTML",reply_markup:backKeyboard()});
   if(q.data.startsWith("list:")){
     const cat=q.data.split(":")[1],items=state.results.filter(x=>x.category===cat);
     return tg("sendMessage",{chat_id:id,text:listText(cat,items),parse_mode:"HTML",reply_markup:listKeyboard(items)});
@@ -387,7 +392,8 @@ async function message(m){
   if(t==="/start"||t==="/dashboard")return dashboard(id);
   if(t==="/refresh"){await tg("sendMessage",{chat_id:id,text:"Запущен полный анализ FVM..."});await refresh();return dashboard(id)}
   if(t==="/id")return tg("sendMessage",{chat_id:id,text:`Ваш chat_id: <code>${id}</code>`,parse_mode:"HTML"});
-  return tg("sendMessage",{chat_id:id,text:"Команды: /start /refresh /id"});
+  if(t==="/stats")return tg("sendMessage",{chat_id:id,text:statisticsText(state.statistics),parse_mode:"HTML",reply_markup:backKeyboard()});
+  return tg("sendMessage",{chat_id:id,text:"Команды: /start /refresh /stats /id"});
 }
 async function main(){
   console.log("FVM Engine v0.5 starting...");
