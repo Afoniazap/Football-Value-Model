@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { sameTeamIdentity, teamSearchAliases } from "../history/teamAliases.js";
+import { sameTeamIdentity, teamIdentityEvidence, teamSearchAliases } from "../history/teamAliases.js";
 
 const BASE = "https://www.thesportsdb.com/api/v1/json/123";
 let runtime = { cacheDir: null, fetchImpl: (...args) => fetch(...args), now: () => Date.now(), minGapMs: 2500 };
@@ -17,7 +17,12 @@ export function resetTheSportsDbTelemetry() { telemetry = { requests: 0, cacheHi
 export function getTheSportsDbTelemetry() { return { ...telemetry }; }
 
 export function exactTeamMatch(query, candidates) {
-  const matches = (candidates || []).filter(team => /^(soccer|football)$/i.test(String(team?.strSport||""))&&sameTeamIdentity(query, team?.strTeam));
+  const evidence=teamIdentityEvidence(query);
+  const matches = (candidates || []).filter(team => {
+    if(!/^(soccer|football)$/i.test(String(team?.strSport||"")))return false;
+    if(evidence?.source==="THESPORTSDB")return String(team.idTeam)===String(evidence.teamId);
+    return sameTeamIdentity(query, team?.strTeam);
+  });
   return matches.length === 1 ? matches[0] : null;
 }
 

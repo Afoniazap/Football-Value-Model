@@ -8,8 +8,8 @@ import { configureTheSportsDb, exactTeamMatch, getFreeLeagueRoundEvents, getFree
 function response(data) { return { ok: true, json: async () => data }; }
 
 test("TheSportsDB mapping принимает только одно точное нормализованное имя", () => {
-  assert.equal(exactTeamMatch("FC Benfica", [{ idTeam: "1", strTeam: "Benfica",strSport:"Soccer" }]).idTeam, "1");
-  assert.equal(exactTeamMatch("Aarhus", [{ idTeam: "1", strTeam: "AGF Aarhus",strSport:"Soccer" }]).idTeam, "1");
+  assert.equal(exactTeamMatch("FC Benfica", [{ idTeam: "134108", strTeam: "Benfica",strSport:"Soccer" }]).idTeam, "134108");
+  assert.equal(exactTeamMatch("Aarhus", [{ idTeam: "133899", strTeam: "AGF Aarhus",strSport:"Soccer" }]).idTeam, "133899");
   assert.equal(exactTeamMatch("Aarhus", [{ idTeam: "2", strTeam: "Aarhus Fremad",strSport:"Soccer" }]), null);
   assert.equal(exactTeamMatch("Benfica", [{ idTeam: "1", strTeam: "Benfica",strSport:"Soccer" }, { idTeam: "2", strTeam: "Benfica FC",strSport:"Soccer" }]), null);
   assert.equal(exactTeamMatch("Plzen",[{idTeam:"hockey",strTeam:"Plzen",strSport:"Ice Hockey"}]),null);
@@ -19,8 +19,8 @@ test("TheSportsDB previous events нормализуются и использу
   const calls = [];
   configureTheSportsDb({ cacheDir: fs.mkdtempSync(path.join(os.tmpdir(), "fvm-tsdb-")), minGapMs: 0, fetchImpl: async url => {
     calls.push(url);
-    return url.includes("searchteams") ? response({ teams: [{ idTeam: "10", strTeam: "Benfica",strSport:"Soccer",idLeague:"1",strLeague:"League" }] }) : response({ results: [
-      { idEvent: "7", strStatus: "FT", dateEvent: "2026-08-20", strTime: "19:00:00", idLeague: "1", strLeague: "League", idHomeTeam: "10", strHomeTeam: "Benfica", idAwayTeam: "20", strAwayTeam: "B", intHomeScore: "2", intAwayScore: "0" },
+    return url.includes("searchteams") ? response({ teams: [{ idTeam: "134108", strTeam: "Benfica",strSport:"Soccer",idLeague:"1",strLeague:"League" }] }) : response({ results: [
+      { idEvent: "7", strStatus: "FT", dateEvent: "2026-08-20", strTime: "19:00:00", idLeague: "1", strLeague: "League", idHomeTeam: "134108", strHomeTeam: "Benfica", idAwayTeam: "20", strAwayTeam: "B", intHomeScore: "2", intAwayScore: "0" },
       { idEvent: "8", strStatus: "NS", dateEvent: "2026-08-30", strHomeTeam: "Benfica", strAwayTeam: "C" }
     ] });
   }});

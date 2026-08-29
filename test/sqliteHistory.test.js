@@ -81,3 +81,25 @@ test("known Plzen football identity rejects the old TheSportsDB hockey team ID",
   const report=importHistoryMatches(db,[hockey]);
   assert.equal(report.rejected.IDENTITY_MISMATCH,1);assert.equal(databaseStats(db,file).matches,0);db.close();
 });
+
+test("confirmed provider identity excludes a same-name foreign club",()=>{
+  const db=openHistoryDatabase(tempDb());
+  const uganda=row({id:"uganda-nec",source:"THESPORTSDB",home:"NEC",away:"Express FC"});
+  uganda.homeTeam.id="149935";
+  const nijmegen=row({id:"nl-nec",source:"THESPORTSDB",home:"NEC Nijmegen",away:"Beta"});
+  nijmegen.homeTeam.id="133760";
+  importHistoryMatches(db,[uganda,nijmegen]);
+  const matches=getTeamLastMatches(db,"NEC","2026-08-21T00:00:00Z",20);
+  assert.equal(matches.length,1);
+  assert.equal(matches[0].homeTeam.id,"133760");
+  db.close();
+});
+
+test("team context excludes friendlies without deleting stored provenance",()=>{
+  const file=tempDb(),db=openHistoryDatabase(file);
+  const friendly=row({id:"friendly",home:"Alpha FC",playedAt:"2026-08-19T18:00:00Z"});friendly.competition={name:"Club Friendlies",season:"2025"};
+  importHistoryMatches(db,[friendly,row({id:"league",home:"Alpha FC"})]);
+  assert.equal(databaseStats(db,file).matches,2);
+  assert.equal(getTeamLastMatches(db,"Alpha FC","2026-08-21T00:00:00Z",20).length,1);
+  db.close();
+});

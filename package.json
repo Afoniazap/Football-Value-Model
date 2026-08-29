@@ -8,7 +8,8 @@
     "start": "node src/app.js",
     "check": "node --check src/app.js",
     "test": "node --test",
-    "doctor": "node scripts/doctor.js"
+    "doctor": "node scripts/doctor.js",
+    "history:expand": "node scripts/expand-sqlite-history.js"
   },
   "engines": {
     "node": ">=22.5"

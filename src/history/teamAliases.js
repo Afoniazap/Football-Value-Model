@@ -10,12 +10,27 @@ export const TEAM_ALIAS_GROUPS = [
   { name: "Kairat Almaty", aliases: ["FK Kairat"], evidence: { source: "THESPORTSDB", teamId: "134602" } },
   { name: "Benfica", aliases: ["Sport Lisboa e Benfica", "SL Benfica"], evidence: { source: "THESPORTSDB", teamId: "134108" } },
   { name: "Ferencvarosi TC", aliases: ["Ferencvaros", "Ferencváros", "Ferencvárosi TC"], evidence: { source: "THESPORTSDB", teamId: "134620" } }
+  ,{ name: "Swansea City", aliases: ["Swansea City AFC"], evidence: { source: "THESPORTSDB", teamId: "133614" } }
+  ,{ name: "Hull City", aliases: ["Hull City AFC"], evidence: { source: "THESPORTSDB", teamId: "133617" } }
+  ,{ name: "Paderborn", aliases: ["SC Paderborn 07"], evidence: { source: "THESPORTSDB", teamId: "134551" } }
+  ,{ name: "Elversberg", aliases: ["SV 07 Elversberg"], evidence: { source: "THESPORTSDB", teamId: "138411" } }
+  ,{ name: "Excelsior", aliases: ["SBV Excelsior"], evidence: { source: "THESPORTSDB", teamId: "133757" } }
+  ,{ name: "AZ Alkmaar", aliases: ["AZ"], evidence: { source: "THESPORTSDB", teamId: "133767" } }
+  ,{ name: "Maritimo", aliases: ["Marítimo", "CS Marítimo"], evidence: { source: "THESPORTSDB", teamId: "134023" } }
+  ,{ name: "Troyes", aliases: ["ES Troyes AC"], evidence: { source: "THESPORTSDB", teamId: "134789" } }
+  ,{ name: "Atletico Mineiro", aliases: ["Atlético Mineiro", "CA Mineiro"], evidence: { source: "THESPORTSDB", teamId: "134299" } }
+  ,{ name: "Sao Paulo", aliases: ["São Paulo", "São Paulo FC"], evidence: { source: "THESPORTSDB", teamId: "134291" } }
+  ,{ name: "Bragantino", aliases: ["Red Bull Bragantino", "RB Bragantino"], evidence: { source: "THESPORTSDB", teamId: "134736" } }
+  ,{ name: "NEC Nijmegen", aliases: ["NEC"], evidence: { source: "THESPORTSDB", teamId: "133760" } }
 ];
 
 export function canonicalTeamName(value = "") {
-  return String(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/\b(fc|cf|afc|sc|ac|cd|fk|rc|ca|ud|club|sk|vv|kf)\b/g, " ")
+  const cleaned=String(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9а-яё]+/gi, " ").trim().replace(/\s+/g, " ");
+  const withoutClubSuffix=cleaned.replace(/\b(fc|cf|afc|sc|ac|cd|fk|rc|ca|ud|club|sk|vv|kf)\b/g, " ").trim().replace(/\s+/g, " ");
+  // Для коротких названий суффикс является частью identity: NEC (Нидерланды)
+  // и NEC FC (Уганда) не должны объединяться в одну команду.
+  return withoutClubSuffix.replace(/\s/g,"").length<=3?cleaned:withoutClubSuffix;
 }
 
 const GROUP_BY_CANONICAL=new Map(TEAM_ALIAS_GROUPS.flatMap(group=>[group.name,...group.aliases].map(alias=>[canonicalTeamName(alias),group])));

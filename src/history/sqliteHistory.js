@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { canonicalTeamName, sameTeamIdentity, teamIdentityEvidence, teamSearchAliases } from "./teamAliases.js";
 
 const FINISHED=new Set(["FT","AET","PEN","FINISHED"]);
+const OFFICIAL_MATCH="lower(COALESCE(competition,'')) NOT LIKE '%friendl%'";
 
 const numberOrNull=value=>{
   if(value===null||value===undefined||value==="")return null;
@@ -170,17 +171,23 @@ function teamWhere(team){
   const normalized=[...new Set(teamSearchAliases(name).map(canonicalTeamName).filter(Boolean))];
   if(!normalized.length)throw new Error("team name is required for safe SQLite identity matching");
   const placeholders=normalized.map(()=>"?").join(",");
-  return {name,normalized,placeholders,sql:`(homeTeamNormalized IN (${placeholders}) OR awayTeamNormalized IN (${placeholders}))`,args:[...normalized,...normalized]};
+  const evidence=teamIdentityEvidence(name);
+  const guarded=side=>evidence?.source==="THESPORTSDB"
+    ?`(${side}TeamNormalized IN (${placeholders}) AND (source<>'THESPORTSDB' OR ${side}TeamId=?))`
+    :`${side}TeamNormalized IN (${placeholders})`;
+  const sideArgs=evidence?.source==="THESPORTSDB"?[...normalized,String(evidence.teamId)]:[...normalized];
+  const homeSql=guarded("home"),awaySql=guarded("away");
+  return {name,normalized,placeholders,homeSql,awaySql,homeArgs:sideArgs,awayArgs:sideArgs,sql:`(${homeSql} OR ${awaySql})`,args:[...sideArgs,...sideArgs]};
 }
 
 export function getTeamLastMatches(db,team,before,limit=20){
   const where=teamWhere(team);
-  return db.prepare(`SELECT * FROM matches WHERE ${where.sql} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...where.args,new Date(before).toISOString(),limit).map(decode);
+  return db.prepare(`SELECT * FROM matches WHERE ${where.sql} AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...where.args,new Date(before).toISOString(),limit).map(decode);
 }
-export function getTeamHomeMatches(db,team,before,limit=20){const w=teamWhere(team);return db.prepare(`SELECT * FROM matches WHERE homeTeamNormalized IN (${w.placeholders}) AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...w.normalized,new Date(before).toISOString(),limit).map(decode);}
-export function getTeamAwayMatches(db,team,before,limit=20){const w=teamWhere(team);return db.prepare(`SELECT * FROM matches WHERE awayTeamNormalized IN (${w.placeholders}) AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...w.normalized,new Date(before).toISOString(),limit).map(decode);}
+export function getTeamHomeMatches(db,team,before,limit=20){const w=teamWhere(team);return db.prepare(`SELECT * FROM matches WHERE ${w.homeSql} AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...w.homeArgs,new Date(before).toISOString(),limit).map(decode);}
+export function getTeamAwayMatches(db,team,before,limit=20){const w=teamWhere(team);return db.prepare(`SELECT * FROM matches WHERE ${w.awaySql} AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...w.awayArgs,new Date(before).toISOString(),limit).map(decode);}
 export function getCompetitionSeasonMatches(db,competition,season,before="9999-12-31T23:59:59.999Z",limit=1000){return db.prepare("SELECT * FROM matches WHERE (competitionCode=? OR competition=?) AND season=? AND kickoff < ? ORDER BY kickoff DESC LIMIT ?").all(competition,competition,String(season),new Date(before).toISOString(),limit).map(decode);}
-export function getHeadToHead(db,home,away,before,limit=20){const h=teamWhere(home),a=teamWhere(away);return db.prepare(`SELECT * FROM matches WHERE ((homeTeamNormalized IN (${h.placeholders}) AND awayTeamNormalized IN (${a.placeholders})) OR (homeTeamNormalized IN (${a.placeholders}) AND awayTeamNormalized IN (${h.placeholders}))) AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...h.normalized,...a.normalized,...a.normalized,...h.normalized,new Date(before).toISOString(),limit).map(decode);}
+export function getHeadToHead(db,home,away,before,limit=20){const h=teamWhere(home),a=teamWhere(away);return db.prepare(`SELECT * FROM matches WHERE ((${h.homeSql} AND ${a.awaySql}) OR (${a.homeSql} AND ${h.awaySql})) AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...h.homeArgs,...a.awayArgs,...a.homeArgs,...h.awayArgs,new Date(before).toISOString(),limit).map(decode);}
 
 export function getTeamForm(db,team,before,limit=5){
   const name=teamWhere(team).name,matches=getTeamLastMatches(db,team,before,limit);
