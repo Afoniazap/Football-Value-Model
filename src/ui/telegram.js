@@ -125,6 +125,28 @@ function gateLine(name, value, threshold, unit = "") {
   return `🔴 ${shortName}: ${value}${unit}/${threshold}${unit} → −${Math.abs(diff).toFixed(1)}${unit}`;
 }
 
+function compactNumber(value,digits=1){
+  return Number(Number(value).toFixed(digits)).toString();
+}
+
+function signedNumber(value,digits=1){
+  const number=Number(value);
+  return `${number>=0?"+":""}${compactNumber(number,digits)}`;
+}
+
+function betLabel(candidate){
+  if(candidate?.market!=="AH")return candidate?.label||"N/A";
+  const side=String(candidate.label||"").startsWith("Ф2")?"П2":"П1";
+  const line=Number(candidate.line);
+  return Number.isFinite(line)?`${side} ${line>0?"+":""}${compactNumber(line,2)}`:candidate.label;
+}
+
+function topModelOutcome(probability){
+  const entries=[["П1",probability?.home],["X",probability?.draw],["П2",probability?.away]]
+    .filter(([,value])=>Number.isFinite(value));
+  return entries.sort((a,b)=>b[1]-a[1])[0]||null;
+}
+
 export function cardText(x) {
   const b = x.best;
   const p = x.consensusProbability;
@@ -135,23 +157,30 @@ export function cardText(x) {
   ];
 
   if (b) {
+    const stale=(x.marketFreshness||x.marketDiagnostic?.freshness)==="STALE";
+    const prefix=stale?"🎯 <b>Ставка-кандидат:</b>":x.category==="VALUE"?"✅ <b>Ставка:</b>":"🎯 <b>Кандидат:</b>";
+    const price=`${esc(betLabel(b))} @${compactNumber(b.odds,2)}`;
     lines.push(
       "",
-      `🎯 <b>${esc(b.market)} — ${esc(b.label)} @${b.odds}</b>${b.bookmaker ? " · " + esc(b.bookmaker) : ""}`,
-      `Model <b>${(b.probability*100).toFixed(1)}%</b> │ Fair <b>${b.fairOdds.toFixed(2)}</b>`,
-      `Edge <b>+${b.edge.toFixed(1)} п.п.</b> │ EV <b>+${b.ev.toFixed(1)}%</b>`,
+      `${prefix} <b>${price}</b>${stale?" ⚠️ STALE":""} · P <b>${compactNumber(b.probability*100)}%</b>`,
+      `💰 Fair <b>${b.fairOdds.toFixed(2)}</b> · Edge <b>${signedNumber(b.edge)} п.п.</b> · EV <b>${signedNumber(b.ev)}%</b>`,
       "",
       `<b>${x.category}</b> · FDS <b>${b.fds}/100</b>`
     );
   } else {
-    lines.push("", `<b>${x.category}</b>`, esc(x.reason || "Рынок недоступен."));
-    if(["home","draw","away"].every(key=>Number.isFinite(p?.[key]))){
-      const fair=value=>(1/value).toFixed(2);
+    const modelOutcome=topModelOutcome(p);
+    if(modelOutcome){
+      const [label,probability]=modelOutcome;
       lines.push(
-        `Model 1X2: <b>П1 ${(p.home*100).toFixed(1)}% · X ${(p.draw*100).toFixed(1)}% · П2 ${(p.away*100).toFixed(1)}%</b>`,
-        `Fair 1X2: <b>${fair(p.home)} · ${fair(p.draw)} · ${fair(p.away)}</b>`,
-        "Odds N/A · Edge N/A · EV N/A"
+        "",
+        `🎯 <b>Модель:</b> <b>${label}</b> · P <b>${compactNumber(probability*100)}%</b> · Кэф N/A`,
+        `💰 Fair <b>${(1/probability).toFixed(2)}</b> · Edge N/A · EV N/A`,
+        "",
+        `<b>${x.category}</b>`,
+        esc(x.reason || "Рынок недоступен.")
       );
+    }else{
+      lines.push("", `<b>${x.category}</b>`, esc(x.reason || "Рынок недоступен."));
     }
   }
 

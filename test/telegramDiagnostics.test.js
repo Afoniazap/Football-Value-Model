@@ -66,10 +66,38 @@ test("WAIT card keeps real model metrics visible without market odds",()=>{
   assert.match(text,/Stability <b>71\/100<\/b>/);
   assert.match(text,/Consensus <b>79\/100<\/b>/);
   assert.match(text,/Confidence <b>N\/A — нет цены<\/b>/);
-  assert.match(text,/Model 1X2: <b>П1 51\.0% · X 27\.0% · П2 22\.0%<\/b>/);
-  assert.match(text,/Fair 1X2: <b>1\.96 · 3\.70 · 4\.55<\/b>/);
-  assert.match(text,/Odds N\/A · Edge N\/A · EV N\/A/);
+  assert.match(text,/🎯 <b>Модель:<\/b> <b>П1<\/b> · P <b>51%<\/b> · Кэф N\/A/);
+  assert.match(text,/💰 Fair <b>1\.96<\/b> · Edge N\/A · EV N\/A/);
   assert.match(text,/Local history: <b>9\/7<\/b>/);
+});
+
+function pricedCard(overrides={}){
+  return {id:"priced",home:"A",away:"B",competition:"League",utcDate:"2026-08-30T18:00:00Z",category:"WAIT",reason:"gates",marketAvailable:true,marketFreshness:"FRESH",dataQuality:60,stability:65,consensusScore:70,redFlags:[],best:{market:"1X2",label:"П1",odds:2.15,probability:.58,fairOdds:1.72,edge:11,ev:25,confidence:65,fds:60},...overrides};
+}
+
+test("верх карточки VALUE показывает ставку, цену и вероятность выбранного best",()=>{
+  const text=cardText(pricedCard({category:"VALUE",dataQuality:75,stability:75,best:{...pricedCard().best,confidence:75,fds:80}}));
+  assert.match(text,/✅ <b>Ставка:<\/b> <b>П1 @2\.15<\/b> · P <b>58%<\/b>/);
+  assert.match(text,/💰 Fair <b>1\.72<\/b> · Edge <b>\+11 п\.п\.<\/b> · EV <b>\+25%<\/b>/);
+});
+
+test("WAIT и NO_BET не выдаются как ставка",()=>{
+  for(const category of ["WAIT","NO_BET"]){
+    const text=cardText(pricedCard({category}));
+    assert.match(text,/🎯 <b>Кандидат:<\/b> <b>П1 @2\.15<\/b>/);
+    assert.doesNotMatch(text,/<b>Ставка:<\/b>/);
+  }
+});
+
+test("STALE best всегда помечен как ставка-кандидат",()=>{
+  const text=cardText(pricedCard({category:"VALUE",marketFreshness:"STALE",best:{...pricedCard().best,market:"OU",label:"ТБ 2.5",odds:1.92,probability:.64,fairOdds:1.56,edge:12,ev:23}}));
+  assert.match(text,/🎯 <b>Ставка-кандидат:<\/b> <b>ТБ 2\.5 @1\.92<\/b> ⚠️ STALE · P <b>64%<\/b>/);
+  assert.doesNotMatch(text,/✅ <b>Ставка:<\/b>/);
+});
+
+test("AH presentation использует сторону и линию вероятности выбранного AH best",()=>{
+  const text=cardText(pricedCard({best:{...pricedCard().best,market:"AH",label:"Ф1\(-0.5\)",line:-.5,odds:2.05,probability:.57,fairOdds:1.75,edge:8,ev:17}}));
+  assert.match(text,/🎯 <b>Кандидат:<\/b> <b>П1 -0\.5 @2\.05<\/b> · P <b>57%<\/b>/);
 });
 
 test("Model показывает реальные 1X2 без рыночной цены",()=>{
