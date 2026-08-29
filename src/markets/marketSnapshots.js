@@ -7,6 +7,28 @@ function write(filePath,value){fs.mkdirSync(path.dirname(filePath),{recursive:tr
 function key(fixture){return `${String(fixture.utcDate).slice(0,16)}|${canonicalTeamName(fixture.home)}|${canonicalTeamName(fixture.away)}`;}
 function validMarket(data){return Boolean(data&&Array.isArray(data.bookmakers)&&data.bookmakers.length&&data.best);}
 
+export function auditMarketSnapshots({filePath,fixtures=[],now=Date.now(),freshMs=15*60_000,staleMs=6*3600_000}){
+  const store=read(filePath),snapshots=store?.snapshots||{},records=Object.values(snapshots);
+  const currentKeys=new Set(fixtures.map(key));
+  const matched=Object.entries(snapshots).filter(([snapshotKey])=>currentKeys.has(snapshotKey));
+  const counts={fresh:0,stale:0,expired:0};
+  for(const [,snapshot] of matched){
+    const age=now-new Date(snapshot.fetchedAt).getTime();
+    if(age<=freshMs)counts.fresh++;
+    else if(age<=staleMs)counts.stale++;
+    else counts.expired++;
+  }
+  const timestamps=records.map(row=>Date.parse(row?.fetchedAt)).filter(Number.isFinite);
+  const status=!records.length?"NO_LOCAL_SNAPSHOT":!matched.length?"NO_MATCHING_SNAPSHOT":"OK";
+  return {
+    status,
+    records:records.length,
+    matched:matched.length,
+    ...counts,
+    newest:timestamps.length?new Date(Math.max(...timestamps)).toISOString():null
+  };
+}
+
 function resolveOne(store,{fixture,freshMarket,now,freshMs,staleMs}){
   const snapshotKey=key(fixture);
   if(validMarket(freshMarket)){

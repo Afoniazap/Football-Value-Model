@@ -13,7 +13,7 @@ import { appendLocalHistory, buildLocalHistoryContext, loadRawLocalHistory, merg
 import { backfillFromProviderCaches } from "./history/cacheBackfill.js";
 import { discoverFixtures } from "./fixtures/discovery.js";
 import { loadPredictionStatistics, updatePredictionHistory } from "./statistics/predictionHistory.js";
-import { enforceMarketFreshness, resolveMarketSnapshots } from "./markets/marketSnapshots.js";
+import { auditMarketSnapshots, enforceMarketFreshness, resolveMarketSnapshots } from "./markets/marketSnapshots.js";
 import { databaseStats, getTeamLastMatches, hasSourceDate, importHistoryMatches, loadAllHistory, openHistoryDatabase } from "./history/sqliteHistory.js";
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
@@ -284,6 +284,11 @@ async function refresh(){
       snapshotEntries.push({fixture:f,freshMarket});
     }
     const snapshots=resolveMarketSnapshots({filePath:MARKET_SNAPSHOT_FILE,entries:snapshotEntries,staleMs:Number(env.MARKET_STALE_MINUTES||360)*60_000});
+    state.providers.marketSnapshots=auditMarketSnapshots({
+      filePath:MARKET_SNAPSHOT_FILE,
+      fixtures,
+      staleMs:Number(env.MARKET_STALE_MINUTES||360)*60_000
+    });
     const resolvedMarkets=new Map();
     for(const f of fixtures){
       const {event,oddsApiIoEvent,freshMarket}=rawMarkets.get(f.id);
@@ -329,9 +334,15 @@ async function refresh(){
       const mergedContext=mergeWithLocalHistory(baseContext,fixtureHistory(f),f);
       const localMeta=mergedContext.localHistoryMeta;
       const hasLocalModelContext=Boolean(mergedContext.standings && localMeta?.homeMatches>=4 && localMeta?.awayMatches>=4);
-      const fixtureContextDiagnostic=hasLocalModelContext
+      const contextDiagnosticBase=hasLocalModelContext
         ? {status:"OK",source:"LOCAL_HISTORY",finished:mergedContext.finished.length,provenance:localMeta.provenance,temporalSafe:true}
         : contextDiagnostics[`${f.apiFootballLeagueId}|${f.seasonStart}`]||{status:"UNAVAILABLE",reason:"NO_CONTEXT_MAPPING"};
+      const fixtureContextDiagnostic={...contextDiagnosticBase,localHistory:{
+        homeMatches:localMeta?.homeMatches||0,
+        awayMatches:localMeta?.awayMatches||0,
+        provenance:localMeta?.provenance||[],
+        temporalSafe:true
+      }};
 
       const fixtureWithMarketDiagnostic={...f,contextDiagnostic:fixtureContextDiagnostic,marketDiagnostic:{
         primary:event?"MATCHED":primaryHealth.status,
@@ -352,7 +363,12 @@ async function refresh(){
         );
       analysis=enforceMarketFreshness(analysis,freshness);
       analysis.marketFetchedAt=fetchedAt;
-      analysis.marketDiagnostic.marketSelection=analysis.markets.length?"CALCULATED":analysis.marketAvailable?"BLOCKED_NO_MODEL_CONTEXT":"NO_QUOTES";
+      const hasModel=["home","draw","away"].every(key=>Number.isFinite(analysis.consensusProbability?.[key]));
+      analysis.marketDiagnostic.marketSelection=analysis.markets.length
+        ? "CALCULATED"
+        : analysis.marketAvailable
+          ? "BLOCKED_NO_MODEL_CONTEXT"
+          : hasModel?"NO_QUOTES_MODEL_AVAILABLE":"NO_QUOTES_NO_MODEL_CONTEXT";
       results.push(analysis);
     }
     timing.model=Date.now()-modelStarted;
@@ -372,7 +388,8 @@ async function refresh(){
     save();
     console.log(`API-Football: req ${state.providers.apiFootball.requests} | cache ${state.providers.apiFootball.cacheHits+state.providers.apiFootball.staleHits} | saved ${state.providers.apiFootball.avoided} | est/day ${state.providers.apiFootball.estimatedDailyRequests}`);
     const fresh=state.results.filter(x=>x.marketFreshness==="FRESH").length,stale=state.results.filter(x=>x.marketFreshness==="STALE").length;
-    console.log(`Fixtures: ${fixtures.length} | Context: ${results.filter(x=>x.contextDiagnostic?.status==="OK").length}/${fixtures.length} | Quotes: ${results.filter(x=>x.marketAvailable).length}/${fixtures.length} | Models: ${results.filter(x=>x.best).length}/${fixtures.length}`);
+    const modelCount=results.filter(x=>["home","draw","away"].every(key=>Number.isFinite(x.consensusProbability?.[key]))).length;
+    console.log(`Fixtures: ${fixtures.length} | Context: ${results.filter(x=>x.contextDiagnostic?.status==="OK").length}/${fixtures.length} | Quotes: ${results.filter(x=>x.marketAvailable).length}/${fixtures.length} | Models: ${modelCount}/${fixtures.length}`);
     console.log(`Fresh/Stale: ${fresh}/${stale} | HTTP: ${state.performance.httpTotal} | Cache hits: ${state.performance.cacheHits} | Refresh: ${(timing.total/1000).toFixed(1)}s`);
   }catch(e){
     state.providers.apiFootball=getApiFootballTelemetry(env.REFRESH_MINUTES||30);

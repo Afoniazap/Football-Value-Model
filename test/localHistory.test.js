@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { appendLocalHistory, buildLocalHistoryContext, loadLocalHistory, mergeWithLocalHistory, normalizeHistoryMatch } from "../src/history/localHistory.js";
 import { formModel } from "../src/engine/models.js";
+import { analyseFixture } from "../src/engine/analyse.js";
 
 function match(id, date, homeId, home, awayId, away, hg = 1, ag = 0) {
   return { id, utcDate: date, leagueId: 1, league: "Real League", season: 2026, homeTeam: { id: homeId, name: home }, awayTeam: { id: awayId, name: away }, score: { fullTime: { home: hg, away: ag } } };
@@ -61,6 +62,12 @@ test("backfilled provider IDs are aligned for Recent Form after confirmed identi
   assert.equal(context.finished.filter(row => row.homeTeam.id === fixture.homeId || row.awayTeam.id === fixture.homeId).length, 4);
   assert.equal(context.finished.filter(row => row.homeTeam.id === fixture.awayId || row.awayTeam.id === fixture.awayId).length, 4);
   assert.ok(formModel(fixture, context));
+  const analysis=analyseFixture(fixture,context,null,{minDataQuality:70,minEdge:4,minEv:5,minConfidence:70,minStability:70});
+  assert.equal(analysis.dataQualityV2.formScore,15);
+  assert.ok(analysis.consensusProbability);
+  assert.equal(analysis.marketAvailable,false);
+  assert.equal(analysis.best,null);
+  assert.equal(analysis.category,"WAIT");
 });
 
 test("один матч из local history и provider context не удваивается", () => {

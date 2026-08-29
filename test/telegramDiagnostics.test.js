@@ -31,6 +31,16 @@ test("dashboard distinguishes quote coverage from calculated markets",()=>{
   ]});
   assert.match(text,/Котировки найдены: <b>2\/2<\/b>/);
   assert.match(text,/Рынков рассчитано: <b>1\/2<\/b>/);
+  assert.match(text,/Model 1X2: <b>0\/2<\/b>/);
+});
+
+test("dashboard separates context, model and market snapshot coverage",()=>{
+  const text=dashboardText({loading:false,updatedAt:"2026-08-29T12:00:00Z",errors:[],providers:{marketSnapshots:{status:"OK",records:36,matched:2,fresh:0,stale:1,expired:1}},results:[
+    {category:"WAIT",dataQuality:20,contextDiagnostic:{status:"OK"},consensusProbability:{home:.5,draw:.3,away:.2},markets:[],marketAvailable:false},
+    {category:"WAIT",dataQuality:10,contextDiagnostic:{status:"UNAVAILABLE"},markets:[],marketAvailable:false}
+  ]});
+  assert.match(text,/Context готов: <b>1\/2<\/b> · Model 1X2: <b>1\/2<\/b>/);
+  assert.match(text,/Market snapshots: <b>OK<\/b> · records 36 · matched 2 · fresh 0 · stale 1 · expired 1/);
 });
 
 test("dashboard and card label cached quotes as STALE with source timestamp",()=>{
@@ -51,11 +61,15 @@ test("WAIT card distinguishes an available quote from a missing model candidate"
 });
 
 test("WAIT card keeps real model metrics visible without market odds",()=>{
-  const text=cardText({id:"1",home:"A",away:"B",competition:"Ligue 1",utcDate:"2026-08-26T18:00:00Z",category:"WAIT",reason:"Нет рыночной линии",best:null,dataQuality:54,stability:71,consensusScore:79,redFlags:["Нет рыночной линии"]});
+  const text=cardText({id:"1",home:"A",away:"B",competition:"Ligue 1",utcDate:"2026-08-26T18:00:00Z",category:"WAIT",reason:"Нет рыночной линии",best:null,consensusProbability:{home:.51,draw:.27,away:.22},contextDiagnostic:{status:"OK",localHistory:{homeMatches:9,awayMatches:7}},dataQuality:54,stability:71,consensusScore:79,redFlags:["Нет рыночной линии"]});
   assert.match(text,/DQ <b>54\/100<\/b>/);
   assert.match(text,/Stability <b>71\/100<\/b>/);
   assert.match(text,/Consensus <b>79\/100<\/b>/);
   assert.match(text,/Confidence <b>N\/A — нет цены<\/b>/);
+  assert.match(text,/Model 1X2: <b>П1 51\.0% · X 27\.0% · П2 22\.0%<\/b>/);
+  assert.match(text,/Fair 1X2: <b>1\.96 · 3\.70 · 4\.55<\/b>/);
+  assert.match(text,/Odds N\/A · Edge N\/A · EV N\/A/);
+  assert.match(text,/Local history: <b>9\/7<\/b>/);
 });
 
 test("Model показывает реальные 1X2 без рыночной цены",()=>{

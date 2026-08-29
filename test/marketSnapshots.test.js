@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { enforceMarketFreshness, resolveMarketSnapshot } from "../src/markets/marketSnapshots.js";
+import { auditMarketSnapshots, enforceMarketFreshness, resolveMarketSnapshot } from "../src/markets/marketSnapshots.js";
 
 const fixture={id:"1",home:"Alpha",away:"Beta",utcDate:"2026-08-29T18:00:00Z"};
 const market={source:"TEST",bookmakers:[{name:"Book"}],best:{h2h:{home:{odds:2}}}};
@@ -25,4 +25,20 @@ test("истёкший snapshot не возвращает market data",()=>{
 test("STALE market не создаёт новый VALUE",()=>{
   const guarded=enforceMarketFreshness({category:"VALUE",reason:"ok"},"STALE");
   assert.equal(guarded.category,"WAIT");assert.match(guarded.reason,/STALE/);
+});
+
+test("snapshot identity не зависит от сменившегося provider fixture ID",()=>{
+  const file=path.join(fs.mkdtempSync(path.join(os.tmpdir(),"fvm-market-id-")),"snapshots.json"),start=Date.parse("2026-08-29T12:00:00Z");
+  resolveMarketSnapshot({filePath:file,fixture:{...fixture,id:"provider-old"},freshMarket:market,now:start});
+  const restored=resolveMarketSnapshot({filePath:file,fixture:{...fixture,id:"provider-new"},freshMarket:null,now:start+30*60_000});
+  assert.equal(restored.freshness,"STALE");
+  assert.equal(restored.marketData.source,"TEST");
+});
+
+test("snapshot audit отличает отсутствие файла, совпадения и expired записи",()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),"fvm-market-audit-")),file=path.join(dir,"snapshots.json"),start=Date.parse("2026-08-29T12:00:00Z");
+  assert.equal(auditMarketSnapshots({filePath:file,fixtures:[fixture],now:start}).status,"NO_LOCAL_SNAPSHOT");
+  resolveMarketSnapshot({filePath:file,fixture,freshMarket:market,now:start,staleMs:60*60_000});
+  const audit=auditMarketSnapshots({filePath:file,fixtures:[fixture],now:start+2*3600_000,staleMs:60*60_000});
+  assert.deepEqual({status:audit.status,records:audit.records,matched:audit.matched,expired:audit.expired},{status:"OK",records:1,matched:1,expired:1});
 });

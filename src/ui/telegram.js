@@ -8,6 +8,8 @@ export function dashboardText(state) {
   const counts = Object.fromEntries(["VALUE","NEAR","WAIT","NO_BET"].map(k=>[k,state.results.filter(x=>x.category===k).length]));
   const processedMarkets = state.results.filter(x=>x.marketAvailable).length;
   const calculatedMarkets = state.results.filter(x=>Array.isArray(x.markets)&&x.markets.length>0).length;
+  const contextReady = state.results.filter(x=>x.contextDiagnostic?.status==="OK").length;
+  const modelCoverage = state.results.filter(x=>["home","draw","away"].every(key=>Number.isFinite(x.consensusProbability?.[key]))).length;
   const freshMarkets = state.results.filter(x=>x.marketFreshness==="FRESH").length;
   const staleMarkets = state.results.filter(x=>x.marketFreshness==="STALE").length;
   const expiredMarkets = state.results.filter(x=>x.marketFreshness==="EXPIRED").length;
@@ -16,6 +18,7 @@ export function dashboardText(state) {
   const api = state.providers?.apiFootball;
   const fixtureProvider = state.providers?.fixtures;
   const market = state.providers?.market;
+  const snapshots = state.providers?.marketSnapshots;
   const fixtureCount = api?.dailyLimit && !state.updatedAt ? "N/A" : total;
   return [
     "⚽ <b>FOOTBALL VALUE MODEL v1.0</b>",
@@ -30,6 +33,8 @@ export function dashboardText(state) {
     `Котировки найдены: <b>${processedMarkets}/${total}</b> · FRESH ${freshMarkets} · STALE ${staleMarkets}`,
     expiredMarkets ? `Свежих котировок нет для <b>${expiredMarkets}</b> · предыдущие истекли` : null,
     `Рынков рассчитано: <b>${calculatedMarkets}/${total}</b>`,
+    `Context готов: <b>${contextReady}/${total}</b> · Model 1X2: <b>${modelCoverage}/${total}</b>`,
+    snapshots ? `Market snapshots: <b>${snapshots.status}</b> · records ${snapshots.records} · matched ${snapshots.matched} · fresh ${snapshots.fresh} · stale ${snapshots.stale} · expired ${snapshots.expired}` : null,
     `✅ VALUE: <b>${counts.VALUE}</b>`,
     `🟡 Near Value: <b>${counts.NEAR}</b>`,
     `🟠 WAIT: <b>${counts.WAIT}</b>`,
@@ -140,6 +145,14 @@ export function cardText(x) {
     );
   } else {
     lines.push("", `<b>${x.category}</b>`, esc(x.reason || "Рынок недоступен."));
+    if(["home","draw","away"].every(key=>Number.isFinite(p?.[key]))){
+      const fair=value=>(1/value).toFixed(2);
+      lines.push(
+        `Model 1X2: <b>П1 ${(p.home*100).toFixed(1)}% · X ${(p.draw*100).toFixed(1)}% · П2 ${(p.away*100).toFixed(1)}%</b>`,
+        `Fair 1X2: <b>${fair(p.home)} · ${fair(p.draw)} · ${fair(p.away)}</b>`,
+        "Odds N/A · Edge N/A · EV N/A"
+      );
+    }
   }
 
   lines.push(
@@ -157,6 +170,10 @@ export function cardText(x) {
   }
   if(x.marketDiagnostic?.marketSelection==="BLOCKED_NO_MODEL_CONTEXT")lines.push("Расчёт Fair/Edge/EV заблокирован: недостаточно context для вероятности 1X2.");
   if(x.contextDiagnostic?.status==="UNAVAILABLE")lines.push(`Context: <b>недоступен</b> · ${esc(x.contextDiagnostic.reason || "нет реальных данных")}`);
+  if(x.contextDiagnostic?.localHistory){
+    const history=x.contextDiagnostic.localHistory;
+    lines.push(`Local history: <b>${history.homeMatches}/${history.awayMatches}</b> · команды home/away · temporal-safe`);
+  }
 
   if (b) {
     const gates = [
