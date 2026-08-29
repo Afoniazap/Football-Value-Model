@@ -323,19 +323,20 @@ export function metricText(code,x){
 
   const pct = v => Number.isFinite(v) ? (v*100).toFixed(1) : "N/A";
   const n1 = v => Number.isFinite(v) ? Number(v).toFixed(1) : "N/A";
+  const dqValue = value => Number.isFinite(value) ? `+${value}` : "N/A";
 
   const texts = {
     DQ:
       `<b>DQ — Data Quality: ${x.dataQuality}/100</b>
 Качество данных, на которых построен прогноз.
 
-Выборка матчей: +${dq.sampleScore ?? 0}
-Свежесть данных: +${dq.freshnessScore ?? 0}
-Дом/выезд: +${dq.homeAwayScore ?? 0}
-Форма: +${dq.formScore ?? 0}
-Рынок/букмекеры: +${dq.marketScore ?? 0}
-xG: +${dq.xgScore ?? 0}
-Составы: +${dq.squadScore ?? 0}
+Выборка матчей: ${dqValue(dq.sampleScore)}
+Свежесть данных: ${dqValue(dq.freshnessScore)}
+Дом/выезд: ${dqValue(dq.homeAwayScore)}
+Форма: ${dqValue(dq.formScore)}
+Рынок/букмекеры: ${dqValue(dq.marketScore)}
+xG: ${dq.xgAvailable===false ? "N/A" : dqValue(dq.xgScore)}
+Составы: ${dqValue(dq.squadScore)}
 
 <b>Итого: ${x.dataQuality}/100</b>`,
 

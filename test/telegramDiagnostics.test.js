@@ -77,6 +77,14 @@ test("Model показывает реальные 1X2 без рыночной ц
   assert.match(text,/П1: 51\.0%/);assert.match(text,/X: 27\.0%/);assert.match(text,/П2: 22\.0%/);
 });
 
+test("DQ detail не превращает отсутствующий breakdown и xG в нули",()=>{
+  const missing=metricText("DQ",{dataQuality:0,dataQualityV2:{}});
+  assert.match(missing,/Выборка матчей: N\/A/);
+  const explicit=metricText("DQ",{dataQuality:10,dataQualityV2:{sampleScore:0,freshnessScore:10,homeAwayScore:0,formScore:0,marketScore:0,xgScore:0,xgAvailable:false,squadScore:0}});
+  assert.match(explicit,/Выборка матчей: \+0/);
+  assert.match(explicit,/xG: N\/A/);
+});
+
 test("экран статистики компактен и показывает накопительные метрики",()=>{
   const text=statisticsText({predictions:120,completed:80,pending:40,accuracy:.55,brier:.61,logLoss:1.02,draws:20,promotionTarget:300,categoryCounts:{VALUE:2,NEAR:8,WAIT:70,NO_BET:40},bands:[{name:"<60%",completed:30,predictions:50,accuracy:.6}]});
   assert.match(text,/80\/300/);assert.match(text,/Accuracy: <b>55\.0%/);assert.ok(text.length<4096);

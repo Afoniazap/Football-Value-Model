@@ -2,6 +2,29 @@ import { classifyMatch, teamStrengthModel, formModel, scheduleCongestion, consen
 import { evaluateMarkets, decisionMetrics } from "./markets.js";
 import { clamp } from "./utils.js";
 
+export function calculateDataQuality(context,oddsData,form,squadData=null){
+  const sampleScore=Math.round(clamp(((context?.finished||[]).length/120)*20,0,20));
+  const formScore=form?15:0;
+  const homeAwayScore=context?.standings?.standings?.some(s=>s.type==="HOME")&&
+    context?.standings?.standings?.some(s=>s.type==="AWAY")?15:0;
+  const marketScore=oddsData?Math.round(clamp((oddsData.bookmakers?.length||0)*2.5,0,15)):0;
+  const freshnessScore=(context?.finished||[]).length?10:0;
+  const xgScore=0;
+  const injuriesAvailable=!!squadData?.injuriesAvailable;
+  const lineupsAvailable=!!squadData?.lineupsAvailable;
+  const confirmedLineups=!!squadData?.confirmedLineups;
+  const injuryCount=squadData?.injuries?.length||0;
+  const squadScore=(injuriesAvailable?3:0)+(lineupsAvailable?3:0)+(confirmedLineups?4:0);
+  const components={sampleScore,freshnessScore,homeAwayScore,formScore,marketScore,xgScore,squadScore};
+  const dataQuality=Math.round(clamp(Object.values(components).reduce((sum,value)=>sum+value,0),0,100));
+  return {dataQuality,dataQualityV2:{
+    ...components,
+    injuriesAvailable,lineupsAvailable,confirmedLineups,injuryCount,
+    xgAvailable:false,
+    apiFixtureId:squadData?.apiFixtureId||null
+  }};
+}
+
 export function analyseFixture(fixture, context, oddsData, config, squadData=null) {
   const stage = {};
   stage.classification = classifyMatch(fixture,context);
@@ -9,83 +32,18 @@ export function analyseFixture(fixture, context, oddsData, config, squadData=nul
   const form = formModel(fixture,context);
   const sci = scheduleCongestion(fixture,context);
   const cons = consensus([strength,form]);
+  const {dataQuality,dataQualityV2}=calculateDataQuality(context,oddsData,form,squadData);
 
   if (!strength || !cons) {
     return {
       ...fixture, category:"WAIT", reason:"Недостаточно реальных данных для независимой модели.",
-      dataQuality:42, stability:35, consensusScore:0, sci, markets:[],
+      dataQuality, dataQualityV2, stability:35, consensusScore:0, sci, markets:[],
       marketAvailable:!!oddsData, marketSource:oddsData?.source || null,
       redFlags:["Недостаточно данных модели",...(!oddsData?["Нет рыночной линии"]:[])]
     };
   }
 
-  const sampleScore = Math.round(
-  clamp(((context?.finished || []).length / 120) * 20, 0, 20)
-);
-
-const formScore = form ? 15 : 0;
-
-const homeAwayScore =
-  context?.standings?.standings?.some(s => s.type === "HOME") &&
-  context?.standings?.standings?.some(s => s.type === "AWAY")
-    ? 15
-    : 0;
-
-const marketScore = oddsData
-  ? Math.round(
-      clamp((oddsData.bookmakers?.length || 0) * 2.5, 0, 15)
-    )
-  : 0;
-
-const freshnessScore =
-  (context?.finished || []).length ? 10 : 0;
-
-// Настоящий xG пока не подключён.
-const xgScore = 0;
-
-// API-Football: травмы и составы.
-const injuriesAvailable = !!squadData?.injuriesAvailable;
-const lineupsAvailable = !!squadData?.lineupsAvailable;
-const confirmedLineups = !!squadData?.confirmedLineups;
-const injuryCount = squadData?.injuries?.length || 0;
-
-// Максимум 10 баллов за squad data:
-// 3 — API вернул injuries
-// 3 — доступны lineups
-// 4 — составы обеих команд подтверждены
-const squadScore =
-  (injuriesAvailable ? 3 : 0) +
-  (lineupsAvailable ? 3 : 0) +
-  (confirmedLineups ? 4 : 0);
-
-const dataQuality = Math.round(
-  clamp(
-    sampleScore +
-      freshnessScore +
-      homeAwayScore +
-      formScore +
-      marketScore +
-      xgScore +
-      squadScore,
-    0,
-    100
-  )
-);
-
-const dataQualityV2 = {
-  sampleScore,
-  freshnessScore,
-  homeAwayScore,
-  formScore,
-  marketScore,
-  xgScore,
-  squadScore,
-  injuriesAvailable,
-  lineupsAvailable,
-  confirmedLineups,
-  injuryCount,
-  apiFixtureId: squadData?.apiFixtureId || null
-};
+  const {injuriesAvailable,lineupsAvailable}=dataQualityV2;
   const sciPenalty = sci.known ? Math.min(15,Math.abs(sci.differential)*0.12) : 8;
   const stability = Math.round(clamp(cons.agreement - sciPenalty,0,100));
   const redFlags = [];
