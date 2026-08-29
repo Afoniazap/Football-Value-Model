@@ -58,3 +58,41 @@ test("odds-api.io sends Europa League fixtures through the supported discovery c
   assert.deepEqual(leagues,["uefa-europa-league"]);
   assert.equal(result.matched,1);
 });
+
+test("unmapped competitions share one cached public football discovery batch",async()=>{
+  const calls=[];
+  const request=async url=>{
+    calls.push(`${url.pathname}|${url.searchParams.get("league")||"PUBLIC"}`);
+    if(url.pathname.endsWith("/events"))return response([
+      {id:40,home:"Middlesbrough",away:"West Bromwich Albion",date:"2026-08-29T11:30:00Z"},
+      {id:41,home:"AZ Alkmaar",away:"Go Ahead Eagles",date:"2026-08-29T18:00:00Z"}
+    ]);
+    return response([
+      {eventId:40,bookmakers:{b:[{name:"1x2",odds:[{home:2,draw:3,away:4}]}]}},
+      {eventId:41,bookmakers:{b:[{name:"1x2",odds:[{home:1.8,draw:3.6,away:4.5}]}]}}
+    ]);
+  };
+  const fixtures=[
+    {id:"elc",competitionCode:"ELC",home:"Middlesbrough FC",away:"West Bromwich Albion FC",utcDate:"2026-08-29T11:30:00Z"},
+    {id:"ded",competitionCode:"DED",home:"AZ",away:"Go Ahead Eagles",utcDate:"2026-08-29T18:00:00Z"}
+  ];
+  const cacheDir=fs.mkdtempSync(path.join(os.tmpdir(),"fvm-odds-public-"));
+  const first=await getOddsApiIoMarkets({apiKey:"secret",fixtures,cacheDir,request});
+  const second=await getOddsApiIoMarkets({apiKey:"secret",fixtures,cacheDir,request});
+  assert.equal(first.matched,2);assert.equal(first.requests,2);
+  assert.equal(first.perFixture.elc.discovery,"PUBLIC");assert.equal(first.perFixture.elc.reason,"QUOTE_FOUND");
+  assert.equal(second.matched,2);assert.equal(second.requests,0);assert.equal(second.cacheHits,2);
+  assert.equal(calls.length,2);
+});
+
+test("per-fixture diagnostics distinguish missing event from missing odds",async()=>{
+  const request=async url=>url.pathname.endsWith("/events")
+    ?response([{id:50,home:"Levante",away:"Real Betis",date:"2026-08-29T18:00:00Z"}])
+    :response([]);
+  const result=await getOddsApiIoMarkets({apiKey:"secret",fixtures:[
+    {id:"matched",competitionCode:"PD",home:"Levante UD",away:"Real Betis Balompié",utcDate:"2026-08-29T18:00:00Z"},
+    {id:"missing",competitionCode:"PD",home:"Other",away:"Teams",utcDate:"2026-08-29T20:00:00Z"}
+  ],cacheDir:fs.mkdtempSync(path.join(os.tmpdir(),"fvm-odds-reasons-")),request});
+  assert.equal(result.perFixture.matched.reason,"ODDS_NOT_RETURNED");
+  assert.equal(result.perFixture.missing.reason,"EVENT_NOT_FOUND");
+});

@@ -254,7 +254,7 @@ async function refresh(){
     const marketErrors=new Set();
     if(primaryHealth.reasons.length)marketErrors.add(`The Odds API: ${primaryHealth.reasons.join(", ")}`);
     if(oddsApiIo.errors.length)marketErrors.add(`odds-api.io: ${oddsApiIo.errors.join(", ")}`);
-    state.providers.market={primary:primaryHealth,oddsApiIo:{status:oddsApiIo.status,requests:oddsApiIo.requests,cacheHits:oddsApiIo.cacheHits,supported:oddsApiIo.supported,matched:oddsApiIo.matched},apiFootballOdds:{status:"NOT_NEEDED",attempted:0,requests:0,cacheHits:0,matched:0,reasons:[]}};
+    state.providers.market={primary:primaryHealth,oddsApiIo:{status:oddsApiIo.status,requests:oddsApiIo.requests,cacheHits:oddsApiIo.cacheHits,supported:oddsApiIo.supported,mappedSupported:oddsApiIo.mappedSupported,matched:oddsApiIo.matched,reasons:Object.values(oddsApiIo.perFixture||{}).reduce((out,row)=>(out[row.reason]=(out[row.reason]||0)+1,out),{})},apiFootballOdds:{status:"NOT_NEEDED",attempted:0,requests:0,cacheHits:0,matched:0,reasons:[]}};
     state.stage="4/9 Independent Models";
 
     // Сначала завершаем весь каскад рынков. Запросы injuries/lineups не должны
@@ -335,7 +335,7 @@ async function refresh(){
 
       const fixtureWithMarketDiagnostic={...f,contextDiagnostic:fixtureContextDiagnostic,marketDiagnostic:{
         primary:event?"MATCHED":primaryHealth.status,
-        oddsApiIo:oddsApiIoEvent?"MATCHED":oddsApiIo.status,
+        oddsApiIo:oddsApiIoEvent?"MATCHED":oddsApiIo.perFixture?.[f.id]?.reason||oddsApiIo.status,
         apiFootballOdds:marketData?.source==="API_FOOTBALL"?"MATCHED":marketData?"NOT_NEEDED":apiFootballReason||"NO_QUOTES",
         selectedSource:marketData?.source||null,
         freshness,

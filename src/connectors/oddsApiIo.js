@@ -13,7 +13,7 @@ async function cachedJson(url,cacheDir,ttlMs,request){
   const file=fileFor(cacheDir,url.pathname+url.search),cached=read(file);
   if(cached&&Date.now()-cached.fetchedAt<=ttlMs)return {data:cached.data,cacheHit:true};
   const response=await request(url);
-  if(!response.ok){const detail=String(await response.text()).replace(/apiKey=[^&\s]+/gi,"apiKey=[redacted]").slice(0,240);throw new Error(`odds-api.io ${response.status}${detail?`: ${detail}`:""}`);}
+  if(!response.ok){const detail=String(await response.text()).replace(/apiKey=[^&\s]+/gi,"apiKey=[redacted]").slice(0,240);const error=new Error(`odds-api.io ${response.status}${detail?`: ${detail}`:""}`);error.httpRequests=1;throw error;}
   const data=await response.json();write(file,data);return {data,cacheHit:false};
 }
 function rows(value){return Array.isArray(value)?value:Array.isArray(value?.data)?value.data:Array.isArray(value?.events)?value.events:[];}
@@ -53,26 +53,38 @@ function normalizeOdds(row,event,matchConfidence=null){
 }
 
 export async function getOddsApiIoMarkets({apiKey,bookmakers,fixtures,cacheDir,cacheMinutes=15,request=fetch}){
-  if(!apiKey)return {status:"NOT_CONFIGURED",byFixtureId:{},errors:[],requests:0,cacheHits:0};
-  const supported=fixtures.filter(f=>SLUGS[f.competitionCode]);
+  if(!apiKey)return {status:"NOT_CONFIGURED",byFixtureId:{},perFixture:{},errors:[],requests:0,cacheHits:0};
+  const perFixture=Object.fromEntries(fixtures.map(f=>[f.id,{mapped:Boolean(SLUGS[f.competitionCode]),discovery:"PENDING",events:0,eventMatched:false,oddsReturned:false,bookmakers:0,reason:"PENDING"}]));
+  const supported=fixtures;
   const groups=new Map();
-  for(const f of supported){const date=String(f.utcDate).slice(0,10),key=`${SLUGS[f.competitionCode]}|${date}`;if(!groups.has(key))groups.set(key,{slug:SLUGS[f.competitionCode],date,fixtures:[]});groups.get(key).fixtures.push(f);}
+  for(const f of supported){const date=String(f.utcDate).slice(0,10),slug=SLUGS[f.competitionCode]||null,key=`${slug||"PUBLIC"}|${date}`;if(!groups.has(key))groups.set(key,{slug,date,fixtures:[]});groups.get(key).fixtures.push(f);}
   const matches=[],errors=[];let requests=0,cacheHits=0;
   for(const group of groups.values()){
     try{
       const times=group.fixtures.map(f=>new Date(f.utcDate).getTime()).filter(Number.isFinite);
       const from=new Date(Math.min(...times)-180*60_000).toISOString(),to=new Date(Math.max(...times)+180*60_000).toISOString();
-      const url=new URL(`${BASE}/events`);url.searchParams.set("apiKey",apiKey);url.searchParams.set("sport","football");url.searchParams.set("league",group.slug);url.searchParams.set("status","pending");url.searchParams.set("from",from);url.searchParams.set("to",to);
+      const url=new URL(`${BASE}/events`);url.searchParams.set("apiKey",apiKey);url.searchParams.set("sport","football");if(group.slug)url.searchParams.set("league",group.slug);url.searchParams.set("status","pending");url.searchParams.set("from",from);url.searchParams.set("to",to);
       let result;
       try{result=await cachedJson(url,cacheDir,cacheMinutes*60_000,request);}
       catch(error){
-        if(!/404.*League not found/i.test(error.message))throw error;
+        if(!group.slug||!/404.*League not found/i.test(error.message))throw error;
+        requests+=Number(error.httpRequests||0);
         url.searchParams.delete("league");
         result=await cachedJson(url,cacheDir,cacheMinutes*60_000,request);
       }
       if(result.cacheHit)cacheHits++;else requests++;
-      for(const fixture of group.fixtures){const found=match(fixture,rows(result.data));if(found&&found.score>=.7)matches.push({fixture,event:found.event,matchConfidence:Number(found.score.toFixed(3))});}
-    }catch(error){errors.push(`${group.slug}: ${error.message}`);}
+      const events=rows(result.data);
+      for(const fixture of group.fixtures){
+        const diagnostic=perFixture[fixture.id];diagnostic.discovery=group.slug?"LEAGUE":"PUBLIC";diagnostic.events=events.length;
+        const found=match(fixture,events);
+        if(found&&found.score>=.7){diagnostic.eventMatched=true;diagnostic.matchConfidence=Number(found.score.toFixed(3));diagnostic.reason="ODDS_PENDING";matches.push({fixture,event:found.event,matchConfidence:diagnostic.matchConfidence});}
+        else diagnostic.reason="EVENT_NOT_FOUND";
+      }
+    }catch(error){
+      requests+=Number(error.httpRequests||0);
+      errors.push(`${group.slug||"public-football"}: ${error.message}`);
+      for(const fixture of group.fixtures)Object.assign(perFixture[fixture.id],{discovery:"ERROR",reason:"DISCOVERY_ERROR",error:error.message});
+    }
   }
   const ids=[...new Set(matches.map(x=>String(x.event.id||x.event.eventId||"")).filter(Boolean))];
   const odds=[];
@@ -81,9 +93,16 @@ export async function getOddsApiIoMarkets({apiKey,bookmakers,fixtures,cacheDir,c
     try{
       const url=new URL(`${BASE}/odds/multi`);url.searchParams.set("apiKey",apiKey);url.searchParams.set("eventIds",part.join(","));if(bookmakers)url.searchParams.set("bookmakers",bookmakers);
       const result=await cachedJson(url,cacheDir,cacheMinutes*60_000,request);if(result.cacheHit)cacheHits++;else requests++;odds.push(...rows(result.data));
-    }catch(error){errors.push(`odds/multi: ${error.message}`);}
+    }catch(error){requests+=Number(error.httpRequests||0);errors.push(`odds/multi: ${error.message}`);}
   }
   const byExternal=new Map(odds.map(row=>[String(row.id||row.eventId||row.event_id||""),row])),byFixtureId={};
-  for(const item of matches){const id=String(item.event.id||item.event.eventId||""),row=byExternal.get(id);if(!row)continue;const normalized=normalizeOdds(row,item.event,item.matchConfidence);if(normalized.bookmakers.length)byFixtureId[item.fixture.id]=normalized;}
-  return {status:Object.keys(byFixtureId).length?errors.length?"PARTIAL":"OK":errors.length?"ERROR":"NO_ODDS",byFixtureId,errors,requests,cacheHits,supported:supported.length,matched:Object.keys(byFixtureId).length};
+  for(const item of matches){
+    const id=String(item.event.id||item.event.eventId||""),row=byExternal.get(id),diagnostic=perFixture[item.fixture.id];
+    if(!row){diagnostic.reason="ODDS_NOT_RETURNED";continue;}
+    diagnostic.oddsReturned=true;
+    const normalized=normalizeOdds(row,item.event,item.matchConfidence);diagnostic.bookmakers=normalized.bookmakers.length;
+    if(normalized.bookmakers.length){byFixtureId[item.fixture.id]=normalized;diagnostic.reason="QUOTE_FOUND";}
+    else diagnostic.reason="NO_NORMALIZED_BOOKMAKERS";
+  }
+  return {status:Object.keys(byFixtureId).length?errors.length?"PARTIAL":"OK":errors.length?"ERROR":"NO_ODDS",byFixtureId,perFixture,errors,requests,cacheHits,supported:supported.length,mappedSupported:fixtures.filter(f=>SLUGS[f.competitionCode]).length,matched:Object.keys(byFixtureId).length};
 }
