@@ -12,12 +12,12 @@ export const TEAM_ALIAS_GROUPS = [
   { name: "Ferencvarosi TC", aliases: ["Ferencvaros", "Ferencváros", "Ferencvárosi TC"], evidence: { source: "THESPORTSDB", teamId: "134620" } }
   ,{ name: "Swansea City", aliases: ["Swansea City AFC"], evidence: { source: "THESPORTSDB", teamId: "133614" } }
   ,{ name: "Hull City", aliases: ["Hull City AFC"], evidence: { source: "THESPORTSDB", teamId: "133617" } }
-  ,{ name: "Paderborn", aliases: ["SC Paderborn 07"], evidence: { source: "THESPORTSDB", teamId: "134551" } }
-  ,{ name: "Elversberg", aliases: ["SV 07 Elversberg"], evidence: { source: "THESPORTSDB", teamId: "138411" } }
+  ,{ name: "Paderborn", aliases: ["SC Paderborn 07"], evidence: { source: "THESPORTSDB", teamId: "134551", historicalLeagues:[{id:"4399",season:"2025-2026",name:"German 2. Bundesliga"}] } }
+  ,{ name: "Elversberg", aliases: ["SV 07 Elversberg"], evidence: { source: "THESPORTSDB", teamId: "138411", historicalLeagues:[{id:"4399",season:"2025-2026",name:"German 2. Bundesliga"}] } }
   ,{ name: "Excelsior", aliases: ["SBV Excelsior"], evidence: { source: "THESPORTSDB", teamId: "133757" } }
   ,{ name: "AZ Alkmaar", aliases: ["AZ"], evidence: { source: "THESPORTSDB", teamId: "133767" } }
   ,{ name: "Maritimo", aliases: ["Marítimo", "CS Marítimo"], evidence: { source: "THESPORTSDB", teamId: "134023" } }
-  ,{ name: "Troyes", aliases: ["ES Troyes AC"], evidence: { source: "THESPORTSDB", teamId: "134789" } }
+  ,{ name: "Troyes", aliases: ["ES Troyes AC"], evidence: { source: "THESPORTSDB", teamId: "134789", historicalLeagues:[{id:"4401",season:"2025-2026",name:"French Ligue 2"}] } }
   ,{ name: "Atletico Mineiro", aliases: ["Atlético Mineiro", "CA Mineiro"], evidence: { source: "THESPORTSDB", teamId: "134299" } }
   ,{ name: "Sao Paulo", aliases: ["São Paulo", "São Paulo FC"], evidence: { source: "THESPORTSDB", teamId: "134291" } }
   ,{ name: "Bragantino", aliases: ["Red Bull Bragantino", "RB Bragantino"], evidence: { source: "THESPORTSDB", teamId: "134736" } }

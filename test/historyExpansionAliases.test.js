@@ -10,4 +10,6 @@ test("provider-confirmed domestic aliases keep one football identity", () => {
   assert.equal(teamIdentityEvidence("AZ").teamId, "133767");
   assert.equal(sameTeamIdentity("NEC", "NEC FC"), false);
   assert.equal(teamIdentityEvidence("NEC").teamId, "133760");
+  assert.deepEqual(teamIdentityEvidence("SC Paderborn 07").historicalLeagues,[{id:"4399",season:"2025-2026",name:"German 2. Bundesliga"}]);
+  assert.deepEqual(teamIdentityEvidence("ES Troyes AC").historicalLeagues,[{id:"4401",season:"2025-2026",name:"French Ligue 2"}]);
 });

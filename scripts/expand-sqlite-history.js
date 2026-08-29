@@ -6,7 +6,7 @@ import { backfillFromProviderCaches } from "../src/history/cacheBackfill.js";
 import { appendLocalHistory } from "../src/history/localHistory.js";
 import { databaseStats, getTeamLastMatches, importHistoryMatches, openHistoryDatabase } from "../src/history/sqliteHistory.js";
 import { configureTheSportsDb, getFreeLeagueRoundEvents, getFreeTeamPreviousEvents, getTheSportsDbTelemetry, resetTheSportsDbTelemetry } from "../src/connectors/theSportsDb.js";
-import { sameTeamIdentity } from "../src/history/teamAliases.js";
+import { sameTeamIdentity, teamIdentityEvidence } from "../src/history/teamAliases.js";
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const dataDir=path.join(root,"data");
@@ -72,6 +72,11 @@ for(const team of fixtureTeams()){
     }
   }catch(error){
     report.push({team:team.name,before:initial,after:count(team),status:"ERROR",reason:error.message,added:0});
+  }
+  for(const historical of teamIdentityEvidence(team.name)?.historicalLeagues||[]){
+    const key=`${historical.id}|${historical.season}`;
+    if(!groups.has(key))groups.set(key,{leagueId:historical.id,league:historical.name,season:historical.season,teams:[]});
+    groups.get(key).teams.push(team);
   }
 }
 
