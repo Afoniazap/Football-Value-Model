@@ -8,6 +8,9 @@ export function dashboardText(state) {
   const counts = Object.fromEntries(["VALUE","NEAR","WAIT","NO_BET"].map(k=>[k,state.results.filter(x=>x.category===k).length]));
   const processedMarkets = state.results.filter(x=>x.marketAvailable).length;
   const calculatedMarkets = state.results.filter(x=>Array.isArray(x.markets)&&x.markets.length>0).length;
+  const freshMarkets = state.results.filter(x=>x.marketFreshness==="FRESH").length;
+  const staleMarkets = state.results.filter(x=>x.marketFreshness==="STALE").length;
+  const expiredMarkets = state.results.filter(x=>x.marketFreshness==="EXPIRED").length;
   const health = total ? Math.round(state.results.reduce((s,x)=>s+x.dataQuality,0)/total) : 0;
   const opportunity = total ? Math.round(Math.min(100,(counts.VALUE*20+counts.NEAR*8)/total*100)) : 0;
   const api = state.providers?.apiFootball;
@@ -24,7 +27,8 @@ export function dashboardText(state) {
     `Opportunity Index: <b>${opportunity}/100</b>`,
     "",
     `Матчей на 24 часа: <b>${fixtureCount}</b>`,
-    `Котировки найдены: <b>${processedMarkets}/${total}</b>`,
+    `Котировки найдены: <b>${processedMarkets}/${total}</b> · FRESH ${freshMarkets} · STALE ${staleMarkets}`,
+    expiredMarkets ? `Свежих котировок нет для <b>${expiredMarkets}</b> · предыдущие истекли` : null,
     `Рынков рассчитано: <b>${calculatedMarkets}/${total}</b>`,
     `✅ VALUE: <b>${counts.VALUE}</b>`,
     `🟡 Near Value: <b>${counts.NEAR}</b>`,
@@ -145,7 +149,12 @@ export function cardText(x) {
     `Consensus <b>${Number.isFinite(x.consensusScore) ? x.consensusScore+"/100" : "N/A"}</b> · Confidence <b>${Number.isFinite(b?.confidence) ? b.confidence+"/100" : x.marketAvailable ? "N/A — нет модельного кандидата" : "N/A — нет цены"}</b>`,
     `Risk flags <b>${Array.isArray(x.redFlags) ? x.redFlags.length : "N/A"}</b>`
   );
-  if(x.marketAvailable)lines.push(`Рынок: <b>${esc(x.marketSource || "получен")}</b> · букмекеров ${x.marketDiagnostic?.normalizedBookmakers ?? "N/A"}`);
+  if(x.marketAvailable){
+    const freshness=x.marketFreshness||x.marketDiagnostic?.freshness;
+    const timestamp=x.marketFetchedAt||x.marketDiagnostic?.fetchedAt;
+    lines.push(`Рынок: <b>${esc(x.marketSource || "получен")}</b> · букмекеров ${x.marketDiagnostic?.normalizedBookmakers ?? "N/A"}${freshness?` · ${freshness}`:""}`);
+    if(freshness==="STALE"&&timestamp)lines.push(`Котировки из кэша · получены ${localDate(timestamp)} · STALE`);
+  }
   if(x.marketDiagnostic?.marketSelection==="BLOCKED_NO_MODEL_CONTEXT")lines.push("Расчёт Fair/Edge/EV заблокирован: недостаточно context для вероятности 1X2.");
   if(x.contextDiagnostic?.status==="UNAVAILABLE")lines.push(`Context: <b>недоступен</b> · ${esc(x.contextDiagnostic.reason || "нет реальных данных")}`);
 

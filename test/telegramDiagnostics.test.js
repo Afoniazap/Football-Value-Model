@@ -33,6 +33,14 @@ test("dashboard distinguishes quote coverage from calculated markets",()=>{
   assert.match(text,/Рынков рассчитано: <b>1\/2<\/b>/);
 });
 
+test("dashboard and card label cached quotes as STALE with source timestamp",()=>{
+  const fixture={category:"WAIT",id:"stale",home:"A",away:"B",competition:"Ligue 1",utcDate:"2026-08-30T18:00:00Z",marketAvailable:true,marketSource:"THE_ODDS_API",marketFreshness:"STALE",marketFetchedAt:"2026-08-29T08:12:00Z",marketDiagnostic:{normalizedBookmakers:2},markets:[],dataQuality:50,stability:50,consensusScore:50,redFlags:[]};
+  const dashboard=dashboardText({loading:false,updatedAt:"2026-08-29T08:57:00Z",errors:[],providers:{},results:[fixture]});
+  assert.match(dashboard,/FRESH 0 · STALE 1/);
+  const card=cardText(fixture);
+  assert.match(card,/STALE/);assert.match(card,/Котировки из кэша/);
+});
+
 test("WAIT card distinguishes an available quote from a missing model candidate",()=>{
   const fixture={id:"2",home:"A",away:"B",competition:"Ligue 1",utcDate:"2026-08-26T18:00:00Z",category:"WAIT",reason:"Недостаточно данных",best:null,marketAvailable:true,marketSource:"API_FOOTBALL",marketDiagnostic:{normalizedBookmakers:3,marketSelection:"BLOCKED_NO_MODEL_CONTEXT"},dataQuality:42,stability:35,consensusScore:0,redFlags:["Недостаточно данных модели"]};
   const text=cardText(fixture);

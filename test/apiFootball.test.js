@@ -9,6 +9,8 @@ import {
   getApiFootballTelemetry,
   getFinishedFixturesForDate,
   getFixtureRisk,
+  getFixturesRisk,
+  getFixturesOdds,
   getUpcomingApiFootballMatches
 } from "../src/connectors/apiFootball.js";
 
@@ -23,7 +25,7 @@ test("HTTP 200 with errors.requests is a daily-limit failure, not an empty resul
   await assert.rejects(getFinishedFixturesForDate("secret","2026-08-23"),e=>e.code==="DAILY_LIMIT"&&e.message==="API-Football: DAILY LIMIT");
   await assert.rejects(getFinishedFixturesForDate("secret","2026-08-22"),e=>e.code==="DAILY_LIMIT");
   assert.equal(calls,1);
-  assert.deepEqual(getApiFootballTelemetry(30),{requests:1,cacheHits:0,staleHits:0,avoided:1,deduplicated:0,dailyLimit:true,estimatedDailyRequests:48});
+  assert.deepEqual(getApiFootballTelemetry(30),{requests:1,requestsByEndpoint:{"/fixtures":1},cacheHits:0,staleHits:0,avoided:1,deduplicated:0,dailyLimit:true,estimatedDailyRequests:48});
 });
 
 test("HTTP 200 with errors.rateLimit daily message also activates daily backoff",async()=>{
@@ -102,4 +104,59 @@ test("lineups are avoided until the fixture is close enough",async()=>{
   await getFixtureRisk("secret",123,new Date(now+3*3600_000).toISOString());
   assert.deepEqual(paths,["/injuries"]);
   assert.equal(getApiFootballTelemetry().avoided,1);
+});
+
+test("56 fixtures use date batches for odds and injuries instead of 112 per-fixture calls",async()=>{
+  const now=Date.parse("2026-08-29T08:00:00Z"),urls=[];
+  const fixtures=Array.from({length:56},(_,index)=>({
+    apiFootballFixtureId:index+1,
+    utcDate:index<28?"2026-08-29T18:00:00Z":"2026-08-30T18:00:00Z"
+  }));
+  configureApiFootball({cacheDir:tempDir(),minGapMs:0,now:()=>now,fetchImpl:async url=>{
+    urls.push(url);
+    const endpoint=new URL(url).pathname;
+    const date=new URL(url).searchParams.get("date");
+    const start=date==="2026-08-29"?1:29;
+    const rows=Array.from({length:28},(_,offset)=>{
+      const id=start+offset;
+      if(endpoint==="/injuries")return {fixture:{id},player:{id,name:`P${id}`}};
+      return {fixture:{id},bookmakers:[{name:"Book",bets:[{name:"Match Winner",values:[{value:"Home",odd:"2.10"},{value:"Draw",odd:"3.20"},{value:"Away",odd:"3.40"}]}]}]};
+    });
+    return response({...validEmpty,results:rows.length,response:rows});
+  }});
+  beginApiFootballRefresh();
+  const markets=await getFixturesOdds("secret",fixtures);
+  const risks=await getFixturesRisk("secret",fixtures);
+  assert.equal(Object.keys(markets).length,56);
+  assert.equal(Object.keys(risks).length,56);
+  assert.deepEqual(markets["1"].best.h2h.home,{odds:2.1,bookmaker:"Book"});
+  assert.equal(getApiFootballTelemetry().requests,4);
+  assert.equal(urls.filter(url=>new URL(url).pathname==="/odds").length,2);
+  assert.equal(urls.filter(url=>new URL(url).pathname==="/injuries").length,2);
+  assert.equal(urls.filter(url=>new URL(url).pathname.includes("lineups")).length,0);
+  assert.equal(getApiFootballTelemetry().avoided,56);
+});
+
+test("daily limit in a date batch stops later pages/dates without retry storm",async()=>{
+  let calls=0;
+  const fixtures=[{apiFootballFixtureId:1,utcDate:"2026-08-29T18:00:00Z"},{apiFootballFixtureId:2,utcDate:"2026-08-30T18:00:00Z"}];
+  configureApiFootball({cacheDir:tempDir(),minGapMs:0,fetchImpl:async()=>{calls++;return response({...validEmpty,errors:{requests:"You have reached the request limit for the day"}});}});
+  beginApiFootballRefresh();
+  await assert.rejects(getFixturesOdds("secret",fixtures),error=>error.code==="DAILY_LIMIT");
+  assert.equal(calls,1);
+  assert.equal(getApiFootballTelemetry().requests,1);
+});
+
+test("date-batched odds normalization is identical to the existing fixture endpoint",async()=>{
+  const row={fixture:{id:77},bookmakers:[{name:"Parity Book",bets:[
+    {name:"Match Winner",values:[{value:"Home",odd:"1.95"},{value:"Draw",odd:"3.50"},{value:"Away",odd:"4.20"}]},
+    {name:"Goals Over/Under",values:[{value:"Over 2.5",odd:"1.88"},{value:"Under 2.5",odd:"2.02"}]}
+  ]}]};
+  const fetchImpl=async()=>response({...validEmpty,results:1,response:[row]});
+  configureApiFootball({cacheDir:tempDir(),minGapMs:0,fetchImpl});beginApiFootballRefresh();
+  const perFixture=(await import("../src/connectors/apiFootball.js")).getFixtureOdds;
+  const oldResult=await perFixture("secret",77);
+  configureApiFootball({cacheDir:tempDir(),minGapMs:0,fetchImpl});beginApiFootballRefresh();
+  const batchResult=await getFixturesOdds("secret",[{apiFootballFixtureId:77,utcDate:"2026-08-29T18:00:00Z"}]);
+  assert.deepEqual(batchResult["77"],oldResult);
 });

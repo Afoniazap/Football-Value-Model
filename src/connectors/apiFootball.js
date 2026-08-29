@@ -8,7 +8,7 @@ let runtime={cacheDir:null,fetchImpl:(...args)=>fetch(...args),now:()=>Date.now(
 let inFlight=new Map(), dailyLimitUntil=0, telemetry=freshTelemetry();
 let networkQueue=Promise.resolve();
 
-function freshTelemetry(){return {requests:0,cacheHits:0,staleHits:0,avoided:0,deduplicated:0,dailyLimit:false};}
+function freshTelemetry(){return {requests:0,requestsByEndpoint:{},cacheHits:0,staleHits:0,avoided:0,deduplicated:0,dailyLimit:false};}
 export function configureApiFootball(options={}){runtime={...runtime,...options};if(runtime.cacheDir)fs.mkdirSync(runtime.cacheDir,{recursive:true});loadQuotaState();}
 export function beginApiFootballRefresh(){telemetry=freshTelemetry();}
 export function getApiFootballTelemetry(refreshMinutes=30){const perDay=Math.ceil(1440/Math.max(5,Number(refreshMinutes)||30));return {...telemetry,estimatedDailyRequests:telemetry.requests*perDay};}
@@ -32,6 +32,8 @@ function apiError(data){
 async function getJson(path, key) {
   if (!key) return null;
   telemetry.requests++;
+  const endpoint=path.split("?")[0];
+  telemetry.requestsByEndpoint[endpoint]=(telemetry.requestsByEndpoint[endpoint]||0)+1;
   const response = await runtime.fetchImpl(`${BASE}${path}`, {
     headers: { "x-apisports-key": key }
   });
@@ -101,6 +103,32 @@ export async function getFixtureRisk(key, apiFootballFixtureId, kickoff=null) {
     injuries: injuries?.response || [],
     lineups: lineups?.response || []
   };
+}
+
+export async function getFixturesRisk(key,fixtures=[]){
+  if(!key||!fixtures.length)return {};
+  const dates=[...new Set(fixtures.map(row=>row.utcDate&&String(row.utcDate).slice(0,10)).filter(Boolean))];
+  const injuriesByFixture=new Map();
+  for(const date of dates){
+    const rows=await requestAllPages(`/injuries?date=${date}`,key,{ttlMs:2*3600_000,staleMs:6*3600_000});
+    for(const row of rows){
+      const id=String(row.fixture?.id||"");if(!id)continue;
+      if(!injuriesByFixture.has(id))injuriesByFixture.set(id,[]);
+      injuriesByFixture.get(id).push(row);
+    }
+  }
+  const result={};
+  for(const fixture of fixtures){
+    const id=String(fixture.apiFootballFixtureId||"");if(!id)continue;
+    const minutes=(new Date(fixture.utcDate).getTime()-runtime.now())/60_000;
+    let lineups=[];
+    if(minutes<=120){
+      const data=await requestJson(`/fixtures/lineups?fixture=${id}`,key,{ttlMs:10*60_000,staleMs:30*60_000});
+      lineups=data?.response||[];
+    }else telemetry.avoided++;
+    result[id]={injuries:injuriesByFixture.get(id)||[],lineups};
+  }
+  return result;
 }
 
 function normName(s="") {
@@ -229,7 +257,10 @@ export async function getFixtureOdds(key, fixtureId) {
   if (!key || !fixtureId) return null;
 
   const data = await requestJson(`/odds?fixture=${fixtureId}`,key,{ttlMs:10*60_000,staleMs:0});
-  const row = data?.response?.[0];
+  return normalizeOddsRow(data?.response?.[0]);
+}
+
+function normalizeOddsRow(row){
   if (!row) return null;
 
   const books = [];
@@ -306,6 +337,30 @@ export async function getFixtureOdds(key, fixtureId) {
     best,
     agreement:null
   };
+}
+
+export async function getFixturesOdds(key,fixtures=[]){
+  if(!key||!fixtures.length)return {};
+  const dates=[...new Set(fixtures.map(row=>row.utcDate&&String(row.utcDate).slice(0,10)).filter(Boolean))],wanted=new Set(fixtures.map(row=>row.apiFootballFixtureId).filter(id=>id!==null&&id!==undefined).map(String)),result={};
+  for(const date of dates){
+    const rows=await requestAllPages(`/odds?date=${date}`,key,{ttlMs:10*60_000,staleMs:0});
+    for(const row of rows){
+      const id=String(row.fixture?.id||"");if(!wanted.has(id))continue;
+      const normalized=normalizeOddsRow(row);if(normalized)result[id]=normalized;
+    }
+  }
+  return result;
+}
+
+async function requestAllPages(basePath,key,cachePolicy){
+  const first=await requestJson(basePath,key,cachePolicy),rows=[...(first?.response||[])];
+  const total=Math.max(1,Number(first?.paging?.total)||1);
+  for(let page=2;page<=total;page++){
+    const separator=basePath.includes("?")?"&":"?";
+    const data=await requestJson(`${basePath}${separator}page=${page}`,key,cachePolicy);
+    rows.push(...(data?.response||[]));
+  }
+  return rows;
 }
 
 

@@ -79,8 +79,11 @@ MIN_DATA_QUALITY=70
 MIN_STABILITY=70
 MAX_RECOMMENDATIONS=5
 REFRESH_MINUTES=30
+MARKET_STALE_MINUTES=360
 ```
 
 ## Важно о бесплатном Odds API
 
 Запрос нескольких рынков и лиг расходует квоту. Для первого запуска можно оставить только основные лиги или увеличить REFRESH_MINUTES. Бот обновляет данные не чаще заданного интервала.
+
+Последний валидный market snapshot хранится локально. При временной недоступности провайдеров он помечается `STALE` в пределах `MARKET_STALE_MINUTES`; истёкший snapshot не используется, а `STALE` не может создать новый `VALUE`.
