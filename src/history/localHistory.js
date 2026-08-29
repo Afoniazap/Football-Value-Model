@@ -28,6 +28,12 @@ export function normalizeHistoryMatch(match, provenance, fetchedAt = new Date().
   const awayGoals = finiteScore(match.score?.fullTime?.away ?? match.goals?.away);
   const source = String(provenance || match.provenance?.source || "UNKNOWN").toUpperCase();
   const sourceFixtureId = String(match.sourceFixtureId || match.id || match.fixture?.id || "");
+  const seasonValue = typeof match.season === "object"
+    ? match.season?.startDate ?? match.season?.year ?? null
+    : match.season ?? match.seasonStart ?? match.league?.season ?? null;
+  const competitionName = typeof match.league === "string"
+    ? match.league
+    : match.competition?.name ?? match.league?.name ?? null;
 
   if (!sourceFixtureId || !playedAt || !home.name || !away.name || homeGoals === null || awayGoals === null) return null;
 
@@ -40,13 +46,16 @@ export function normalizeHistoryMatch(match, provenance, fetchedAt = new Date().
     competition: {
       id: match.leagueId ?? match.competition?.id ?? match.league?.id ?? null,
       code: match.competitionCode ?? match.competition?.code ?? null,
-      name: match.league ?? match.competition?.name ?? match.league?.name ?? null,
+      name: competitionName,
       country: match.country ?? match.area?.name ?? match.league?.country ?? null,
-      season: match.season ?? match.seasonStart ?? match.league?.season ?? null
+      season: seasonValue
     },
     homeTeam: { id: home.id ?? null, name: home.name },
     awayTeam: { id: away.id ?? null, name: away.name },
     score: { fullTime: { home: homeGoals, away: awayGoals } },
+    status: String(match.status||match.fixture?.status?.short||"FINISHED").toUpperCase(),
+    sport: match.sport??match.strSport??null,
+    venue: match.venue?.name??match.venue??match.fixture?.venue?.name??null,
     statistics: match.statistics ?? null,
     provenance: { source },
     fetchedAt: new Date(fetchedAt).toISOString()
@@ -74,11 +83,7 @@ function readLegacy(filePath) {
 }
 
 export function loadLocalHistory(filePath, legacyFilePath = null) {
-  const rows = readJsonLines(filePath);
-  const legacy = legacyFilePath
-    ? readLegacy(legacyFilePath).map(row => normalizeHistoryMatch(row, "API_FOOTBALL", row.fetchedAt || row.utcDate)).filter(Boolean)
-    : [];
-  const byProviderId = [...new Map([...legacy, ...rows].map(row => [row.recordKey, row])).values()];
+  const byProviderId=loadRawLocalHistory(filePath,legacyFilePath);
   const logical = new Map();
   for (const row of byProviderId) {
     const key = `${String(row.playedAt).slice(0, 16)}|${canonicalTeamName(row.homeTeam?.name)}|${canonicalTeamName(row.awayTeam?.name)}|${row.score?.fullTime?.home}:${row.score?.fullTime?.away}`;
@@ -92,7 +97,16 @@ export function loadLocalHistory(filePath, legacyFilePath = null) {
   return [...logical.values()];
 }
 
-export function appendLocalHistory(filePath, matches, provenance, fetchedAt = new Date().toISOString()) {
+export function loadRawLocalHistory(filePath, legacyFilePath = null) {
+  const rows = readJsonLines(filePath);
+  const legacy = legacyFilePath
+    ? readLegacy(legacyFilePath).map(row => normalizeHistoryMatch(row, "API_FOOTBALL", row.fetchedAt || row.utcDate)).filter(Boolean)
+    : [];
+  const byProviderId = [...new Map([...legacy, ...rows].map(row => [row.recordKey, row])).values()];
+  return byProviderId;
+}
+
+export function appendLocalHistory(filePath, matches, provenance, fetchedAt = new Date().toISOString(), onRows = null) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const known = new Set(readJsonLines(filePath).map(row => row.recordKey));
   const added = [];
@@ -104,7 +118,10 @@ export function appendLocalHistory(filePath, matches, provenance, fetchedAt = ne
     added.push(row);
   }
 
-  if (added.length) fs.appendFileSync(filePath, `${added.map(row => JSON.stringify(row)).join("\n")}\n`, "utf8");
+  if (added.length) {
+    fs.appendFileSync(filePath, `${added.map(row => JSON.stringify(row)).join("\n")}\n`, "utf8");
+    if(typeof onRows==="function")onRows(added);
+  }
   return added.length;
 }
 

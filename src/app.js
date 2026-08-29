@@ -2,18 +2,19 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getUpcomingMatches, getCompetitionContext, getFinishedFootballDataMatchesForDate, configureFootballData } from "./connectors/footballData.js";
+import { beginFootballDataRefresh, getFootballDataTelemetry, getUpcomingMatches, getCompetitionContext, getFinishedFootballDataMatchesForDate, configureFootballData } from "./connectors/footballData.js";
 import { getOddsForCompetitionResult, matchOddsEvent, extractMarkets } from "./connectors/odds.js";
 import { getOddsApiIoMarkets } from "./connectors/oddsApiIo.js";
 import { analyseFixture } from "./engine/analyse.js";
 import { alignContextTeamIds } from "./engine/contextIds.js";
 import { getUpcomingApiFootballMatches, getFixturesRisk, getFixturesOdds, getApiFootballCompetitionContext, getFinishedFixturesForDate, configureApiFootball, beginApiFootballRefresh, getApiFootballTelemetry } from "./connectors/apiFootball.js";
 import { dashboardText, dashboardKeyboard, listText, listKeyboard, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard, statisticsText } from "./ui/telegram.js";
-import { appendLocalHistory, buildLocalHistoryContext, loadLocalHistory, mergeWithLocalHistory } from "./history/localHistory.js";
+import { appendLocalHistory, buildLocalHistoryContext, loadRawLocalHistory, mergeWithLocalHistory } from "./history/localHistory.js";
 import { backfillFromProviderCaches } from "./history/cacheBackfill.js";
 import { discoverFixtures } from "./fixtures/discovery.js";
 import { loadPredictionStatistics, updatePredictionHistory } from "./statistics/predictionHistory.js";
 import { enforceMarketFreshness, resolveMarketSnapshots } from "./markets/marketSnapshots.js";
+import { databaseStats, getTeamLastMatches, hasSourceDate, importHistoryMatches, loadAllHistory, openHistoryDatabase } from "./history/sqliteHistory.js";
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const DATA=path.join(ROOT,"data");
@@ -25,7 +26,30 @@ const HISTORY_FILE=path.join(DATA,"history","fixtures.jsonl");
 const LEGACY_HISTORY_FILE=path.join(DATA,"history.json");
 const PREDICTION_HISTORY_FILE=path.join(DATA,"statistics","predictions.jsonl");
 const MARKET_SNAPSHOT_FILE=path.join(DATA,"market-cache","snapshots.json");
+const HISTORY_DB_FILE=path.join(DATA,"history","football.sqlite");
+const historyDatabase=openHistoryDatabase(HISTORY_DB_FILE);
+let historyImported=false;
 let cacheBackfillDone=false;
+
+function ensureHistoryDatabase(){
+  if(!historyImported){
+    importHistoryMatches(historyDatabase,loadRawLocalHistory(HISTORY_FILE,LEGACY_HISTORY_FILE));
+    historyImported=true;
+  }
+}
+
+function fixtureHistory(fixture,limit=20){
+  ensureHistoryDatabase();
+  const rows=[
+    ...getTeamLastMatches(historyDatabase,{name:fixture.home},fixture.utcDate,limit),
+    ...getTeamLastMatches(historyDatabase,{name:fixture.away},fixture.utcDate,limit)
+  ];
+  return [...new Map(rows.map(row=>[row.recordKey,row])).values()];
+}
+
+function appendHistory(matches,source,fetchedAt=new Date().toISOString()){
+  return appendLocalHistory(HISTORY_FILE,matches,source,fetchedAt,rows=>importHistoryMatches(historyDatabase,rows));
+}
 
 const env=process.env;
 const DEBUG=/^(1|true|yes)$/i.test(env.DEBUG||"");
@@ -66,33 +90,29 @@ async function updateLocalHistory(){
     ? {added:0,skipped:true}
     : backfillFromProviderCaches({dataDir:DATA,historyFile:HISTORY_FILE});
   cacheBackfillDone=true;
-  const history=loadLocalHistory(HISTORY_FILE,LEGACY_HISTORY_FILE);
+  ensureHistoryDatabase();
 
   const yesterday=new Date(Date.now()-86400000)
     .toISOString()
     .slice(0,10);
 
-  const apiLoaded=history.some(
-    x=>String(x.playedAt||"").slice(0,10)===yesterday && x.provenance?.source==="API_FOOTBALL"
-  );
-  const footballDataLoaded=history.some(
-    x=>String(x.playedAt||"").slice(0,10)===yesterday && x.provenance?.source==="FOOTBALL_DATA"
-  );
+  const apiLoaded=hasSourceDate(historyDatabase,"API_FOOTBALL",yesterday);
+  const footballDataLoaded=hasSourceDate(historyDatabase,"FOOTBALL_DATA",yesterday);
   const errors=[];
   let added=0;
   if(!apiLoaded){
     try{
       const finished=await getFinishedFixturesForDate(env.API_FOOTBALL_KEY.trim(),yesterday);
-      added+=appendLocalHistory(HISTORY_FILE,finished,"API_FOOTBALL");
+      added+=appendHistory(finished,"API_FOOTBALL");
     }catch(error){errors.push(`API_FOOTBALL:${error.message}`);}
   }
   if(!footballDataLoaded){
     try{
       const finished=await getFinishedFootballDataMatchesForDate(env.FOOTBALL_DATA_TOKEN.trim(),yesterday);
-      added+=appendLocalHistory(HISTORY_FILE,finished,"FOOTBALL_DATA");
+      added+=appendHistory(finished,"FOOTBALL_DATA");
     }catch(error){errors.push(`FOOTBALL_DATA:${error.message}`);}
   }
-  const total=loadLocalHistory(HISTORY_FILE,LEGACY_HISTORY_FILE).length;
+  const total=databaseStats(historyDatabase,HISTORY_DB_FILE).matches;
 
   return {
     added,
@@ -108,13 +128,14 @@ async function refresh(){
   if(state.loading)return;
   const timing={started:Date.now()};
   const previousResults=state.results;
-  state.loading=true; state.errors=[]; state.stage="1/9 Data Integrity"; beginApiFootballRefresh();
+  state.loading=true; state.errors=[]; state.stage="1/9 Data Integrity"; beginApiFootballRefresh();beginFootballDataRefresh();
   try{
     debugLog("DEBUG: before history");
     const historyStatus=await updateLocalHistory().catch(e=>{
       state.errors.push(`Local history: ${e.message}`);
       return {added:0,total:0};
     });
+    state.providers.history={status:historyStatus.total?"OK":"EMPTY",source:"SQLITE",matches:historyStatus.total,added:historyStatus.added||0};
 
     debugLog("DEBUG: before fixtures");
     const discovery=await discoverFixtures({
@@ -140,7 +161,7 @@ async function refresh(){
     }
     timing.fixtures=Date.now()-timing.started;
     debugLog("DEBUG: fixtures loaded", fixtures.length);
-    let localHistory=loadLocalHistory(HISTORY_FILE,LEGACY_HISTORY_FILE);
+    ensureHistoryDatabase();
     state.stage="2/9 Match Classification";
     const codes=[...new Set(fixtures.map(x=>x.competitionCode).filter(Boolean))];
     const contexts={}, odds={}, contextDiagnostics={};
@@ -160,7 +181,7 @@ async function refresh(){
         String(f.seasonStart)===String(season)
       );
       const localReady=keyFixtures.length>0 && keyFixtures.every(f => {
-        const local=buildLocalHistoryContext(localHistory,f);
+        const local=buildLocalHistoryContext(fixtureHistory(f),f);
         return Boolean(local.standings && local.contextMeta.homeMatches>=4 && local.contextMeta.awayMatches>=4);
       });
 
@@ -196,11 +217,7 @@ async function refresh(){
         }
       }
       if(contexts[contextKey]?.finished?.length){
-        appendLocalHistory(
-          HISTORY_FILE,
-          contexts[contextKey].finished,
-          contextError?"FOOTBALL_DATA":"API_FOOTBALL"
-        );
+        appendHistory(contexts[contextKey].finished,contextError?"FOOTBALL_DATA":"API_FOOTBALL");
       }
       const usableContext=Boolean(contexts[contextKey]?.standings||(contexts[contextKey]?.finished||[]).length);
       if(contextError&&usableContext)state.providers.context.fallbacks.push(`${contextKey}:FOOTBALL_DATA`);
@@ -277,8 +294,6 @@ async function refresh(){
     apiOdds.status=apiOdds.reasons.some(x=>x.includes("DAILY LIMIT"))?"DAILY_LIMIT":apiOdds.reasons.length?(apiOdds.matched?"PARTIAL":"ERROR"):apiOdds.matched?"OK":apiOdds.attempted?"NO_ODDS":"NOT_NEEDED";
 
     timing.odds=Date.now()-oddsStarted;
-    localHistory=loadLocalHistory(HISTORY_FILE,LEGACY_HISTORY_FILE);
-
     const riskFixtures=fixtures.filter(f=>{
       const resolved=resolvedMarkets.get(f.id);
       return resolved?.marketData&&resolved.freshness==="FRESH"&&f.apiFootballFixtureId;
@@ -311,7 +326,7 @@ async function refresh(){
           scheduled:[]
         },f);
 
-      const mergedContext=mergeWithLocalHistory(baseContext,localHistory,f);
+      const mergedContext=mergeWithLocalHistory(baseContext,fixtureHistory(f),f);
       const localMeta=mergedContext.localHistoryMeta;
       const hasLocalModelContext=Boolean(mergedContext.standings && localMeta?.homeMatches>=4 && localMeta?.awayMatches>=4);
       const fixtureContextDiagnostic=hasLocalModelContext
@@ -347,12 +362,13 @@ async function refresh(){
     const allowedIds=new Set(values.slice(0,config.maxRecommendations).map(x=>x.id));
     state.results=results.map(x=>x.category==="VALUE"&&!allowedIds.has(x.id)?{...x,category:"NEAR",reason:"Не вошёл в лимит лучших рекомендаций дня."}:x);
     const storageStarted=Date.now();
-    state.statistics=updatePredictionHistory(PREDICTION_HISTORY_FILE,state.results,localHistory,new Date().toISOString());
+    state.statistics=updatePredictionHistory(PREDICTION_HISTORY_FILE,state.results,loadAllHistory(historyDatabase),new Date().toISOString());
     state.providers.apiFootball=getApiFootballTelemetry(env.REFRESH_MINUTES||30);
     state.updatedAt=new Date().toISOString(); state.stage="9/9 Complete";
     timing.storage=Date.now()-storageStarted;
     timing.total=Date.now()-timing.started;
-    state.performance={...timing,httpByProvider:{theOddsApi:primaryHealth.requests,oddsApiIo:oddsApiIo.requests,apiFootball:state.providers.apiFootball.requests},httpTotal:primaryHealth.requests+oddsApiIo.requests+state.providers.apiFootball.requests,cacheHits:primaryHealth.cacheHits+oddsApiIo.cacheHits+state.providers.apiFootball.cacheHits+state.providers.apiFootball.staleHits};
+    const footballDataTelemetry=getFootballDataTelemetry();
+    state.performance={...timing,httpByProvider:{theOddsApi:primaryHealth.requests,oddsApiIo:oddsApiIo.requests,apiFootball:state.providers.apiFootball.requests,footballData:footballDataTelemetry.requests},httpTotal:primaryHealth.requests+oddsApiIo.requests+state.providers.apiFootball.requests+footballDataTelemetry.requests,cacheHits:primaryHealth.cacheHits+oddsApiIo.cacheHits+state.providers.apiFootball.cacheHits+state.providers.apiFootball.staleHits+footballDataTelemetry.cacheHits};
     save();
     console.log(`API-Football: req ${state.providers.apiFootball.requests} | cache ${state.providers.apiFootball.cacheHits+state.providers.apiFootball.staleHits} | saved ${state.providers.apiFootball.avoided} | est/day ${state.providers.apiFootball.estimatedDailyRequests}`);
     const fresh=state.results.filter(x=>x.marketFreshness==="FRESH").length,stale=state.results.filter(x=>x.marketFreshness==="STALE").length;

@@ -4,12 +4,16 @@ import crypto from "node:crypto";
 
 const BASE = "https://api.football-data.org/v4";
 let runtime={cacheDir:null,now:()=>Date.now(),fetchImpl:(...args)=>fetch(...args)};
+let telemetry={requests:0,cacheHits:0};
 export function configureFootballData(options={}){runtime={...runtime,...options};if(runtime.cacheDir)fs.mkdirSync(runtime.cacheDir,{recursive:true});}
+export function beginFootballDataRefresh(){telemetry={requests:0,cacheHits:0};}
+export function getFootballDataTelemetry(){return {...telemetry};}
 function cacheFile(url){return runtime.cacheDir?path.join(runtime.cacheDir,`${crypto.createHash("sha256").update(url).digest("hex")}.json`):null;}
 function read(file){try{return JSON.parse(fs.readFileSync(file,"utf8"));}catch{return null;}}
 function write(file,data){if(file)fs.writeFileSync(file,JSON.stringify({fetchedAt:runtime.now(),data}),"utf8");}
 
 async function getJson(url, token) {
+  telemetry.requests++;
   const response = await runtime.fetchImpl(url, { headers: { "X-Auth-Token": token } });
   if (!response.ok) throw new Error(`football-data ${response.status}: ${await response.text()}`);
   return response.json();
@@ -17,7 +21,7 @@ async function getJson(url, token) {
 
 async function getJsonCached(url,token,ttlMs){
   const file=cacheFile(url),cached=read(file);
-  if(cached&&runtime.now()-Number(cached.fetchedAt)<=ttlMs)return cached.data;
+  if(cached&&runtime.now()-Number(cached.fetchedAt)<=ttlMs){telemetry.cacheHits++;return cached.data;}
   const data=await getJson(url,token);write(file,data);return data;
 }
 

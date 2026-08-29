@@ -65,6 +65,8 @@
 
 ## .env
 
+Требуется Node.js 22.5+ со встроенным модулем `node:sqlite`.
+
 ```env
 TELEGRAM_BOT_TOKEN=...
 ALLOWED_CHAT_IDS=...
@@ -87,3 +89,21 @@ MARKET_STALE_MINUTES=360
 Запрос нескольких рынков и лиг расходует квоту. Для первого запуска можно оставить только основные лиги или увеличить REFRESH_MINUTES. Бот обновляет данные не чаще заданного интервала.
 
 Последний валидный market snapshot хранится локально. При временной недоступности провайдеров он помечается `STALE` в пределах `MARKET_STALE_MINUTES`; истёкший snapshot не используется, а `STALE` не может создать новый `VALUE`.
+
+## Локальная база истории
+
+Завершённые матчи сначала читаются из `data/history/football.sqlite`. Исходный append-only `fixtures.jsonl` сохраняется и идемпотентно импортируется при запуске. SQLite-файл является runtime data и не коммитится.
+
+Локальный bootstrap без сети:
+
+```bash
+node scripts/bootstrap-history-db.js
+```
+
+Контролируемый Football-Data Free backfill с жёстким лимитом попыток:
+
+```bash
+node scripts/bootstrap-history-db.js --football-data --max-requests=5
+```
+
+Запросы истории всегда требуют `before` и применяют `kickoff < before`, поэтому данные после начала анализируемого матча в model context не попадают.

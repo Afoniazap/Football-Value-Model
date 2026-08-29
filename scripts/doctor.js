@@ -15,5 +15,9 @@ await import("../src/connectors/odds.js");
 await import("../src/connectors/oddsApiIo.js");
 await import("../src/connectors/apiFootball.js");
 console.log("MARKET_CONNECTORS: OK");
+try{
+  const {DatabaseSync}=await import("node:sqlite");
+  const db=new DatabaseSync(":memory:");db.exec("SELECT 1");db.close();console.log("SQLITE_HISTORY: OK");
+}catch(error){console.log(`SQLITE_HISTORY: ERROR (${error.message})`);failed=true;}
 console.log(failed?"DOCTOR: FAIL":"DOCTOR: PASS");
 if(failed)process.exitCode=1;
