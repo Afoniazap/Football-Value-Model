@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { similarity } from "../engine/utils.js";
 
 const BASE="https://api.odds-api.io/v3";
-const SLUGS={PL:"england-premier-league",PD:"spain-laliga",BL1:"germany-bundesliga",SA:"italy-serie-a",FL1:"france-ligue-1",CL:"uefa-champions-league",EL:"uefa-europa-league",CLI:"international-clubs-conmebol-libertadores-knockout-stage"};
+const SLUGS={PL:"england-premier-league",PD:"spain-laliga",BL1:"germany-bundesliga",SA:"italy-serie-a",FL1:"france-ligue-1",CL:"uefa-champions-league",EL:"uefa-europa-league",CLI:"international-clubs-conmebol-libertadores-knockout-stage",ELC:"england-championship",DED:"netherlands-eredivisie",PPL:"portugal-liga-portugal",BSA:"brazil-brasileiro-serie-a",BSB:"brazil-brasileiro-serie-b",MLS:"usa-mls"};
 
 function read(file){try{return JSON.parse(fs.readFileSync(file,"utf8"));}catch{return null;}}
 function write(file,data){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify({fetchedAt:Date.now(),data}),"utf8");}

@@ -73,14 +73,14 @@ test("unmapped competitions share one cached public football discovery batch",as
     ]);
   };
   const fixtures=[
-    {id:"elc",competitionCode:"ELC",home:"Middlesbrough FC",away:"West Bromwich Albion FC",utcDate:"2026-08-29T11:30:00Z"},
-    {id:"ded",competitionCode:"DED",home:"AZ",away:"Go Ahead Eagles",utcDate:"2026-08-29T18:00:00Z"}
+    {id:"sud",competitionCode:"SUD",home:"Middlesbrough FC",away:"West Bromwich Albion FC",utcDate:"2026-08-29T11:30:00Z"},
+    {id:"leagues",competitionCode:"LEAGUES",home:"AZ",away:"Go Ahead Eagles",utcDate:"2026-08-29T18:00:00Z"}
   ];
   const cacheDir=fs.mkdtempSync(path.join(os.tmpdir(),"fvm-odds-public-"));
   const first=await getOddsApiIoMarkets({apiKey:"secret",fixtures,cacheDir,request});
   const second=await getOddsApiIoMarkets({apiKey:"secret",fixtures,cacheDir,request});
   assert.equal(first.matched,2);assert.equal(first.requests,2);
-  assert.equal(first.perFixture.elc.discovery,"PUBLIC");assert.equal(first.perFixture.elc.reason,"QUOTE_FOUND");
+  assert.equal(first.perFixture.sud.discovery,"PUBLIC");assert.equal(first.perFixture.sud.reason,"QUOTE_FOUND");
   assert.equal(second.matched,2);assert.equal(second.requests,0);assert.equal(second.cacheHits,2);
   assert.equal(calls.length,2);
 });
@@ -95,4 +95,24 @@ test("per-fixture diagnostics distinguish missing event from missing odds",async
   ],cacheDir:fs.mkdtempSync(path.join(os.tmpdir(),"fvm-odds-reasons-")),request});
   assert.equal(result.perFixture.matched.reason,"ODDS_NOT_RETURNED");
   assert.equal(result.perFixture.missing.reason,"EVENT_NOT_FOUND");
+});
+
+test("odds-api.io uses verified league slugs for added competition mappings",async t=>{
+  const mappings={
+    ELC:"england-championship",
+    DED:"netherlands-eredivisie",
+    PPL:"portugal-liga-portugal",
+    BSA:"brazil-brasileiro-serie-a",
+    BSB:"brazil-brasileiro-serie-b",
+    MLS:"usa-mls"
+  };
+  for(const [competitionCode,expectedSlug] of Object.entries(mappings))await t.test(competitionCode,async()=>{
+    const leagues=[];
+    const request=async url=>{
+      if(url.pathname.endsWith("/events")){leagues.push(url.searchParams.get("league"));return response([]);}
+      return response([]);
+    };
+    await getOddsApiIoMarkets({apiKey:"secret",fixtures:[{id:competitionCode,competitionCode,home:"Home",away:"Away",utcDate:"2026-09-01T18:00:00Z"}],cacheDir:fs.mkdtempSync(path.join(os.tmpdir(),"fvm-odds-mapping-")),request});
+    assert.deepEqual(leagues,[expectedSlug]);
+  });
 });
