@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { analyseFixture } from "../src/engine/analyse.js";
 import { buildDualShadow, loadDualShadowStatistics, updateDualShadowHistory } from "../src/shadow/dualShadow.js";
+import { buildBaselineV2H } from "../src/shadow/baselineV2H.js";
 import { shadowMatchText, shadowStatisticsText } from "../src/ui/telegram.js";
 
 const config={minDataQuality:70,minEdge:4,minEv:5,minConfidence:70,minStability:70};
@@ -23,6 +24,19 @@ function context(){
 }
 function odds(){return {agreement:70,bookmakers:[{}],best:{h2h:{home:{odds:2.1,bookmaker:"Book"},draw:{odds:3.2,bookmaker:"Book"},away:{odds:3.6,bookmaker:"Book"}},totals:{},spreads:{}}};}
 function history(){return [{sourceFixtureId:"changed-provider-id",playedAt:fixture.utcDate,homeTeam:{name:"Alpha FC"},awayTeam:{name:"Beta FC"},score:{fullTime:{home:2,away:1}},provenance:{source:"FOOTBALL_DATA"}}];}
+
+for(const shape of ["LOCAL_HISTORY","API_FOOTBALL","FOOTBALL_DATA"]){
+  test(`V2 H поддерживает реальную форму standings ${shape}`,()=>{
+    const providerContext=context(),table=providerContext.standings.standings.find(row=>row.type==="TOTAL").table;
+    providerContext.contextMeta={source:shape};
+    if(shape!=="FOOTBALL_DATA")for(const team of table)delete team.goalDifference;
+    const probability=buildBaselineV2H(fixture,providerContext);
+    assert.ok(["home","draw","away"].every(key=>Number.isFinite(probability?.[key])));
+    assert.ok(Math.abs(probability.home+probability.draw+probability.away-1)<1e-12);
+    const shadow=buildDualShadow(fixture,providerContext,{home:.45,draw:.30,away:.25});
+    assert.ok(shadow);assert.ok(["home","draw","away"].every(key=>Number.isFinite(shadow.v2h.probability[key])));
+  });
+}
 
 test("dual shadow сохраняет exact production parity и не меняет official decision",()=>{
   const production=analyseFixture(fixture,context(),odds(),config),before=structuredClone(production);
