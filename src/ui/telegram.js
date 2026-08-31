@@ -16,6 +16,7 @@ export function dashboardText(state) {
   const health = total ? Math.round(state.results.reduce((s,x)=>s+x.dataQuality,0)/total) : 0;
   const opportunity = total ? Math.round(Math.min(100,(counts.VALUE*20+counts.NEAR*8)/total*100)) : 0;
   const api = state.providers?.apiFootball;
+  const footballData = state.providers?.footballData;
   const fixtureProvider = state.providers?.fixtures;
   const market = state.providers?.market;
   const snapshots = state.providers?.marketSnapshots;
@@ -43,6 +44,7 @@ export function dashboardText(state) {
     `Обновлено: <b>${state.updatedAt ? localDate(state.updatedAt) : "—"}</b>`,
     state.errors.length ? `⚠️ Ошибок источников: <b>${state.errors.length}</b>` : "Источники: ✅",
     api ? `API-Football: <b>${api.dailyLimit ? "DAILY LIMIT" : "OK"}</b> · req ${api.requests} · cache ${api.cacheHits + api.staleHits} · saved ${api.avoided}` : null,
+    footballData ? `Football-Data: <b>${footballData.status || (footballData.degraded ? "DEGRADED" : "OK")}</b> · req ${footballData.requests} · cache ${(footballData.cacheHits||0)+(footballData.staleHits||0)} · saved ${footballData.avoided||0}` : null,
     fixtureProvider ? `Fixtures: <b>${fixtureProvider.status}</b> · ${fixtureProvider.source || fixtureProvider.reason || "UNAVAILABLE"}` : null,
     market ? `Markets: Odds <b>${market.primary?.status || "N/A"}</b> · odds-api.io <b>${market.oddsApiIo?.status || "N/A"}</b> · AF <b>${market.apiFootballOdds?.status || "N/A"}</b>` : null
   ].filter(Boolean).join("\n");
@@ -243,49 +245,52 @@ export function cardText(x) {
   }
 
   if (b) {
+    const thresholds=x.valueThresholds||{};
     const gates = [
-      { name:"Edge", value:b.edge, threshold:4, unit:" п.п." },
-      { name:"EV", value:b.ev, threshold:5, unit:"%" },
-      { name:"Confidence", value:b.confidence, threshold:70, unit:"" },
-      { name:"Data Quality", value:x.dataQuality, threshold:70, unit:"" },
-      { name:"Stability", value:x.stability, threshold:70, unit:"" }
-    ];
+      { name:"Edge", value:b.edge, threshold:thresholds.minEdge, unit:" п.п." },
+      { name:"EV", value:b.ev, threshold:thresholds.minEv, unit:"%" },
+      { name:"Confidence", value:b.confidence, threshold:thresholds.minConfidence, unit:"" },
+      { name:"Data Quality", value:x.dataQuality, threshold:thresholds.minDataQuality, unit:"" },
+      { name:"Stability", value:x.stability, threshold:thresholds.minStability, unit:"" }
+    ].filter(g=>Number.isFinite(g.value)&&Number.isFinite(g.threshold));
 
     const failed = gates.filter(g => g.value < g.threshold);
 
-    lines.push(
-      "",
-      "<b>VALUE Gates</b>",
-      ...gates.map(g =>
-        gateLine(
-          g.name,
-          Number(g.value.toFixed ? g.value.toFixed(1) : g.value),
-          g.threshold,
-          g.unit
-        )
-      )
-    );
-
-    if (failed.length) {
-      const worst = failed
-        .map(g => ({...g, gap:g.threshold-g.value}))
-        .sort((a,b)=>b.gap-a.gap)[0];
-
-      const short =
-        worst.name === "Data Quality" ? "DQ" :
-        worst.name === "Confidence" ? "Conf" :
-        worst.name === "Stability" ? "Stab" :
-        worst.name;
-
+    if(gates.length){
       lines.push(
         "",
-        `Пройдено <b>${gates.length-failed.length}/${gates.length}</b> · Блокер: 🔴 <b>${short}</b> −${worst.gap.toFixed(1)}${worst.unit}`
+        "<b>VALUE Gates</b>",
+        ...gates.map(g =>
+          gateLine(
+            g.name,
+            Number(g.value.toFixed ? g.value.toFixed(1) : g.value),
+            g.threshold,
+            g.unit
+          )
+        )
       );
-    } else {
-      lines.push("", `Пройдено <b>5/5</b> · Все gates выполнены ✅`);
+
+      if (failed.length) {
+        const worst = failed
+          .map(g => ({...g, gap:g.threshold-g.value}))
+          .sort((a,b)=>b.gap-a.gap)[0];
+
+        const short =
+          worst.name === "Data Quality" ? "DQ" :
+          worst.name === "Confidence" ? "Conf" :
+          worst.name === "Stability" ? "Stab" :
+          worst.name;
+
+        lines.push(
+          "",
+          `Пройдено <b>${gates.length-failed.length}/${gates.length}</b> · Блокер: 🔴 <b>${short}</b> −${worst.gap.toFixed(1)}${worst.unit}`
+        );
+      } else {
+        lines.push("", `Пройдено <b>${gates.length}/${gates.length}</b> · Все gates выполнены ✅`);
+      }
     }
 
-    if (b.probability >= 0.90 && x.dataQuality < 70) {
+    if (b.probability >= 0.90 && Number.isFinite(thresholds.minDataQuality) && x.dataQuality < thresholds.minDataQuality) {
       lines.push(
         "",
         "⚠️ <b>Sanity check:</b> высокая вероятность при низком DQ"
@@ -335,6 +340,7 @@ export function metricText(code,x){
   const fp = b.fdsParts || {};
   const sv = x.stabilityV2 || {};
   const sci = x.sci || {};
+  const thresholds=x.valueThresholds||{};
   const blockedMetric=["Fair","Edge","EV","Conf","FDS","MAI"].includes(code)&&!x.best;
   if(blockedMetric){
     const market=x.marketAvailable
@@ -359,7 +365,7 @@ export function metricText(code,x){
         ? flags.map(r => `🔴 ${esc(r)}`).join("\n")
         : "🟢 Критических Red Flags нет.",
       "",
-      b.probability >= 0.90 && x.dataQuality < 70
+      b.probability >= 0.90 && Number.isFinite(thresholds.minDataQuality) && x.dataQuality < thresholds.minDataQuality
         ? "⚠️ Высокая модельная вероятность при низком качестве данных."
         : ""
     ].filter(Boolean).join("\n");

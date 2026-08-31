@@ -24,6 +24,11 @@ test("dashboard exposes degraded fixture fallback source",()=>{
   assert.doesNotMatch(text,/24[^\n]*<b>N\/A<\/b>/);
 });
 
+test("dashboard показывает Football-Data degradation без маскировки refresh",()=>{
+  const text=dashboardText({loading:false,updatedAt:"2026-08-31T12:00:00Z",errors:[],results:[],providers:{footballData:{status:"DEGRADED",requests:1,cacheHits:2,staleHits:1,avoided:3}}});
+  assert.match(text,/Football-Data: <b>DEGRADED<\/b> · req 1 · cache 3 · saved 3/);
+});
+
 test("dashboard distinguishes quote coverage from calculated markets",()=>{
   const text=dashboardText({loading:false,updatedAt:"2026-08-27T10:00:00Z",errors:[],providers:{},results:[
     {category:"WAIT",marketAvailable:true,markets:[],dataQuality:42},
@@ -79,6 +84,15 @@ test("верх карточки VALUE показывает ставку, цен�
   const text=cardText(pricedCard({category:"VALUE",dataQuality:75,stability:75,best:{...pricedCard().best,confidence:75,fds:80}}));
   assert.match(text,/✅ <b>Ставка:<\/b> <b>П1 @2\.15<\/b> · P <b>58%<\/b>/);
   assert.match(text,/💰 Fair <b>1\.72<\/b> · Edge <b>\+11 п\.п\.<\/b> · EV <b>\+25%<\/b>/);
+});
+
+test("Telegram VALUE Gates показывает thresholds из production config без UI defaults",()=>{
+  const text=cardText(pricedCard({valueThresholds:{minEdge:9,minEv:12,minConfidence:73,minDataQuality:74,minStability:75}}));
+  assert.match(text,/Edge: 11 п\.п\.\/9 п\.п\./);
+  assert.match(text,/EV: 25%\/12%/);
+  assert.match(text,/Conf: 65\/73/);
+  assert.match(text,/DQ: 60\/74/);
+  assert.match(text,/Stab: 65\/75/);
 });
 
 test("WAIT и NO_BET не выдаются как ставка",()=>{

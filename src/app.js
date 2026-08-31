@@ -363,6 +363,7 @@ async function refresh(){
           config,
           squadData
         );
+      analysis.valueThresholds={minEdge:config.minEdge,minEv:config.minEv,minConfidence:config.minConfidence,minDataQuality:config.minDataQuality,minStability:config.minStability};
       analysis.shadow=buildDualShadow(f,mergedContext,analysis.consensusProbability);
       analysis=enforceMarketFreshness(analysis,freshness);
       analysis.marketFetchedAt=fetchedAt;
@@ -392,6 +393,7 @@ async function refresh(){
     timing.storage=Date.now()-storageStarted;
     timing.total=Date.now()-timing.started;
     const footballDataTelemetry=getFootballDataTelemetry();
+    state.providers.footballData={...footballDataTelemetry,status:footballDataTelemetry.degraded?"DEGRADED":"OK"};
     state.performance={...timing,httpByProvider:{theOddsApi:primaryHealth.requests,oddsApiIo:oddsApiIo.requests,apiFootball:state.providers.apiFootball.requests,footballData:footballDataTelemetry.requests},httpTotal:primaryHealth.requests+oddsApiIo.requests+state.providers.apiFootball.requests+footballDataTelemetry.requests,cacheHits:primaryHealth.cacheHits+oddsApiIo.cacheHits+state.providers.apiFootball.cacheHits+state.providers.apiFootball.staleHits+footballDataTelemetry.cacheHits};
     save();
     console.log(`API-Football: req ${state.providers.apiFootball.requests} | cache ${state.providers.apiFootball.cacheHits+state.providers.apiFootball.staleHits} | saved ${state.providers.apiFootball.avoided} | est/day ${state.providers.apiFootball.estimatedDailyRequests}`);
