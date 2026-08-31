@@ -4,24 +4,26 @@ function probabilityFromMatrix(matrix, predicate) {
   return matrix.filter(predicate).reduce((s,x)=>s+x.p,0);
 }
 
-function asianSettlement(matrix, side, line) {
+export function asianSettlementOutcome(homeGoals, awayGoals, side, line) {
   const legs = Number.isInteger(line*2) ? [line] : [Math.floor(line*2)/2, Math.ceil(line*2)/2];
-  const settleLeg = (h,a,l) => {
-    const diff = side === "home" ? h-a : a-h;
+  const settleLeg = l => {
+    const diff = side === "home" ? homeGoals-awayGoals : awayGoals-homeGoals;
     const result = diff + l;
     if (result > 0) return 1;
     if (result === 0) return 0;
     return -1;
   };
-  let win=0, push=0, lose=0;
+  const result=legs.map(settleLeg).reduce((sum,value)=>sum+value,0)/legs.length;
+  return result===1?"WIN":result===.5?"HALF_WIN":result===0?"PUSH":result===-.5?"HALF_LOSS":"LOSE";
+}
+
+export function asianSettlement(matrix, side, line) {
+  const settlement={win:0,halfWin:0,push:0,halfLoss:0,lose:0};
   for (const score of matrix) {
-    const outcomes = legs.map(l=>settleLeg(score.h,score.a,l));
-    const avg = outcomes.reduce((a,b)=>a+b,0)/outcomes.length;
-    if (avg > 0) win += score.p;
-    else if (avg === 0) push += score.p;
-    else lose += score.p;
+    const outcome=asianSettlementOutcome(score.h,score.a,side,line);
+    settlement[{WIN:"win",HALF_WIN:"halfWin",PUSH:"push",HALF_LOSS:"halfLoss",LOSE:"lose"}[outcome]]+=score.p;
   }
-  return {win,push,lose};
+  return settlement;
 }
 
 function evaluateTwoWay(label, probability, odds, marketFair, meta={}) {
@@ -31,6 +33,15 @@ function evaluateTwoWay(label, probability, odds, marketFair, meta={}) {
     label, probability, odds, fairOdds:1/probability,
     marketFair, edge, ev, ...meta
   };
+}
+
+function evaluateQuarterAsian(label,settlement,odds,marketFair,meta={}){
+  const winStake=settlement.win+settlement.halfWin*.5;
+  const lossStake=settlement.lose+settlement.halfLoss*.5;
+  const probability=winStake/(winStake+lossStake);
+  const fairOdds=winStake>0?1+lossStake/winStake:Infinity;
+  const ev=(settlement.win*(odds-1)+settlement.halfWin*(odds-1)/2-settlement.halfLoss*.5-settlement.lose)*100;
+  return {label,probability,odds,fairOdds,marketFair,edge:(probability-marketFair)*100,ev,...meta};
 }
 
 export function evaluateMarkets(fixture, teamStrength, consensus, oddsData) {
@@ -76,11 +87,11 @@ export function evaluateMarkets(fixture, teamStrength, consensus, oddsData) {
     const [fairThis] = removeMarginTwoWay(item.odds,opposite.odds);
     const settlement = asianSettlement(matrix,side,item.point);
     const effectiveProbability = settlement.win + settlement.push*0.5;
-    results.push(evaluateTwoWay(
-      `${side==="home"?"Ф1":"Ф2"}(${item.point>0?"+":""}${item.point})`,
-      effectiveProbability,item.odds,fairThis,
-      {market:"AH",bookmaker:item.bookmaker,line:item.point,settlement}
-    ));
+    const label=`${side==="home"?"Ф1":"Ф2"}(${item.point>0?"+":""}${item.point})`;
+    const meta={market:"AH",bookmaker:item.bookmaker,line:item.point,settlement};
+    results.push(Number.isInteger(item.point*2)
+      ? evaluateTwoWay(label,effectiveProbability,item.odds,fairThis,meta)
+      : evaluateQuarterAsian(label,settlement,item.odds,fairThis,meta));
   }
 
   const pBtts = probabilityFromMatrix(matrix,x=>x.h>0 && x.a>0);
