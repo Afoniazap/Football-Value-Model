@@ -8,7 +8,7 @@ import { getOddsApiIoMarkets } from "./connectors/oddsApiIo.js";
 import { analyseFixture } from "./engine/analyse.js";
 import { alignContextTeamIds } from "./engine/contextIds.js";
 import { getUpcomingApiFootballMatches, getFixturesRisk, getFixturesOdds, getApiFootballCompetitionContext, getFinishedFixturesForDate, configureApiFootball, beginApiFootballRefresh, getApiFootballTelemetry } from "./connectors/apiFootball.js";
-import { dashboardText, dashboardKeyboard, listText, listKeyboard, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard, statisticsText } from "./ui/telegram.js";
+import { dashboardText, dashboardKeyboard, listText, listKeyboard, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard, statisticsText, shadowStatisticsText, shadowMatchText } from "./ui/telegram.js";
 import { appendLocalHistory, buildLocalHistoryContext, loadRawLocalHistory, mergeWithLocalHistory } from "./history/localHistory.js";
 import { backfillFromProviderCaches } from "./history/cacheBackfill.js";
 import { discoverFixtures } from "./fixtures/discovery.js";
@@ -16,6 +16,7 @@ import { loadPredictionStatistics, updatePredictionHistory } from "./statistics/
 import { auditMarketSnapshots, enforceMarketFreshness, resolveMarketSnapshots } from "./markets/marketSnapshots.js";
 import { databaseStats, getTeamLastMatches, hasSourceDate, importHistoryMatches, loadAllHistory, openHistoryDatabase } from "./history/sqliteHistory.js";
 import { completedUtcDates } from "./history/harvestDates.js";
+import { buildDualShadow, loadDualShadowStatistics, updateDualShadowHistory } from "./shadow/dualShadow.js";
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const DATA=path.join(ROOT,"data");
@@ -26,6 +27,7 @@ configureFootballData({cacheDir:path.join(DATA,"football-data-cache")});
 const HISTORY_FILE=path.join(DATA,"history","fixtures.jsonl");
 const LEGACY_HISTORY_FILE=path.join(DATA,"history.json");
 const PREDICTION_HISTORY_FILE=path.join(DATA,"statistics","predictions.jsonl");
+const DUAL_SHADOW_HISTORY_FILE=path.join(DATA,"statistics","dual-shadow.jsonl");
 const MARKET_SNAPSHOT_FILE=path.join(DATA,"market-cache","snapshots.json");
 const HISTORY_DB_FILE=path.join(DATA,"history","football.sqlite");
 const historyDatabase=openHistoryDatabase(HISTORY_DB_FILE);
@@ -78,6 +80,7 @@ function loadSavedState(){
 }
 let state=loadSavedState();
 state.statistics=loadPredictionStatistics(PREDICTION_HISTORY_FILE);
+state.shadowStatistics=loadDualShadowStatistics(DUAL_SHADOW_HISTORY_FILE);
 
 async function tg(method,body={}){
   const r=await fetch(`${TG}/${method}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
@@ -360,6 +363,7 @@ async function refresh(){
           config,
           squadData
         );
+      analysis.shadow=buildDualShadow(f,mergedContext,analysis.consensusProbability);
       analysis=enforceMarketFreshness(analysis,freshness);
       analysis.marketFetchedAt=fetchedAt;
       const hasModel=["home","draw","away"].every(key=>Number.isFinite(analysis.consensusProbability?.[key]));
@@ -377,7 +381,9 @@ async function refresh(){
     const allowedIds=new Set(values.slice(0,config.maxRecommendations).map(x=>x.id));
     state.results=results.map(x=>x.category==="VALUE"&&!allowedIds.has(x.id)?{...x,category:"NEAR",reason:"Не вошёл в лимит лучших рекомендаций дня."}:x);
     const storageStarted=Date.now();
-    state.statistics=updatePredictionHistory(PREDICTION_HISTORY_FILE,state.results,loadAllHistory(historyDatabase),new Date().toISOString());
+    const completedHistory=loadAllHistory(historyDatabase),storedAt=new Date().toISOString();
+    state.statistics=updatePredictionHistory(PREDICTION_HISTORY_FILE,state.results,completedHistory,storedAt);
+    state.shadowStatistics=updateDualShadowHistory(DUAL_SHADOW_HISTORY_FILE,state.results,completedHistory,storedAt);
     state.providers.apiFootball=getApiFootballTelemetry(env.REFRESH_MINUTES||30);
     if(state.providers.history&&historyDatabase){
       state.providers.history.matches=databaseStats(historyDatabase,HISTORY_DB_FILE).matches;
@@ -412,6 +418,11 @@ async function callback(q){
   if(q.data==="refresh"){await refresh();return dashboard(id,q.message.message_id)}
   if(q.data==="pipeline")return tg("sendMessage",{chat_id:id,text:`⚙️ <b>Pipeline</b>\n\n${state.stage}\n\n✅ Data Integrity\n✅ Classification\n✅ Team Strength\n✅ Form\n✅ SCI\n✅ Consensus\n✅ Market Value\n✅ Risk Gates\n✅ Recommendation`,parse_mode:"HTML",reply_markup:backKeyboard()});
   if(q.data==="statistics")return tg("sendMessage",{chat_id:id,text:statisticsText(state.statistics),parse_mode:"HTML",reply_markup:backKeyboard()});
+  if(q.data==="shadow:stats")return tg("sendMessage",{chat_id:id,text:shadowStatisticsText(state.shadowStatistics),parse_mode:"HTML",reply_markup:backKeyboard()});
+  if(q.data.startsWith("shadow:match:")){
+    const x=state.results.find(y=>y.id===q.data.slice("shadow:match:".length));if(!x)return;
+    return tg("editMessageText",{chat_id:id,message_id:q.message.message_id,text:shadowMatchText(x),parse_mode:"HTML",reply_markup:detailKeyboard(x.id)});
+  }
   if(q.data.startsWith("list:")){
     const cat=q.data.split(":")[1],items=state.results.filter(x=>x.category===cat);
     return tg("sendMessage",{chat_id:id,text:listText(cat,items),parse_mode:"HTML",reply_markup:listKeyboard(items)});

@@ -57,7 +57,8 @@ export function dashboardKeyboard(state) {
      {text:`❌ NO BET (${count("NO_BET")})`,callback_data:"list:NO_BET"}],
     [{text:"⚙️ Pipeline",callback_data:"pipeline"},
      {text:"🔄 Обновить",callback_data:"refresh"}],
-    [{text:"📈 Статистика",callback_data:"statistics"}]
+    [{text:"📈 Статистика",callback_data:"statistics"},
+     {text:"🧪 Shadow",callback_data:"shadow:stats"}]
   ]);
 }
 
@@ -86,6 +87,43 @@ export function statisticsText(statistics={}){
     "","<b>По вероятности</b>",
     ...((statistics.bands||[]).map(row=>`${esc(row.name)}: ${row.completed}/${row.predictions} · Acc ${pct(row.accuracy)}`)),
     "","Статистика считается только по реальным завершённым матчам."
+  ].join("\n");
+}
+
+function shadowPercent(value){return Number.isFinite(value)?`${(value*100).toFixed(1)}%`:"N/A";}
+function shadowNumber(value){return Number.isFinite(value)?Number(value).toFixed(3):"N/A";}
+function shadowModelLine(label,row){
+  if(!row?.completed)return `${label}: <b>нет завершённых матчей</b>`;
+  return `${label}: Acc <b>${shadowPercent(row.accuracy)}</b> · Brier <b>${shadowNumber(row.brier)}</b> · LL <b>${shadowNumber(row.logLoss)}</b>`;
+}
+export function shadowStatisticsText(statistics={}){
+  const completed=statistics.completed||0;
+  return [
+    "<b>🧪 DUAL SHADOW</b>","",
+    `Completed: <b>${completed}/300</b> · желательно 500+`,
+    `Pending: <b>${statistics.pending||0}</b>`,"",
+    completed?shadowModelLine("Production",statistics.production):"No completed live shadow fixtures yet.",
+    completed?shadowModelLine("Challenger",statistics.challenger):null,
+    completed?shadowModelLine("V2 H",statistics.v2h):null,
+    completed?`Draw P: Prod ${shadowPercent(statistics.production?.meanDrawProbability)} · Chal ${shadowPercent(statistics.challenger?.meanDrawProbability)} · V2H ${shadowPercent(statistics.v2h?.meanDrawProbability)} · Actual ${shadowPercent(statistics.actualDrawRate)}`:null,
+    completed?`Strong disagreement: <b>${statistics.strongDisagreement?.sample||0}</b>`:null,
+    "",`STATUS: <b>${statistics.status||"OBSERVE"}</b>`
+  ].filter(Boolean).join("\n");
+}
+
+function probabilityLine(model){const p=model?.probability;return p?`П1 ${shadowPercent(p.home)} · X ${shadowPercent(p.draw)} · П2 ${shadowPercent(p.away)}`:"N/A";}
+export function shadowMatchText(x){
+  const shadow=x.shadow;
+  if(!shadow)return `<b>🧪 Shadow · ${esc(x.home)} — ${esc(x.away)}</b>\n\nShadow N/A: недостаточно pre-match context.`;
+  const values=Object.values(shadow.disagreement||{}).filter(Number.isFinite),max=values.length?Math.max(...values):null;
+  return [
+    `<b>🧪 Shadow · ${esc(x.home)} — ${esc(x.away)}</b>`,"",
+    `Production: <b>${probabilityLine(shadow.production)}</b>`,
+    `Challenger: <b>${probabilityLine(shadow.challenger)}</b>`,
+    `V2 H: <b>${probabilityLine(shadow.v2h)}</b>`,"",
+    `Max disagreement: <b>${Number.isFinite(max)?`${(max*100).toFixed(1)} п.п.`:"N/A"}</b>`,
+    `Official category: <b>${esc(x.category)}</b> · только Production`,
+    "STATUS: <b>OBSERVE</b>"
   ].join("\n");
 }
 
@@ -274,6 +312,7 @@ export function metricKeyboard(x){
       {text:"⚠️ Риски",callback_data:`metric:Risks:${id}`},
       {text:"📖 Метрики",callback_data:`metric:All:${id}`}
     ],
+    [{text:"🧪 Shadow",callback_data:`shadow:match:${id}`}],
     [
       {text:"⬅️ Dashboard",callback_data:"dashboard"}
     ]
