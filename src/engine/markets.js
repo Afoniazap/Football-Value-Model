@@ -26,6 +26,27 @@ export function asianSettlement(matrix, side, line) {
   return settlement;
 }
 
+export function totalsSettlementOutcome(totalGoals, side, line) {
+  const legs = Number.isInteger(line*2) ? [line] : [Math.floor(line*2)/2, Math.ceil(line*2)/2];
+  const settleLeg = l => {
+    const result = side === "over" ? totalGoals-l : l-totalGoals;
+    if (result > 0) return 1;
+    if (result === 0) return 0;
+    return -1;
+  };
+  const result=legs.map(settleLeg).reduce((sum,value)=>sum+value,0)/legs.length;
+  return result===1?"WIN":result===.5?"HALF_WIN":result===0?"PUSH":result===-.5?"HALF_LOSS":"LOSE";
+}
+
+export function totalsSettlement(matrix, side, line) {
+  const settlement={win:0,halfWin:0,push:0,halfLoss:0,lose:0};
+  for (const score of matrix) {
+    const outcome=totalsSettlementOutcome(score.h+score.a,side,line);
+    settlement[{WIN:"win",HALF_WIN:"halfWin",PUSH:"push",HALF_LOSS:"halfLoss",LOSE:"lose"}[outcome]]+=score.p;
+  }
+  return settlement;
+}
+
 function evaluateTwoWay(label, probability, odds, marketFair, meta={}) {
   const edge = (probability-marketFair)*100;
   const ev = (probability*odds-1)*100;
@@ -35,7 +56,7 @@ function evaluateTwoWay(label, probability, odds, marketFair, meta={}) {
   };
 }
 
-function evaluateQuarterAsian(label,settlement,odds,marketFair,meta={}){
+function evaluateQuarterSettlement(label,settlement,odds,marketFair,meta={}){
   const winStake=settlement.win+settlement.halfWin*.5;
   const lossStake=settlement.lose+settlement.halfLoss*.5;
   const probability=winStake/(winStake+lossStake);
@@ -72,8 +93,17 @@ export function evaluateMarkets(fixture, teamStrength, consensus, oddsData) {
     const [fairOver,fairUnder] = removeMarginTwoWay(over.odds,under.odds);
     const pOver = probabilityFromMatrix(matrix,x=>x.h+x.a>line);
     const pUnder = probabilityFromMatrix(matrix,x=>x.h+x.a<line);
-    results.push(evaluateTwoWay(`ТБ ${line}`,pOver,over.odds,fairOver,{market:"OU",bookmaker:over.bookmaker,line}));
-    results.push(evaluateTwoWay(`ТМ ${line}`,pUnder,under.odds,fairUnder,{market:"OU",bookmaker:under.bookmaker,line}));
+    const overMeta={market:"OU",bookmaker:over.bookmaker,line};
+    const underMeta={market:"OU",bookmaker:under.bookmaker,line};
+    if (Number.isInteger(line*2)) {
+      results.push(evaluateTwoWay(`ТБ ${line}`,pOver,over.odds,fairOver,overMeta));
+      results.push(evaluateTwoWay(`ТМ ${line}`,pUnder,under.odds,fairUnder,underMeta));
+    } else {
+      const overSettlement=totalsSettlement(matrix,"over",line);
+      const underSettlement=totalsSettlement(matrix,"under",line);
+      results.push(evaluateQuarterSettlement(`ТБ ${line}`,overSettlement,over.odds,fairOver,{...overMeta,settlement:overSettlement}));
+      results.push(evaluateQuarterSettlement(`ТМ ${line}`,underSettlement,under.odds,fairUnder,{...underMeta,settlement:underSettlement}));
+    }
   }
 
   const spreads = oddsData.best.spreads;
@@ -91,7 +121,7 @@ export function evaluateMarkets(fixture, teamStrength, consensus, oddsData) {
     const meta={market:"AH",bookmaker:item.bookmaker,line:item.point,settlement};
     results.push(Number.isInteger(item.point*2)
       ? evaluateTwoWay(label,effectiveProbability,item.odds,fairThis,meta)
-      : evaluateQuarterAsian(label,settlement,item.odds,fairThis,meta));
+      : evaluateQuarterSettlement(label,settlement,item.odds,fairThis,meta));
   }
 
   const pBtts = probabilityFromMatrix(matrix,x=>x.h>0 && x.a>0);
