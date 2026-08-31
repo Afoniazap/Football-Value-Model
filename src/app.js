@@ -15,6 +15,7 @@ import { discoverFixtures } from "./fixtures/discovery.js";
 import { loadPredictionStatistics, updatePredictionHistory } from "./statistics/predictionHistory.js";
 import { auditMarketSnapshots, enforceMarketFreshness, resolveMarketSnapshots } from "./markets/marketSnapshots.js";
 import { databaseStats, getTeamLastMatches, hasSourceDate, importHistoryMatches, loadAllHistory, openHistoryDatabase } from "./history/sqliteHistory.js";
+import { completedUtcDates } from "./history/harvestDates.js";
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const DATA=path.join(ROOT,"data");
@@ -92,32 +93,30 @@ async function updateLocalHistory(){
   cacheBackfillDone=true;
   ensureHistoryDatabase();
 
-  const yesterday=new Date(Date.now()-86400000)
-    .toISOString()
-    .slice(0,10);
-
-  const apiLoaded=hasSourceDate(historyDatabase,"API_FOOTBALL",yesterday);
-  const footballDataLoaded=hasSourceDate(historyDatabase,"FOOTBALL_DATA",yesterday);
+  const dates=completedUtcDates(Date.now(),Number(env.HISTORY_HARVEST_LOOKBACK_DAYS||3));
   const errors=[];
   let added=0;
-  if(!apiLoaded){
-    try{
-      const finished=await getFinishedFixturesForDate(env.API_FOOTBALL_KEY.trim(),yesterday);
+  let skipped=0;
+  for(const date of dates){
+    if(hasSourceDate(historyDatabase,"API_FOOTBALL",date))skipped++;
+    else try{
+      const finished=await getFinishedFixturesForDate(env.API_FOOTBALL_KEY.trim(),date);
       added+=appendHistory(finished,"API_FOOTBALL");
-    }catch(error){errors.push(`API_FOOTBALL:${error.message}`);}
-  }
-  if(!footballDataLoaded){
-    try{
-      const finished=await getFinishedFootballDataMatchesForDate(env.FOOTBALL_DATA_TOKEN.trim(),yesterday);
+    }catch(error){errors.push(`API_FOOTBALL:${date}:${error.message}`);}
+
+    if(hasSourceDate(historyDatabase,"FOOTBALL_DATA",date))skipped++;
+    else try{
+      const finished=await getFinishedFootballDataMatchesForDate(env.FOOTBALL_DATA_TOKEN.trim(),date);
       added+=appendHistory(finished,"FOOTBALL_DATA");
-    }catch(error){errors.push(`FOOTBALL_DATA:${error.message}`);}
+    }catch(error){errors.push(`FOOTBALL_DATA:${date}:${error.message}`);}
   }
   const total=databaseStats(historyDatabase,HISTORY_DB_FILE).matches;
 
   return {
     added,
     total,
-    skipped:apiLoaded&&footballDataLoaded,
+    skipped,
+    dates,
     cacheBackfill,
     errors
   };
@@ -380,6 +379,9 @@ async function refresh(){
     const storageStarted=Date.now();
     state.statistics=updatePredictionHistory(PREDICTION_HISTORY_FILE,state.results,loadAllHistory(historyDatabase),new Date().toISOString());
     state.providers.apiFootball=getApiFootballTelemetry(env.REFRESH_MINUTES||30);
+    if(state.providers.history&&historyDatabase){
+      state.providers.history.matches=databaseStats(historyDatabase,HISTORY_DB_FILE).matches;
+    }
     state.updatedAt=new Date().toISOString(); state.stage="9/9 Complete";
     timing.storage=Date.now()-storageStarted;
     timing.total=Date.now()-timing.started;

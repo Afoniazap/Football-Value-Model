@@ -160,3 +160,20 @@ test("date-batched odds normalization is identical to the existing fixture endpo
   const batchResult=await getFixturesOdds("secret",[{apiFootballFixtureId:77,utcDate:"2026-08-29T18:00:00Z"}]);
   assert.deepEqual(batchResult["77"],oldResult);
 });
+
+test("free odds pagination stops at page 3 and falls back only to unresolved fixture IDs",async()=>{
+  const urls=[];
+  const row={fixture:{id:99},bookmakers:[{name:"Fixture Book",bets:[{name:"Match Winner",values:[{value:"Home",odd:"2.20"},{value:"Draw",odd:"3.10"},{value:"Away",odd:"3.30"}]}]}]};
+  configureApiFootball({cacheDir:tempDir(),minGapMs:0,fetchImpl:async url=>{
+    urls.push(url);
+    const parsed=new URL(url),fixture=parsed.searchParams.get("fixture"),page=parsed.searchParams.get("page");
+    if(fixture==="99")return response({...validEmpty,results:1,response:[row]});
+    return response({...validEmpty,paging:{current:Number(page||1),total:5}});
+  }});
+  beginApiFootballRefresh();
+  const result=await getFixturesOdds("secret",[{apiFootballFixtureId:99,utcDate:"2026-08-31T18:00:00Z"}]);
+  assert.ok(result["99"]);
+  assert.equal(urls.some(url=>new URL(url).searchParams.get("page")==="4"),false);
+  assert.equal(urls.filter(url=>new URL(url).searchParams.has("fixture")).length,1);
+  assert.equal(urls.length,4);
+});

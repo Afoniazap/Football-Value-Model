@@ -343,18 +343,23 @@ export async function getFixturesOdds(key,fixtures=[]){
   if(!key||!fixtures.length)return {};
   const dates=[...new Set(fixtures.map(row=>row.utcDate&&String(row.utcDate).slice(0,10)).filter(Boolean))],wanted=new Set(fixtures.map(row=>row.apiFootballFixtureId).filter(id=>id!==null&&id!==undefined).map(String)),result={};
   for(const date of dates){
-    const rows=await requestAllPages(`/odds?date=${date}`,key,{ttlMs:10*60_000,staleMs:0});
+    const rows=await requestAllPages(`/odds?date=${date}`,key,{ttlMs:10*60_000,staleMs:0},{maxPages:3});
     for(const row of rows){
       const id=String(row.fixture?.id||"");if(!wanted.has(id))continue;
       const normalized=normalizeOddsRow(row);if(normalized)result[id]=normalized;
     }
   }
+  for(const fixtureId of wanted){
+    if(result[fixtureId])continue;
+    const market=await getFixtureOdds(key,fixtureId);
+    if(market)result[fixtureId]=market;
+  }
   return result;
 }
 
-async function requestAllPages(basePath,key,cachePolicy){
+async function requestAllPages(basePath,key,cachePolicy,{maxPages=Infinity}={}){
   const first=await requestJson(basePath,key,cachePolicy),rows=[...(first?.response||[])];
-  const total=Math.max(1,Number(first?.paging?.total)||1);
+  const total=Math.min(maxPages,Math.max(1,Number(first?.paging?.total)||1));
   for(let page=2;page<=total;page++){
     const separator=basePath.includes("?")?"&":"?";
     const data=await requestJson(`${basePath}${separator}page=${page}`,key,cachePolicy);
