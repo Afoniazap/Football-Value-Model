@@ -132,21 +132,17 @@ export function shadowMatchText(x){
 export function listText(category, items) {
   const title = {VALUE:"🎯 VALUE",NEAR:"👀 NEAR VALUE",WAIT:"⏳ WAIT",NO_BET:"❌ NO BET"}[category];
   if (!items.length) return `<b>${title}</b>\n\nСписок пуст.`;
-  return `<b>${title}</b>\n\n` + items.slice(0,20).map((x,i)=>{
+  return `<b>${title}</b>\n\n` + items.slice(0,20).map(x=>{
     const b=x.best;
-    const line=b ? `${b.label} @${b.odds} | Edge ${b.edge.toFixed(1)} | FDS ${b.fds}` : x.reason;
-    return `${i+1}. <b>${esc(x.home)} — ${esc(x.away)}</b>\n${esc(x.competition)} · ${localDate(x.utcDate)}\n${esc(line)}`;
+    const summary=b
+      ? `${betLabel(b)} @${compactNumber(b.odds,2)} · Model ${compactNumber(b.probability*100)}% · Edge ${compactNumber(b.edge)} · FDS ${b.fds}`
+      : x.reason||"Нет рассчитанного кандидата";
+    return `<b>${esc(x.home)} — ${esc(x.away)}</b> · ${compactKyivDate(x.utcDate)}\n${esc(summary)}`;
   }).join("\n\n");
 }
 
 export function listKeyboard(items) {
-  const rows=items.slice(0,20).map(x=>{
-    const odds = Number.isFinite(Number(x.best?.odds)) ? `@${x.best.odds}` : "@—";
-    return [{
-      text:`${x.home.slice(0,12)} — ${x.away.slice(0,12)} · ${odds} · ${localDate(x.utcDate)}`,
-      callback_data:`card:${x.id}`
-    }];
-  });
+  const rows=items.slice(0,20).map(x=>[{text:`Открыть · ${x.home.slice(0,14)} — ${x.away.slice(0,14)}`,callback_data:`card:${x.id}`}]);
   rows.push([{text:"⬅️ Dashboard",callback_data:"dashboard"}]);
   return kb(rows);
 }
@@ -167,6 +163,11 @@ function gateLine(name, value, threshold, unit = "") {
 
 function compactNumber(value,digits=1){
   return Number(Number(value).toFixed(digits)).toString();
+}
+
+function compactKyivDate(iso){
+  const parts=Object.fromEntries(new Intl.DateTimeFormat("ru-RU",{timeZone:"Europe/Kyiv",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date(iso)).map(part=>[part.type,part.value]));
+  return `${parts.day}.${parts.month} ${parts.hour}:${parts.minute}`;
 }
 
 function signedNumber(value,digits=1){

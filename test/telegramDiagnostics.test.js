@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dashboardText, cardText, metricText, statisticsText } from "../src/ui/telegram.js";
+import { dashboardText, cardText, listKeyboard, listText, metricText, statisticsText } from "../src/ui/telegram.js";
 
 test("dashboard does not present provider failure as genuine zero fixtures",()=>{
   const text=dashboardText({
@@ -93,6 +93,15 @@ test("Telegram VALUE Gates показывает thresholds из production confi
   assert.match(text,/Conf: 65\/73/);
   assert.match(text,/DQ: 60\/74/);
   assert.match(text,/Stab: 65\/75/);
+});
+
+test("VALUE/NEAR list показывает информативный двухстрочный mobile summary",()=>{
+  const fixture=pricedCard({home:"Barcelona",away:"Rayo Vallecano",utcDate:"2026-08-31T19:30:00Z",best:{...pricedCard().best,market:"OU",label:"ТМ 3.25",line:3.25,odds:2.52,probability:.62,edge:12.2,fds:48}});
+  const text=listText("NEAR",[fixture]);
+  assert.match(text,/Barcelona — Rayo Vallecano<\/b> · 31\.08 22:30\nТМ 3\.25 @2\.52 · Model 62% · Edge 12\.2 · FDS 48/);
+  const button=listKeyboard([fixture]).inline_keyboard[0][0];
+  assert.equal(button.callback_data,"card:priced");
+  assert.doesNotMatch(button.text,/\n/);
 });
 
 test("WAIT и NO_BET не выдаются как ставка",()=>{
