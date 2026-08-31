@@ -4,11 +4,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
-const required=["TELEGRAM_BOT_TOKEN","FOOTBALL_DATA_TOKEN","API_FOOTBALL_KEY"];
-const market=["THE_ODDS_API_KEY","ODDS_API_IO_KEY"];
+const required=["TELEGRAM_BOT_TOKEN","FOOTBALL_DATA_TOKEN","THE_ODDS_API_KEY"];
+const optional=["API_FOOTBALL_KEY","ODDS_API_IO_KEY"];
 let failed=false;
 for(const name of required){const ok=Boolean(process.env[name]?.trim());console.log(`${name}: ${ok?"CONFIGURED":"MISSING"}`);if(!ok)failed=true;}
-for(const name of market)console.log(`${name}: ${process.env[name]?.trim()?"CONFIGURED":"OPTIONAL/MISSING"}`);
+for(const name of optional)console.log(`${name}: ${process.env[name]?.trim()?"CONFIGURED":"OPTIONAL/MISSING"}`);
 const dataDir=path.join(root,"data");
 try{fs.mkdirSync(dataDir,{recursive:true});fs.accessSync(dataDir,fs.constants.R_OK|fs.constants.W_OK);console.log("DATA_DIR: OK");}catch{console.log("DATA_DIR: ERROR");failed=true;}
 await import("../src/connectors/odds.js");
