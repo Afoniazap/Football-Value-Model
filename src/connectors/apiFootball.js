@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { computeBenchmark } from "./odds.js";
 
 const BASE = "https://v3.football.api-sports.io";
 const DAY_MS = 86_400_000;
@@ -335,6 +336,7 @@ function normalizeOddsRow(row){
   return {
     bookmakers:books,
     best,
+    benchmark: computeBenchmark(books, null, null),
     agreement:null
   };
 }

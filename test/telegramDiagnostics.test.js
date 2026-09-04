@@ -141,3 +141,10 @@ test("экран статистики компактен и показывает
   assert.match(text,/80\/300/);assert.match(text,/Accuracy: <b>55\.0%/);assert.ok(text.length<4096);
   assert.doesNotMatch(text,/<60%/);
 });
+
+test("экран статистики разделяет VALUE и NEAR market ROI",()=>{
+  const text=statisticsText({}, {categories:{VALUE:{predictions:5,completed:4,roi:.125},NEAR:{predictions:8,completed:6,roi:-.05}},byMarket:[{market:"AH",predictions:3,completed:2,roi:.1}]});
+  assert.match(text,/VALUE: 4\/5 · ROI 12\.5%/);
+  assert.match(text,/NEAR: 6\/8 · ROI -5\.0%/);
+  assert.match(text,/AH: 2\/3 · ROI 10\.0%/);
+});

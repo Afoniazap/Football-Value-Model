@@ -64,7 +64,7 @@ export function dashboardKeyboard(state) {
   ]);
 }
 
-export function statisticsText(statistics={}){
+export function statisticsText(statistics={},marketStatistics={}){
   const pct=value=>Number.isFinite(value)?`${(value*100).toFixed(1)}%`:"N/A";
   const num=value=>Number.isFinite(value)?Number(value).toFixed(3):"N/A";
   const categories=statistics.categoryCounts||{};
@@ -88,6 +88,9 @@ export function statisticsText(statistics={}){
     ...((statistics.leagues||[]).slice(0,8).map(row=>`${esc(row.name)}: ${row.completed}/${row.predictions} · Acc ${pct(row.accuracy)}`)),
     "","<b>По вероятности</b>",
     ...((statistics.bands||[]).map(row=>`${esc(row.name)}: ${row.completed}/${row.predictions} · Acc ${pct(row.accuracy)}`)),
+    "","<b>Рыночные ставки (отдельный shadow-журнал)</b>",
+    ...(["VALUE","NEAR"].map(category=>{const row=marketStatistics.categories?.[category]||{};return `${category}: ${row.completed||0}/${row.predictions||0} · ROI ${Number.isFinite(row.roi)?`${(row.roi*100).toFixed(1)}%`:"N/A"}`;})),
+    ...((marketStatistics.byMarket||[]).map(row=>`${esc(row.market)}: ${row.completed}/${row.predictions} · ROI ${Number.isFinite(row.roi)?`${(row.roi*100).toFixed(1)}%`:"N/A"}`)),
     "","Статистика считается только по реальным завершённым матчам."
   ].join("\n");
 }

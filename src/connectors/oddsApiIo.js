@@ -28,19 +28,24 @@ function match(fixture,events){
   }).filter(x=>x.home>=.62&&x.away>=.62&&x.time>0).sort((a,b)=>b.score-a.score)[0]||null;
 }
 function marketKey(name=""){const n=String(name).toLowerCase();if(["ml","moneyline","moneyline_3way","match winner","1x2","h2h"].includes(n))return"h2h";if(n.includes("handicap")||n==="spread")return"spreads";if(n.includes("total")||n.includes("over/under"))return"totals";return null;}
+function marketPoint(row){
+  for(const value of [row.point,row.hdp,row.line]){if(value===null||value===undefined||value==="")continue;const point=Number(value);if(Number.isFinite(point))return point;}
+  return null;
+}
 function normalizeMarket(raw,home,away){
   const key=marketKey(raw.key||raw.name||raw.market||raw.market_type);if(!key)return null;
   const outcomes=[];
   for(const row of raw.outcomes||raw.odds||[]){
-    if(Number.isFinite(Number(row.home)))outcomes.push({name:home,price:Number(row.home),point:row.line});
+    const point=marketPoint(row),lineRequired=key==="spreads"||key==="totals";
+    if(Number.isFinite(Number(row.home))&&(!lineRequired||point!==null))outcomes.push({name:home,price:Number(row.home),point:key==="spreads"?point:undefined});
     if(Number.isFinite(Number(row.draw)))outcomes.push({name:"Draw",price:Number(row.draw),point:row.line});
-    if(Number.isFinite(Number(row.away)))outcomes.push({name:away,price:Number(row.away),point:row.line});
-    if(Number.isFinite(Number(row.over)))outcomes.push({name:"Over",price:Number(row.over),point:row.line});
-    if(Number.isFinite(Number(row.under)))outcomes.push({name:"Under",price:Number(row.under),point:row.line});
+    if(Number.isFinite(Number(row.away))&&(!lineRequired||point!==null))outcomes.push({name:away,price:Number(row.away),point:key==="spreads"?-point:undefined});
+    if(Number.isFinite(Number(row.over))&&point!==null)outcomes.push({name:"Over",price:Number(row.over),point});
+    if(Number.isFinite(Number(row.under))&&point!==null)outcomes.push({name:"Under",price:Number(row.under),point});
     const price=Number(row.price??row.odds_decimal??row.decimal??row.odd),label=String(row.name||row.selection||row.side||"");
-    if(label&&Number.isFinite(price)){
+    if(label&&Number.isFinite(price)&&(!lineRequired||point!==null)){
       const name=/^(draw|x)$/i.test(label)?"Draw":/^(home|1)$/i.test(label)?home:/^(away|2)$/i.test(label)?away:label;
-      outcomes.push({name,price,point:row.point??row.line});
+      outcomes.push({name,price,point:lineRequired?point:undefined});
     }
   }
   return outcomes.length?{key,outcomes}:null;

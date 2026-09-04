@@ -97,6 +97,32 @@ test("per-fixture diagnostics distinguish missing event from missing odds",async
   assert.equal(result.perFixture.missing.reason,"EVENT_NOT_FOUND");
 });
 
+test("odds-api.io normalizes hdp, point and line without inventing missing lines",async()=>{
+  const request=async url=>url.pathname.endsWith("/events")
+    ?response([{id:11,home:"Alpha",away:"Beta",date:"2026-08-26T18:00:00Z"}])
+    :response([{eventId:11,bookmakers:{book:[
+      {name:"spread",odds:[{hdp:-1.5,home:2.1,away:1.8},{point:1.5,home:1.91,away:1.99},{line:-.75,home:2.2,away:1.7},{hdp:.25,home:2.05,away:1.85},{point:0,home:1.95,away:1.95},{line:null,home:7,away:7}]},
+      {name:"totals",odds:[{line:2.5,over:1.91,under:1.99},{hdp:3,over:2.2,under:1.7},{point:3.25,over:2.1,under:1.8},{over:9,under:9}]}
+    ]}}]);
+  const result=await getOddsApiIoMarkets({apiKey:"secret",fixtures:[{id:"lines",competitionCode:"FL1",home:"Alpha",away:"Beta",utcDate:"2026-08-26T18:00:00Z"}],cacheDir:fs.mkdtempSync(path.join(os.tmpdir(),"fvm-odds-lines-")),request});
+  const market=extractMarkets(result.byFixtureId.lines);
+  assert.equal(market.best.spreads["Alpha|-1.5"].odds,2.1);
+  assert.equal(market.best.spreads["Beta|1.5"].odds,1.8);
+  assert.equal(market.best.spreads["Alpha|1.5"].odds,1.91);
+  assert.equal(market.best.spreads["Beta|-1.5"].odds,1.99);
+  assert.equal(market.best.spreads["Alpha|-0.75"].odds,2.2);
+  assert.equal(market.best.spreads["Beta|0.75"].odds,1.7);
+  assert.equal(market.best.spreads["Alpha|0.25"].odds,2.05);
+  assert.equal(market.best.spreads["Beta|-0.25"].odds,1.85);
+  assert.equal(market.best.spreads["Alpha|0"].odds,1.95);
+  assert.equal(market.best.spreads["Beta|0"].odds,1.95);
+  assert.equal(market.best.totals["Over|2.5"].odds,1.91);
+  assert.equal(market.best.totals["Under|3"].odds,1.7);
+  assert.equal(market.best.totals["Over|3.25"].odds,2.1);
+  assert.equal(Object.keys(market.best.spreads).some(key=>key.includes("undefined")),false);
+  assert.equal(Object.keys(market.best.totals).some(key=>key.includes("undefined")),false);
+});
+
 test("odds-api.io uses verified league slugs for added competition mappings",async t=>{
   const mappings={
     ELC:"england-championship",

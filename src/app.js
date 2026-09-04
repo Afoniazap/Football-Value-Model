@@ -13,6 +13,7 @@ import { appendLocalHistory, buildLocalHistoryContext, loadRawLocalHistory, merg
 import { backfillFromProviderCaches } from "./history/cacheBackfill.js";
 import { discoverFixtures } from "./fixtures/discovery.js";
 import { loadPredictionStatistics, updatePredictionHistory } from "./statistics/predictionHistory.js";
+import { loadMarketBetStatistics, updateMarketBetHistory } from "./statistics/marketBetHistory.js";
 import { auditMarketSnapshots, enforceMarketFreshness, resolveMarketSnapshots } from "./markets/marketSnapshots.js";
 import { databaseStats, getTeamLastMatches, hasSourceDate, importHistoryMatches, loadAllHistory, openHistoryDatabase } from "./history/sqliteHistory.js";
 import { completedUtcDates } from "./history/harvestDates.js";
@@ -27,6 +28,7 @@ configureFootballData({cacheDir:path.join(DATA,"football-data-cache")});
 const HISTORY_FILE=path.join(DATA,"history","fixtures.jsonl");
 const LEGACY_HISTORY_FILE=path.join(DATA,"history.json");
 const PREDICTION_HISTORY_FILE=path.join(DATA,"statistics","predictions.jsonl");
+const MARKET_BET_HISTORY_FILE=path.join(DATA,"statistics","market-bets.jsonl");
 const DUAL_SHADOW_HISTORY_FILE=path.join(DATA,"statistics","dual-shadow.jsonl");
 const MARKET_SNAPSHOT_FILE=path.join(DATA,"market-cache","snapshots.json");
 const HISTORY_DB_FILE=path.join(DATA,"history","football.sqlite");
@@ -80,6 +82,7 @@ function loadSavedState(){
 }
 let state=loadSavedState();
 state.statistics=loadPredictionStatistics(PREDICTION_HISTORY_FILE);
+state.marketStatistics=loadMarketBetStatistics(MARKET_BET_HISTORY_FILE);
 state.shadowStatistics=loadDualShadowStatistics(DUAL_SHADOW_HISTORY_FILE);
 
 async function tg(method,body={}){
@@ -384,6 +387,7 @@ async function refresh(){
     const storageStarted=Date.now();
     const completedHistory=loadAllHistory(historyDatabase),storedAt=new Date().toISOString();
     state.statistics=updatePredictionHistory(PREDICTION_HISTORY_FILE,state.results,completedHistory,storedAt);
+    state.marketStatistics=updateMarketBetHistory(MARKET_BET_HISTORY_FILE,state.results,completedHistory,storedAt);
     state.shadowStatistics=updateDualShadowHistory(DUAL_SHADOW_HISTORY_FILE,state.results,completedHistory,storedAt);
     state.providers.apiFootball=getApiFootballTelemetry(env.REFRESH_MINUTES||30);
     if(state.providers.history&&historyDatabase){
@@ -419,7 +423,7 @@ async function callback(q){
   if(q.data==="dashboard")return dashboard(id,q.message.message_id);
   if(q.data==="refresh"){await refresh();return dashboard(id,q.message.message_id)}
   if(q.data==="pipeline")return tg("sendMessage",{chat_id:id,text:`⚙️ <b>Pipeline</b>\n\n${state.stage}\n\n✅ Data Integrity\n✅ Classification\n✅ Team Strength\n✅ Form\n✅ SCI\n✅ Consensus\n✅ Market Value\n✅ Risk Gates\n✅ Recommendation`,parse_mode:"HTML",reply_markup:backKeyboard()});
-  if(q.data==="statistics")return tg("sendMessage",{chat_id:id,text:statisticsText(state.statistics),parse_mode:"HTML",reply_markup:backKeyboard()});
+  if(q.data==="statistics")return tg("sendMessage",{chat_id:id,text:statisticsText(state.statistics,state.marketStatistics),parse_mode:"HTML",reply_markup:backKeyboard()});
   if(q.data==="shadow:stats")return tg("sendMessage",{chat_id:id,text:shadowStatisticsText(state.shadowStatistics),parse_mode:"HTML",reply_markup:backKeyboard()});
   if(q.data.startsWith("shadow:match:")){
     const x=state.results.find(y=>y.id===q.data.slice("shadow:match:".length));if(!x)return;
@@ -459,7 +463,7 @@ async function message(m){
   if(t==="/start"||t==="/dashboard")return dashboard(id);
   if(t==="/refresh"){await tg("sendMessage",{chat_id:id,text:"Запущен полный анализ FVM..."});await refresh();return dashboard(id)}
   if(t==="/id")return tg("sendMessage",{chat_id:id,text:`Ваш chat_id: <code>${id}</code>`,parse_mode:"HTML"});
-  if(t==="/stats")return tg("sendMessage",{chat_id:id,text:statisticsText(state.statistics),parse_mode:"HTML",reply_markup:backKeyboard()});
+  if(t==="/stats")return tg("sendMessage",{chat_id:id,text:statisticsText(state.statistics,state.marketStatistics),parse_mode:"HTML",reply_markup:backKeyboard()});
   return tg("sendMessage",{chat_id:id,text:"Команды: /start /refresh /stats /id"});
 }
 async function main(){

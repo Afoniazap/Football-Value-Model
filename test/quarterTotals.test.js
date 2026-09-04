@@ -22,7 +22,7 @@ for (const [side, line, cases] of outcomeCases) {
 }
 
 function totalsOdds(line, overOdds, underOdds) {
-  return { best: { h2h: {}, spreads: {}, totals: {
+  return { bookmakers:[{name:"Benchmark",h2h:{},spreads:[],totals:[{name:"Over",point:line,odds:1.9},{name:"Under",point:line,odds:1.9}]}],best: { h2h: {}, spreads: {}, totals: {
     [`Over|${line}`]: { name: "Over", point: line, odds: overOdds, bookmaker: "Book" },
     [`Under|${line}`]: { name: "Under", point: line, odds: underOdds, bookmaker: "Book" }
   } } };

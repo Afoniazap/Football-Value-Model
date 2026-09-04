@@ -18,7 +18,7 @@ for (const [line, cases] of outcomeCases) {
 }
 
 function oddsFor(line, homeOdds = 2.2, awayOdds = 2) {
-  return { best: { h2h: {}, totals: {}, spreads: {
+  return { bookmakers:[{name:"Benchmark",h2h:{},totals:[],spreads:[{name:"Alpha",point:line,odds:1.9},{name:"Beta",point:-line,odds:1.9}]}],best: { h2h: {}, totals: {}, spreads: {
     [`Alpha|${line}`]: { name: "Alpha", point: line, odds: homeOdds, bookmaker: "Book" },
     [`Beta|${-line}`]: { name: "Beta", point: -line, odds: awayOdds, bookmaker: "Book" }
   } } };
@@ -46,7 +46,7 @@ test("quarter-line AH EV, fair odds and edge use stake-weighted settlement", () 
   assert.ok(Math.abs(result.ev - (-8)) < 1e-10);
   assert.ok(Math.abs(result.fairOdds - (1 + 0.5 / 0.35)) < 1e-10);
   assert.ok(Math.abs(result.probability - (0.35 / 0.85)) < 1e-10);
-  const marketFair = (1 / 2.2) / ((1 / 2.2) + (1 / 2));
+  const marketFair = 0.5;
   assert.ok(Math.abs(result.edge - ((0.35 / 0.85 - marketFair) * 100)) < 1e-10);
 });
 
@@ -90,7 +90,7 @@ test("non-AH market calculations retain exact formulas", () => {
     { h: 0, a: 0, p: 0.3 },
     { h: 0, a: 1, p: 0.3 }
   ];
-  const odds = { best: {
+  const odds = { bookmakers:[{name:"Book",h2h:{home:2.4,draw:3.2,away:3.1},totals:[{name:"Over",point:.5,odds:1.5},{name:"Under",point:.5,odds:2.8}],spreads:[]}],best: {
     h2h: { home: { odds: 2.4, bookmaker: "Book" }, draw: { odds: 3.2, bookmaker: "Book" }, away: { odds: 3.1, bookmaker: "Book" } },
     totals: { "Over|0.5": { name: "Over", point: 0.5, odds: 1.5, bookmaker: "Book" }, "Under|0.5": { name: "Under", point: 0.5, odds: 2.8, bookmaker: "Book" } },
     spreads: {}
