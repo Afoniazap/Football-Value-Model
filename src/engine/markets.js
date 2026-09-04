@@ -1,30 +1,8 @@
 import { removeMarginThreeWay, removeMarginTwoWay, clamp } from "./utils.js";
+import { computeBenchmark } from "../connectors/odds.js";
 
 function probabilityFromMatrix(matrix, predicate) {
   return matrix.filter(predicate).reduce((s,x)=>s+x.p,0);
-}
-
-// Fair probabilities come from one complete bookmaker market. The executable
-// price remains the best available price and is deliberately kept separate.
-function coherentMarket(candidates){
-  return candidates.filter(row=>row.odds.every(odd=>Number.isFinite(odd)&&odd>1))
-    .map(row=>({...row,overround:row.odds.reduce((sum,odd)=>sum+1/odd,0)-1}))
-    .filter(row=>row.overround>=-1e-9)
-    .sort((a,b)=>a.overround-b.overround||String(a.bookmaker).localeCompare(String(b.bookmaker)))[0]||null;
-}
-function sameBookFallback(rows){const names=new Set(rows.map(row=>row?.bookmaker));return names.size===1&&rows.every(Boolean)?[{name:rows[0].bookmaker}]:[];}
-function benchmarkThreeWay(books,best){
-  const source=books?.length?books:sameBookFallback([best.home,best.draw,best.away]).map(book=>({...book,h2h:{home:best.home.odds,draw:best.draw.odds,away:best.away.odds}}));
-  return coherentMarket(source.map(book=>({bookmaker:book.name,odds:[book.h2h?.home,book.h2h?.draw,book.h2h?.away]})));
-}
-function benchmarkTotal(books,line,over,under){
-  const source=books?.length?books:sameBookFallback([over,under]).map(book=>({...book,totals:[{name:"Over",point:line,odds:over.odds},{name:"Under",point:line,odds:under.odds}]}));
-  return coherentMarket(source.map(book=>{const overRow=book.totals?.find(row=>row.name==="Over"&&row.point===line),underRow=book.totals?.find(row=>row.name==="Under"&&row.point===line);return {bookmaker:book.name,odds:[overRow?.odds,underRow?.odds]};}));
-}
-function benchmarkHandicap(books,fixture,side,line,selectedBest,oppositeBest){
-  const name=side==="home"?fixture.home:fixture.away,opposite=side==="home"?fixture.away:fixture.home;
-  const source=books?.length?books:sameBookFallback([selectedBest,oppositeBest]).map(book=>({...book,spreads:[{name,point:line,odds:selectedBest.odds},{name:opposite,point:-line,odds:oppositeBest.odds}]}));
-  return coherentMarket(source.map(book=>{const selected=book.spreads?.find(row=>row.name===name&&row.point===line),other=book.spreads?.find(row=>row.name===opposite&&row.point===-line);return {bookmaker:book.name,odds:[selected?.odds,other?.odds]};}));
 }
 
 export function asianSettlementOutcome(homeGoals, awayGoals, side, line) {
@@ -93,16 +71,18 @@ export function evaluateMarkets(fixture, teamStrength, consensus, oddsData) {
   const matrix = teamStrength.scoreMatrix;
   const results = [];
   const p = consensus.probability;
+  const benchmark=oddsData.benchmark||computeBenchmark(oddsData.bookmakers||[],fixture.home,fixture.away);
 
   const h2h = oddsData.best.h2h;
-  const h2hBenchmark=benchmarkThreeWay(oddsData.bookmakers,h2h);
+  const h2hBenchmark=benchmark.h2h;
   if (h2h.home && h2h.draw && h2h.away && h2hBenchmark) {
-    const fair = removeMarginThreeWay(...h2hBenchmark.odds);
-    const meta=(best,benchmarkOdds)=>({market:"1X2",bookmaker:best.bookmaker,bestBookmaker:best.bookmaker,bestOdds:best.odds,benchmarkBookmaker:h2hBenchmark.bookmaker,benchmarkOdds,benchmarkMarketOdds:{home:h2hBenchmark.odds[0],draw:h2hBenchmark.odds[1],away:h2hBenchmark.odds[2]},benchmarkOverround:h2hBenchmark.overround});
-    results.push(evaluateTwoWay("П1",p.home,h2h.home.odds,fair.home,meta(h2h.home,h2hBenchmark.odds[0])));
-    results.push(evaluateTwoWay("X",p.draw,h2h.draw.odds,fair.draw,meta(h2h.draw,h2hBenchmark.odds[1])));
-    results.push(evaluateTwoWay("П2",p.away,h2h.away.odds,fair.away,meta(h2h.away,h2hBenchmark.odds[2])));
-
+    const fair = removeMarginThreeWay(h2hBenchmark.home,h2hBenchmark.draw,h2hBenchmark.away);
+    const meta=(best,benchmarkOdds)=>({market:"1X2",bookmaker:best.bookmaker,bestBookmaker:best.bookmaker,bestOdds:best.odds,benchmarkBookmaker:h2hBenchmark.bookmaker,benchmarkOdds,benchmarkMarketOdds:{home:h2hBenchmark.home,draw:h2hBenchmark.draw,away:h2hBenchmark.away},benchmarkOverround:h2hBenchmark.overround});
+    results.push(evaluateTwoWay("П1",p.home,h2h.home.odds,fair.home,meta(h2h.home,h2hBenchmark.home)));
+    results.push(evaluateTwoWay("X",p.draw,h2h.draw.odds,fair.draw,meta(h2h.draw,h2hBenchmark.draw)));
+    results.push(evaluateTwoWay("П2",p.away,h2h.away.odds,fair.away,meta(h2h.away,h2hBenchmark.away)));
+  }
+  if (h2h.home && h2h.draw && h2h.away) {
     const dnbHomeProb = p.home/(p.home+p.away);
     const dnbAwayProb = p.away/(p.home+p.away);
     // DNB fair odds shown even when bookmaker DNB is unavailable.
@@ -114,14 +94,14 @@ export function evaluateMarkets(fixture, teamStrength, consensus, oddsData) {
   const points = [...new Set(Object.values(totals).map(x=>x.point))];
   for (const line of points) {
     const over = totals[`Over|${line}`], under = totals[`Under|${line}`];
-    const benchmark=benchmarkTotal(oddsData.bookmakers,line,over,under);
-    if (!over || !under || !benchmark) continue;
-    const [fairOver,fairUnder] = removeMarginTwoWay(...benchmark.odds);
+    const lineBenchmark=benchmark.totals[line];
+    if (!over || !under || !lineBenchmark) continue;
+    const [fairOver,fairUnder] = removeMarginTwoWay(lineBenchmark.over,lineBenchmark.under);
     const pOver = probabilityFromMatrix(matrix,x=>x.h+x.a>line);
     const pUnder = probabilityFromMatrix(matrix,x=>x.h+x.a<line);
-    const shared={market:"OU",line,benchmarkBookmaker:benchmark.bookmaker,benchmarkMarketOdds:{over:benchmark.odds[0],under:benchmark.odds[1]},benchmarkOverround:benchmark.overround};
-    const overMeta={...shared,bookmaker:over.bookmaker,bestBookmaker:over.bookmaker,bestOdds:over.odds,benchmarkOdds:benchmark.odds[0]};
-    const underMeta={...shared,bookmaker:under.bookmaker,bestBookmaker:under.bookmaker,bestOdds:under.odds,benchmarkOdds:benchmark.odds[1]};
+    const shared={market:"OU",line,benchmarkBookmaker:lineBenchmark.bookmaker,benchmarkMarketOdds:{over:lineBenchmark.over,under:lineBenchmark.under},benchmarkOverround:lineBenchmark.overround};
+    const overMeta={...shared,bookmaker:over.bookmaker,bestBookmaker:over.bookmaker,bestOdds:over.odds,benchmarkOdds:lineBenchmark.over};
+    const underMeta={...shared,bookmaker:under.bookmaker,bestBookmaker:under.bookmaker,bestOdds:under.odds,benchmarkOdds:lineBenchmark.under};
     if (Number.isInteger(line*2)) {
       results.push(evaluateTwoWay(`ТБ ${line}`,pOver,over.odds,fairOver,overMeta));
       results.push(evaluateTwoWay(`ТМ ${line}`,pUnder,under.odds,fairUnder,underMeta));
@@ -140,13 +120,14 @@ export function evaluateMarkets(fixture, teamStrength, consensus, oddsData) {
     if (!side) continue;
     const oppositeName = side === "home" ? fixture.away : fixture.home;
     const opposite = spreads[`${oppositeName}|${-item.point}`];
-    const benchmark=benchmarkHandicap(oddsData.bookmakers,fixture,side,item.point,item,opposite);
-    if (!opposite || !benchmark) continue;
-    const [fairThis] = removeMarginTwoWay(...benchmark.odds);
+    const lineBenchmark=benchmark.spreads[side==="home"?item.point:-item.point];
+    if (!opposite || !lineBenchmark) continue;
+    const benchmarkOdds=side==="home"?[lineBenchmark.home,lineBenchmark.away]:[lineBenchmark.away,lineBenchmark.home];
+    const [fairThis] = removeMarginTwoWay(...benchmarkOdds);
     const settlement = asianSettlement(matrix,side,item.point);
     const effectiveProbability = settlement.win + settlement.push*0.5;
     const label=`${side==="home"?"Ф1":"Ф2"}(${item.point>0?"+":""}${item.point})`;
-    const meta={market:"AH",bookmaker:item.bookmaker,bestBookmaker:item.bookmaker,bestOdds:item.odds,line:item.point,settlement,benchmarkBookmaker:benchmark.bookmaker,benchmarkOdds:benchmark.odds[0],benchmarkMarketOdds:{selection:benchmark.odds[0],opposite:benchmark.odds[1]},benchmarkOverround:benchmark.overround};
+    const meta={market:"AH",bookmaker:item.bookmaker,bestBookmaker:item.bookmaker,bestOdds:item.odds,line:item.point,settlement,benchmarkBookmaker:lineBenchmark.bookmaker,benchmarkOdds:benchmarkOdds[0],benchmarkMarketOdds:{selection:benchmarkOdds[0],opposite:benchmarkOdds[1]},benchmarkOverround:lineBenchmark.overround};
     results.push(Number.isInteger(item.point*2)
       ? evaluateTwoWay(label,effectiveProbability,item.odds,fairThis,meta)
       : evaluateQuarterSettlement(label,settlement,item.odds,fairThis,meta));

@@ -21,3 +21,17 @@ test("fair benchmark is one lowest-overround bookmaker while executable odds sta
   const expected=(1/2)/(1/2+1/3.5+1/4);
   assert.ok(Math.abs(home.marketFair-expected)<1e-12);
 });
+
+test("engine consumes the canonical precomputed benchmark without a second implementation",()=>{
+  const canonical={h2h:{bookmaker:"Canonical",home:1.8,draw:4,away:5,overround:1/1.8+1/4+1/5-1},totals:{},spreads:{}};
+  const rows=evaluateMarkets({home:"Alpha",away:"Beta"},{scoreMatrix:matrix},{probability:{home:.5,draw:.2,away:.3}},{bookmakers:books,best,benchmark:canonical});
+  const home=rows.find(row=>row.label==="П1");
+  assert.equal(home.benchmarkBookmaker,"Canonical");
+  assert.ok(Math.abs(home.marketFair-((1/1.8)/(1/1.8+1/4+1/5)))<1e-12);
+});
+
+test("DNB remains available when complete H2H exists but no coherent benchmark exists",()=>{
+  const rows=evaluateMarkets({home:"Alpha",away:"Beta"},{scoreMatrix:matrix},{probability:{home:.5,draw:.2,away:.3}},{bookmakers:[],best:{h2h:best.h2h,totals:{},spreads:{}},benchmark:{h2h:null,totals:{},spreads:{}}});
+  assert.deepEqual(rows.filter(row=>row.market==="DNB").map(row=>row.label).sort(),["П1 DNB","П2 DNB"]);
+  assert.equal(rows.some(row=>row.market==="1X2"),false);
+});

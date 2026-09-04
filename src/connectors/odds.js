@@ -91,7 +91,7 @@ export function computeBenchmark(books, homeTeamName, awayTeamName) {
   const benchmark = { h2h: null, totals: {}, spreads: {} };
 
   for (const b of books) {
-    if (Number.isFinite(b.h2h.home) && Number.isFinite(b.h2h.draw) && Number.isFinite(b.h2h.away)) {
+    if (Number.isFinite(b.h2h?.home) && Number.isFinite(b.h2h?.draw) && Number.isFinite(b.h2h?.away)) {
       const over = overround([b.h2h.home, b.h2h.draw, b.h2h.away]);
       if (preferredBenchmark(benchmark.h2h,over,b.name)) {
         benchmark.h2h = { bookmaker: b.name, home: b.h2h.home, draw: b.h2h.draw, away: b.h2h.away, overround: over };
