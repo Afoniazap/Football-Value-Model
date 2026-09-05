@@ -146,6 +146,6 @@ export function consensus(models) {
     const values = valid.map(m=>m.probability[key]);
     return Math.max(...values)-Math.min(...values);
   });
-  const agreement = Math.round(clamp(100 - Math.max(...ranges)*260, 0, 100));
-  return { probability:p, agreement, models:valid };
+  const agreement = valid.length < 2 ? null : Math.round(clamp(100 - Math.max(...ranges)*260, 0, 100));
+  return { probability:p, agreement, modelCoverage:valid.length/2, modelsAvailable:valid.length, models:valid };
 }

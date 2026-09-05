@@ -140,8 +140,10 @@ export function evaluateMarkets(fixture, teamStrength, consensus, oddsData) {
 }
 
 export function decisionMetrics(candidate, dataQuality, consensusScore, stability, marketAgreement, redFlags=[]) {
+  const consensusContribution=Number.isFinite(consensusScore)?consensusScore*0.25:0;
+  const stabilityContribution=Number.isFinite(stability)?stability*0.20:0;
   const confidence = Math.round(clamp(
-    dataQuality*0.30 + consensusScore*0.25 + stability*0.20 +
+    dataQuality*0.30 + consensusContribution + stabilityContribution +
     (marketAgreement ?? 60)*0.10 + 15 - redFlags.length*6, 0, 100
   ));
   const rawFds = Math.round(clamp(
@@ -164,8 +166,8 @@ export function decisionMetrics(candidate, dataQuality, consensusScore, stabilit
     fdsCap,
     confidenceParts: {
       dataQuality: Number((dataQuality*0.30).toFixed(1)),
-      consensus: Number((consensusScore*0.25).toFixed(1)),
-      stability: Number((stability*0.20).toFixed(1)),
+      consensus: Number(consensusContribution.toFixed(1)),
+      stability: Number(stabilityContribution.toFixed(1)),
       marketAgreement: Number(((marketAgreement ?? 60)*0.10).toFixed(1)),
       base: 15,
       redFlagPenalty: redFlags.length*6

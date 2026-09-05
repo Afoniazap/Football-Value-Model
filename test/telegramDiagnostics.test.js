@@ -69,7 +69,7 @@ test("WAIT card keeps real model metrics visible without market odds",()=>{
   const text=cardText({id:"1",home:"A",away:"B",competition:"Ligue 1",utcDate:"2026-08-26T18:00:00Z",category:"WAIT",reason:"Нет рыночной линии",best:null,consensusProbability:{home:.51,draw:.27,away:.22},contextDiagnostic:{status:"OK",localHistory:{homeMatches:9,awayMatches:7}},dataQuality:54,stability:71,consensusScore:79,redFlags:["Нет рыночной линии"]});
   assert.match(text,/DQ <b>54\/100<\/b>/);
   assert.match(text,/Stability <b>71\/100<\/b>/);
-  assert.match(text,/Consensus <b>79\/100<\/b>/);
+  assert.match(text,/Model agreement: <b>79\/100<\/b>/);
   assert.match(text,/Confidence <b>N\/A — нет цены<\/b>/);
   assert.match(text,/🎯 <b>Модель:<\/b> <b>П1<\/b> · P <b>51%<\/b> · Кэф N\/A/);
   assert.match(text,/💰 Fair <b>1\.96<\/b> · Edge N\/A · EV N\/A/);

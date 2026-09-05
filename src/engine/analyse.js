@@ -37,7 +37,8 @@ export function analyseFixture(fixture, context, oddsData, config, squadData=nul
   if (!strength || !cons) {
     return {
       ...fixture, category:"WAIT", reason:"Недостаточно реальных данных для независимой модели.",
-      dataQuality, dataQualityV2, stability:35, consensusScore:0, sci, markets:[],
+      dataQuality, dataQualityV2, stability:null, consensusScore:null, modelAgreement:null,
+      modelCoverage:0, modelsAvailable:0, sci, markets:[],
       marketAvailable:!!oddsData, marketSource:oddsData?.source || null,
       redFlags:["Недостаточно данных модели",...(!oddsData?["Нет рыночной линии"]:[])]
     };
@@ -45,7 +46,9 @@ export function analyseFixture(fixture, context, oddsData, config, squadData=nul
 
   const {injuriesAvailable,lineupsAvailable}=dataQualityV2;
   const sciPenalty = sci.known ? Math.min(15,Math.abs(sci.differential)*0.12) : 8;
-  const stability = Math.round(clamp(cons.agreement - sciPenalty,0,100));
+  const stability = Number.isFinite(cons.agreement)
+    ? Math.round(clamp(cons.agreement - sciPenalty,0,100))
+    : null;
   const redFlags = [];
 
   if (!squadData)
@@ -61,7 +64,7 @@ export function analyseFixture(fixture, context, oddsData, config, squadData=nul
   if (!oddsData) redFlags.push("Нет рыночной линии");
   if (!sci.known) redFlags.push("SCI неполный");
   if (dataQuality < config.minDataQuality) redFlags.push("Data Quality ниже порога");
-  if (cons.agreement < 65) redFlags.push("Низкий Consensus");
+  if (Number.isFinite(cons.agreement) && cons.agreement < 65) redFlags.push("Низкий Consensus");
 
   const markets = evaluateMarkets(fixture,strength,cons,oddsData);
   const priced = markets.filter(x=>Number.isFinite(x.edge) && Number.isFinite(x.ev));
@@ -100,8 +103,10 @@ export function analyseFixture(fixture, context, oddsData, config, squadData=nul
   return {
     ...fixture, category, reason, classification:stage.classification,
     dataQuality, dataQualityV2, stability, consensusScore:cons.agreement,
+    modelAgreement:cons.agreement, modelCoverage:cons.modelCoverage, modelsAvailable:cons.modelsAvailable,
     stabilityV2: {
       consensus: cons.agreement,
+      modelAgreement: cons.agreement,
       sciPenalty: Number(sciPenalty.toFixed(1))
     },
     marketAgreement:oddsData?.agreement ?? null,

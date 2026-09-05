@@ -2,6 +2,10 @@ import { localDate } from "../engine/utils.js";
 
 function esc(s="") { return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
 function kb(rows) { return {inline_keyboard:rows}; }
+function modelsAvailable(x){return Number.isInteger(x.modelsAvailable)?x.modelsAvailable:(x.models||[]).length;}
+function modelCoverageText(x){return `${modelsAvailable(x)}/2`;}
+function modelAgreementText(x){return Number.isFinite(x.modelAgreement??x.consensusScore)?`${x.modelAgreement??x.consensusScore}/100`:modelsAvailable(x)===1?"N/A — одна модель":"N/A";}
+function stabilityText(x){return Number.isFinite(x.stability)?`${x.stability}/100`:"N/A — agreement не измерим";}
 
 export function dashboardText(state) {
   const total = state.results.length;
@@ -246,8 +250,9 @@ export function cardText(x) {
   lines.push(
     "",
     `<b>Доступные метрики</b>`,
-    `DQ <b>${Number.isFinite(x.dataQuality) ? x.dataQuality+"/100" : "N/A"}</b> · Stability <b>${Number.isFinite(x.stability) ? x.stability+"/100" : "N/A"}</b>`,
-    `Consensus <b>${Number.isFinite(x.consensusScore) ? x.consensusScore+"/100" : "N/A"}</b> · Confidence <b>${Number.isFinite(b?.confidence) ? b.confidence+"/100" : x.marketAvailable ? "N/A — нет модельного кандидата" : "N/A — нет цены"}</b>`,
+    `DQ <b>${Number.isFinite(x.dataQuality) ? x.dataQuality+"/100" : "N/A"}</b> · Stability <b>${stabilityText(x)}</b>`,
+    `Model coverage: <b>${modelCoverageText(x)}</b>`,
+    `Model agreement: <b>${modelAgreementText(x)}</b> · Confidence <b>${Number.isFinite(b?.confidence) ? b.confidence+"/100" : x.marketAvailable ? "N/A — нет модельного кандидата" : "N/A — нет цены"}</b>`,
     `Risk flags <b>${Array.isArray(x.redFlags) ? x.redFlags.length : "N/A"}</b>`
   );
   if(x.marketAvailable){
@@ -395,8 +400,9 @@ export function metricText(code,x){
       `<b>📖 Метрики — ${esc(x.home)} — ${esc(x.away)}</b>`,
       "",
       `DQ: <b>${x.dataQuality}/100</b> — качество данных`,
-      `Stability: <b>${x.stability}/100</b> — устойчивость`,
-      `Consensus: <b>${x.consensusScore}/100</b> — согласие моделей`,
+      `Stability: <b>${stabilityText(x)}</b> — устойчивость`,
+      `Model coverage: <b>${modelCoverageText(x)}</b>`,
+      `Model agreement: <b>${modelAgreementText(x)}</b>`,
       `MAI: <b>${x.marketAgreement ?? "N/A"}</b> — согласие рынка`,
       `SCI: <b>${x.sci?.score ?? "N/A"}</b> — календарь/нагрузка`,
       "",
@@ -434,24 +440,27 @@ xG: ${dq.xgAvailable===false ? "N/A" : dqValue(dq.xgScore)}
 <b>Итого: ${x.dataQuality}/100</b>`,
 
     Stab:
-      `<b>Stability: ${x.stability}/100</b>
+      `<b>Stability: ${stabilityText(x)}</b>
 Устойчивость прогноза.
 
-Consensus: ${sv.consensus ?? x.consensusScore}
+Model agreement: ${modelAgreementText(x)}
+Model coverage: ${modelCoverageText(x)}
 Штраф SCI: −${sv.sciPenalty ?? "N/A"}
 
-<b>Итого: ${x.stability}/100</b>`,
+<b>Итого: ${stabilityText(x)}</b>`,
 
     Cons:
-      `<b>Consensus: ${x.consensusScore}/100</b>
+      `<b>Model agreement: ${modelAgreementText(x)}</b>
 Насколько независимые модели согласны между собой.
+
+Model coverage: ${modelCoverageText(x)}
 
 ${(x.models || []).map(m =>
   `• ${m.name}: качество ${m.quality}/100
   ${m.explanation}`
 ).join("\n")}
 
-<b>Согласие: ${x.consensusScore}/100</b>`,
+<b>Согласие: ${modelAgreementText(x)}</b>`,
 
     MAI:
       `<b>MAI: ${x.marketAgreement ?? "N/A"}</b>
@@ -513,7 +522,7 @@ Model: ${pct(b.probability)}%
       `<b>Confidence: ${b.confidence ?? "N/A"}/100</b>
 
 DQ: +${cp.dataQuality ?? "N/A"}
-Consensus: +${cp.consensus ?? "N/A"}
+Model agreement: +${cp.consensus ?? "N/A"}
 Stability: +${cp.stability ?? "N/A"}
 MAI: +${cp.marketAgreement ?? "N/A"}
 База: +${cp.base ?? 15}
