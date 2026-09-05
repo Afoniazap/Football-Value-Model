@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { appendLocalHistory, normalizeHistoryMatch } from "./localHistory.js";
+import { mapApiFootballCompetitionCode } from "../connectors/apiFootball.js";
 
 const API_FINISHED = new Set(["FT", "AET", "PEN"]);
 
@@ -25,6 +26,7 @@ function apiFootballMatch(value) {
     league: value.league?.name ?? null,
     country: value.league?.country ?? null,
     season: value.league?.season ?? null,
+    competitionCode: mapApiFootballCompetitionCode(value.league),
     homeTeam: value.teams.home,
     awayTeam: value.teams.away,
     score: { fullTime: { home: value.goals?.home, away: value.goals?.away } },

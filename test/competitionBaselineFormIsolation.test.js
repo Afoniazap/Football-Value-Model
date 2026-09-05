@@ -26,8 +26,10 @@ test("a genuine competition-wide baseline (current or previous season, all teams
     match("3",{home:"Gamma",homeId:"3",away:"Zeta",awayId:"6",playedAt:"2024-09-15T18:00:00Z"})
   ]);
 
-  const baseline=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
-  assert.equal(baseline.baselineSource,"PREVIOUS_SEASON");
+  const raw=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
+  assert.equal(raw.current,null);
+  assert.ok(raw.previous);
+  const baseline=raw.previous;
   const baselineTeamNames=baseline.standings.standings.find(s=>s.type==="TOTAL").table.map(row=>row.team.name);
   assert.deepEqual(new Set(baselineTeamNames),new Set(["Gamma","Delta","Zeta"]));
 

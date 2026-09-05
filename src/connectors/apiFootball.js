@@ -178,6 +178,34 @@ export async function findApiFootballFixture(key, fixture) {
   return bestScore>=1.45 ? best : null;
 }
 
+// Same mapping used for live fixture discovery — reused as-is (no new
+// competitions, no fuzzier matching) so historical API-Football matches get
+// the same trusted competitionCode instead of none at all.
+export function mapApiFootballCompetitionCode(league) {
+  const country = league?.country || "";
+  const name = league?.name || "";
+
+  if (name === "UEFA Champions League") return "CL";
+  if (name === "UEFA Europa League") return "EL";
+  if (name === "CONMEBOL Libertadores") return "CLI";
+  if (name === "CONMEBOL Sudamericana") return "SUD";
+  if (name === "Leagues Cup") return "LEAGUES";
+
+  if (country === "England" && name === "Premier League") return "PL";
+  if (country === "England" && name === "Championship") return "ELC";
+  if (country === "Spain" && name === "La Liga") return "PD";
+  if (country === "Germany" && name === "Bundesliga") return "BL1";
+  if (country === "Italy" && name === "Serie A") return "SA";
+  if (country === "France" && name === "Ligue 1") return "FL1";
+  if (country === "Netherlands" && name === "Eredivisie") return "DED";
+  if (country === "Portugal" && name === "Primeira Liga") return "PPL";
+  if (country === "Brazil" && name === "Serie A") return "BSA";
+  if (country === "Brazil" && name === "Serie B") return "BSB";
+  if (country === "USA" && name === "Major League Soccer") return "MLS";
+
+  return null;
+}
+
 export async function getUpcomingApiFootballMatches(key, horizonHours = 24) {
   if (!key) return [];
 
@@ -202,31 +230,6 @@ export async function getUpcomingApiFootballMatches(key, horizonHours = 24) {
   }
   if(!all.length&&lastError)throw lastError;
 
-  const competitionCode = m => {
-    const country = m?.league?.country || "";
-    const league = m?.league?.name || "";
-
-    if (league === "UEFA Champions League") return "CL";
-    if (league === "UEFA Europa League") return "EL";
-    if (league === "CONMEBOL Libertadores") return "CLI";
-    if (league === "CONMEBOL Sudamericana") return "SUD";
-    if (league === "Leagues Cup") return "LEAGUES";
-
-    if (country === "England" && league === "Premier League") return "PL";
-    if (country === "England" && league === "Championship") return "ELC";
-    if (country === "Spain" && league === "La Liga") return "PD";
-    if (country === "Germany" && league === "Bundesliga") return "BL1";
-    if (country === "Italy" && league === "Serie A") return "SA";
-    if (country === "France" && league === "Ligue 1") return "FL1";
-    if (country === "Netherlands" && league === "Eredivisie") return "DED";
-    if (country === "Portugal" && league === "Primeira Liga") return "PPL";
-    if (country === "Brazil" && league === "Serie A") return "BSA";
-    if (country === "Brazil" && league === "Serie B") return "BSB";
-    if (country === "USA" && league === "Major League Soccer") return "MLS";
-
-    return null;
-  };
-
   return all
     .filter(m => {
       const t = new Date(m?.fixture?.date);
@@ -240,7 +243,7 @@ export async function getUpcomingApiFootballMatches(key, horizonHours = 24) {
       id: String(m.fixture.id),
       apiFootballFixtureId: m.fixture.id,
       apiFootballLeagueId: m.league?.id,
-      competitionCode: competitionCode(m),
+      competitionCode: mapApiFootballCompetitionCode(m.league),
       competition: m.league?.name || "Unknown",
       country: m.league?.country || null,
       seasonStart: String(m.league?.season || ""),
@@ -523,6 +526,7 @@ export async function getFinishedFixturesForDate(key, date) {
       league: m.league?.name || null,
       country: m.league?.country || null,
       season: m.league?.season || null,
+      competitionCode: mapApiFootballCompetitionCode(m.league),
 
       homeTeam: {
         id: m.teams?.home?.id,

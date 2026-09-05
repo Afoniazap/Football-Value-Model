@@ -40,37 +40,39 @@ function standingsFrom(rows) {
 // is a genuine, if still imperfect, competition-wide sample.
 const MIN_TEAMS_FOR_GENUINE_BASELINE = 3;
 
+function tier(rows, label) {
+  const teams = new Set(rows.flatMap(r => [r.homeTeam?.id, r.awayTeam?.id]).filter(id => id != null));
+  if (teams.size < MIN_TEAMS_FOR_GENUINE_BASELINE) return null;
+  return { baselineSource: label, standings: standingsFrom(rows), baselineSample: rows.length, baselineTeams: teams.size };
+}
+
 /**
- * Tiered, unblended baseline: current season (all teams) first, then previous
- * season (all teams) only if current season has no more breadth than the
- * two-team fallback already gives, else null (caller keeps today's fallback).
- * No weighting between current/previous — that is shrinkage math, out of scope
- * here. Temporal safety is inherited from getCompetitionSeasonMatches's own
- * `kickoff < before` clause.
+ * Builds both candidate tiers independently — current season (all teams) and
+ * previous season (all teams) — without picking or blending between them.
+ * Picking happens per-fixture in pickCompetitionBaseline (below), because a
+ * tier clearing the team-count bar is not the same as it covering THIS
+ * fixture's two specific teams: a current-season tier assembled from several
+ * not-yet-identity-reconciled providers can be wide (many rows) yet still
+ * miss a given team that a cleaner, single-provider previous-season table
+ * already has. No weighting between the two tiers — that is shrinkage math,
+ * out of scope here. Temporal safety is inherited from
+ * getCompetitionSeasonMatches's own `kickoff < before` clause.
  */
-// Always returns a diagnostic object (never bare null) so callers can expose
-// sampleCurrentSeason/samplePreviousSeason even when neither tier qualifies as
-// a genuine baseline; `standings` is null in that case and the caller decides
-// the fallback (kept out of this module so it stays a pure data lookup).
 export function buildCompetitionBaseline(db, competitionCode, currentSeasonStart, before) {
   if (!competitionCode || !currentSeasonStart) {
-    return { baselineSource: "INSUFFICIENT", standings: null, baselineSample: 0, baselineTeams: 0, sampleCurrentSeason: 0, samplePreviousSeason: 0 };
+    return { current: null, previous: null, sampleCurrentSeason: 0, samplePreviousSeason: 0 };
   }
 
   const currentRows = getCompetitionSeasonMatches(db, competitionCode, currentSeasonStart, before);
-  const currentTeams = new Set(currentRows.flatMap(r => [r.homeTeam?.id, r.awayTeam?.id]).filter(id => id != null));
-
   const previousSeasonStart = Number.isFinite(Number(currentSeasonStart)) ? String(Number(currentSeasonStart) - 1) : null;
   const previousRows = previousSeasonStart ? getCompetitionSeasonMatches(db, competitionCode, previousSeasonStart, before) : [];
-  const previousTeams = new Set(previousRows.flatMap(r => [r.homeTeam?.id, r.awayTeam?.id]).filter(id => id != null));
 
-  if (currentTeams.size >= MIN_TEAMS_FOR_GENUINE_BASELINE) {
-    return { baselineSource: "CURRENT_SEASON", standings: standingsFrom(currentRows), baselineSample: currentRows.length, baselineTeams: currentTeams.size, sampleCurrentSeason: currentRows.length, samplePreviousSeason: previousRows.length };
-  }
-  if (previousTeams.size >= MIN_TEAMS_FOR_GENUINE_BASELINE) {
-    return { baselineSource: "PREVIOUS_SEASON", standings: standingsFrom(previousRows), baselineSample: previousRows.length, baselineTeams: previousTeams.size, sampleCurrentSeason: currentRows.length, samplePreviousSeason: previousRows.length };
-  }
-  return { baselineSource: "INSUFFICIENT", standings: null, baselineSample: 0, baselineTeams: 0, sampleCurrentSeason: currentRows.length, samplePreviousSeason: previousRows.length };
+  return {
+    current: tier(currentRows, "CURRENT_SEASON"),
+    previous: tier(previousRows, "PREVIOUS_SEASON"),
+    sampleCurrentSeason: currentRows.length,
+    samplePreviousSeason: previousRows.length
+  };
 }
 
 /**
@@ -86,4 +88,19 @@ export function buildCompetitionBaseline(db, competitionCode, currentSeasonStart
 export function baselineCoversFixture(alignedStandings, fixture) {
   const table = alignedStandings?.standings?.find(s => s.type === "TOTAL")?.table || [];
   return table.some(row => row.team?.id === fixture.homeId) && table.some(row => row.team?.id === fixture.awayId);
+}
+
+/**
+ * Picks whichever tier actually covers this fixture's two teams, preferring
+ * current season over previous when both do. `alignFn` is
+ * alignContextTeamIds itself (injected so this module never has to know
+ * about engine/contextIds.js's own dependency chain).
+ */
+export function pickCompetitionBaseline(baseline, fixture, alignFn) {
+  for (const candidate of [baseline?.current, baseline?.previous]) {
+    if (!candidate) continue;
+    const aligned = alignFn({ standings: candidate.standings, finished: [], scheduled: [] }, fixture);
+    if (baselineCoversFixture(aligned.standings, fixture)) return { ...candidate, standings: aligned.standings };
+  }
+  return null;
 }

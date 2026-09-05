@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openHistoryDatabase, importHistoryMatches } from "../src/history/sqliteHistory.js";
-import { buildCompetitionBaseline, baselineCoversFixture } from "../src/history/competitionBaseline.js";
+import { buildCompetitionBaseline, baselineCoversFixture, pickCompetitionBaseline } from "../src/history/competitionBaseline.js";
 import { alignContextTeamIds } from "../src/engine/contextIds.js";
 
 function tempDb(){return path.join(fs.mkdtempSync(path.join(os.tmpdir(),"fvm-baseline-")),"football.sqlite");}
@@ -17,16 +17,20 @@ function match({id,competitionCode="PL",season="2025",playedAt,home,homeId,away,
 
 function seedFourTeamSeason(db,{competitionCode="PL",season="2025",datePrefix="2025-09"}={}){
   importHistoryMatches(db,[
-    match({id:`${season}-1`,competitionCode,season,playedAt:`${datePrefix}-01T18:00:00Z`,home:"Alpha",homeId:"1",away:"Beta",awayId:"2",hg:2,ag:1}),
-    match({id:`${season}-2`,competitionCode,season,playedAt:`${datePrefix}-05T18:00:00Z`,home:"Gamma",homeId:"3",away:"Delta",awayId:"4",hg:0,ag:0}),
-    match({id:`${season}-3`,competitionCode,season,playedAt:`${datePrefix}-08T18:00:00Z`,home:"Beta",homeId:"2",away:"Gamma",awayId:"3",hg:3,ag:1})
+    match({id:`${season}-${competitionCode}-1`,competitionCode,season,playedAt:`${datePrefix}-01T18:00:00Z`,home:"Alpha",homeId:"1",away:"Beta",awayId:"2",hg:2,ag:1}),
+    match({id:`${season}-${competitionCode}-2`,competitionCode,season,playedAt:`${datePrefix}-05T18:00:00Z`,home:"Gamma",homeId:"3",away:"Delta",awayId:"4",hg:0,ag:0}),
+    match({id:`${season}-${competitionCode}-3`,competitionCode,season,playedAt:`${datePrefix}-08T18:00:00Z`,home:"Beta",homeId:"2",away:"Gamma",awayId:"3",hg:3,ag:1})
   ]);
+}
+function pick(db,code,season,before,fixture){
+  return pickCompetitionBaseline(buildCompetitionBaseline(db,code,season,before),fixture,alignContextTeamIds);
 }
 
 test("competition-wide baseline is built from all teams, not the two fixture teams",()=>{
   const db=openHistoryDatabase(tempDb());
   seedFourTeamSeason(db);
-  const baseline=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
+  const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,utcDate:"2025-09-10T16:00:00Z"};
+  const baseline=pick(db,"PL","2025","2025-09-10T00:00:00Z",fixture);
   assert.equal(baseline.baselineSource,"CURRENT_SEASON");
   const total=baseline.standings.standings.find(s=>s.type==="TOTAL").table;
   assert.equal(total.length,4,"all four teams must appear, not just two");
@@ -42,10 +46,13 @@ test("previous season is used only as a distinct fallback tier, never blended wi
   // breadth as the old two-team fallback, so the genuine previous-season
   // baseline should win instead.
   importHistoryMatches(db,[match({id:"2025-thin",competitionCode:"PL",season:"2025",playedAt:"2025-08-20T18:00:00Z",home:"Alpha",homeId:"1",away:"Beta",awayId:"2"})]);
-  const baseline=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
+  const raw=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
+  assert.equal(raw.sampleCurrentSeason,1);
+  assert.equal(raw.samplePreviousSeason,3);
+  assert.equal(raw.current,null,"two teams is no wider than the two-team fallback, so current season must not count as a genuine tier");
+  const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,utcDate:"2025-09-10T16:00:00Z"};
+  const baseline=pickCompetitionBaseline(raw,fixture,alignContextTeamIds);
   assert.equal(baseline.baselineSource,"PREVIOUS_SEASON");
-  assert.equal(baseline.sampleCurrentSeason,1);
-  assert.equal(baseline.samplePreviousSeason,3);
   const total=baseline.standings.standings.find(s=>s.type==="TOTAL").table;
   assert.equal(total.length,4);
   db.close();
@@ -56,7 +63,8 @@ test("competition isolation: one competition's baseline never includes another c
   seedFourTeamSeason(db,{competitionCode:"PL"});
   seedFourTeamSeason(db,{competitionCode:"SA",datePrefix:"2025-09"});
   importHistoryMatches(db,[match({id:"sa-extra",competitionCode:"SA",season:"2025",playedAt:"2025-09-09T18:00:00Z",home:"Zulu",homeId:"9",away:"Omega",awayId:"8"})]);
-  const pl=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
+  const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,utcDate:"2025-09-10T16:00:00Z"};
+  const pl=pick(db,"PL","2025","2025-09-10T00:00:00Z",fixture);
   const names=pl.standings.standings.find(s=>s.type==="TOTAL").table.map(row=>row.team.name);
   assert.ok(!names.includes("Zulu")&&!names.includes("Omega"),"SA-only teams must not leak into PL's baseline");
   db.close();
@@ -66,7 +74,8 @@ test("temporal safety: matches at or after the fixture kickoff are never include
   const db=openHistoryDatabase(tempDb());
   seedFourTeamSeason(db);
   importHistoryMatches(db,[match({id:"future",competitionCode:"PL",season:"2025",playedAt:"2025-09-20T18:00:00Z",home:"Alpha",homeId:"1",away:"Delta",awayId:"4",hg:9,ag:0})]);
-  const baseline=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
+  const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,utcDate:"2025-09-10T16:00:00Z"};
+  const baseline=pick(db,"PL","2025","2025-09-10T00:00:00Z",fixture);
   const alpha=baseline.standings.standings.find(s=>s.type==="TOTAL").table.find(row=>row.team.name==="Alpha");
   assert.equal(alpha.playedGames,1,"the 2025-09-20 match is after the fixture's own kickoff and must not count");
   db.close();
@@ -77,11 +86,18 @@ test("a promoted team absent from last season's competition table does not break
   seedFourTeamSeason(db,{season:"2024",datePrefix:"2024-09"}); // Alpha/Beta/Gamma/Delta played PL last season
   // "Epsilon" is newly promoted this season and has zero PL history of any season.
   importHistoryMatches(db,[match({id:"promoted",competitionCode:"PL",season:"2025",playedAt:"2025-08-20T18:00:00Z",home:"Alpha",homeId:"1",away:"Epsilon",awayId:"5"})]);
-  const baseline=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
-  assert.equal(baseline.baselineSource,"PREVIOUS_SEASON");
-  const names=baseline.standings.standings.find(s=>s.type==="TOTAL").table.map(row=>row.team.name);
+  const fixture={home:"Alpha",away:"Epsilon",homeId:101,awayId:105,utcDate:"2025-09-10T16:00:00Z"};
+  const raw=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
+  assert.equal(raw.current,null,"one team having a single game is no wider than the two-team fallback");
+  assert.ok(raw.previous,"the previous season is a genuine, wide baseline in its own right");
+  const names=raw.previous.standings.standings.find(s=>s.type==="TOTAL").table.map(row=>row.team.name);
   assert.ok(!names.includes("Epsilon"),"a team with no previous-season row must not be fabricated into the previous-season baseline");
   assert.ok(names.includes("Alpha")&&names.includes("Beta"),"the teams that genuinely have previous-season history must still be present");
+  // Epsilon has no row anywhere in the genuine baseline, so picking for THIS
+  // fixture correctly finds no covering tier at all — it must not silently
+  // fall back to the fixture's own two-team local history being presented
+  // as if it were the previous-season competition baseline.
+  assert.equal(pickCompetitionBaseline(raw,fixture,alignContextTeamIds),null);
   db.close();
 });
 
@@ -92,36 +108,78 @@ test("baselineCoversFixture rejects a foreign provider's numeric team id that co
   // and "66", which coincidentally equal this fixture's API-Football
   // homeId/awayId as plain numbers.
   seedFourTeamSeason(db,{competitionCode:"PL"});
-  const baseline=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
+  const raw=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
   const fixture={id:"hull-villa",home:"Hull City",away:"Aston Villa",homeId:1,awayId:2,utcDate:"2025-09-10T16:00:00Z"};
   // Force the collision deliberately: relabel one genuine row's id to the
   // exact (numeric) homeId of a team that is NOT actually in this table.
-  const collided=JSON.parse(JSON.stringify(baseline.standings));
+  const collided=JSON.parse(JSON.stringify(raw.current.standings));
   collided.standings.find(s=>s.type==="TOTAL").table[0].team.id=fixture.homeId; // still a plain number after JSON round-trip, unmatched by name
   assert.equal(baselineCoversFixture(collided,fixture),false,
     "a same-typed but unmatched id must not be accepted as coverage — only alignContextTeamIds's own reassignment should produce a true match");
 
-  const aligned=alignContextTeamIds({standings:baseline.standings,finished:[],scheduled:[]},fixture);
+  const aligned=alignContextTeamIds({standings:raw.current.standings,finished:[],scheduled:[]},fixture);
   assert.equal(baselineCoversFixture(aligned.standings,fixture),false,
     "alignContextTeamIds correctly leaves unmatched rows alone — coverage must be false when the fixture's real teams are absent from the baseline");
+  assert.equal(pickCompetitionBaseline(raw,fixture,alignContextTeamIds),null);
   db.close();
 });
 
 test("baselineCoversFixture is true once alignContextTeamIds has genuinely matched both fixture teams by name",()=>{
   const db=openHistoryDatabase(tempDb());
   seedFourTeamSeason(db); // Alpha/Beta/Gamma/Delta
-  const baseline=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
+  const raw=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
   const fixture={id:"alpha-beta",home:"Alpha",away:"Beta",homeId:101,awayId:102,utcDate:"2025-09-10T16:00:00Z"};
-  const aligned=alignContextTeamIds({standings:baseline.standings,finished:[],scheduled:[]},fixture);
+  const aligned=alignContextTeamIds({standings:raw.current.standings,finished:[],scheduled:[]},fixture);
   assert.equal(baselineCoversFixture(aligned.standings,fixture),true);
   db.close();
+});
+
+test("a promoted/relegated team's own history in its OLD division is never borrowed as the NEW competition's baseline",()=>{
+  const db=openHistoryDatabase(tempDb());
+  seedFourTeamSeason(db,{competitionCode:"PL",season:"2024",datePrefix:"2024-09"}); // Alpha/Beta/Gamma/Delta in PL last-last season
+  // "Epsilon" was relegated FROM the Premier League and has a full season of
+  // real PL history — but this fixture is in the CHAMPIONSHIP this season.
+  importHistoryMatches(db,[
+    {recordKey:"FOOTBALL_DATA:pl-epsilon",sourceFixtureId:"pl-epsilon",playedAt:"2024-09-01T18:00:00Z",status:"FINISHED",sport:"FOOTBALL",
+      competition:{code:"PL",name:"PL",season:"2024"},homeTeam:{id:"5",name:"Epsilon"},awayTeam:{id:"1",name:"Alpha"},
+      score:{fullTime:{home:2,away:2}},provenance:{source:"FOOTBALL_DATA"},fetchedAt:"2024-09-01T18:00:00Z"}
+  ]);
+  seedFourTeamSeason(db,{competitionCode:"ELC",season:"2024",datePrefix:"2024-10"}); // genuine Championship history, no Epsilon (distinct dates so its identityKey never collides with the PL seed above)
+  const fixture={home:"Epsilon",away:"Alpha",homeId:205,awayId:201,utcDate:"2025-09-10T16:00:00Z"};
+  const raw=buildCompetitionBaseline(db,"ELC","2025","2025-09-10T00:00:00Z");
+  assert.ok(raw.previous,"a genuine Championship previous-season tier exists");
+  const names=raw.previous.standings.standings.find(s=>s.type==="TOTAL").table.map(row=>row.team.name);
+  assert.ok(!names.includes("Epsilon"),"Epsilon's Premier League history must never be presented as Championship baseline data");
+  assert.equal(raw.previous.baselineTeams,4,"only the genuine Championship teams (Alpha/Beta/Gamma/Delta) count toward this baseline, not Epsilon's PL record");
+  // Epsilon itself is absent from the genuine Championship tier, so this
+  // specific fixture correctly finds no covering baseline at all.
+  assert.equal(pickCompetitionBaseline(raw,fixture,alignContextTeamIds),null);
+  db.close();
+});
+
+test("current season is preferred over previous season only when it actually covers this fixture's two teams",()=>{
+  const db=openHistoryDatabase(tempDb());
+  seedFourTeamSeason(db,{season:"2024",datePrefix:"2024-09"}); // full previous-season table: Alpha/Beta/Gamma/Delta
+  // current season has three DIFFERENT teams so far (still clears the
+  // genuine-baseline bar) but none of them is "Zeta" — the away side here.
+  importHistoryMatches(db,[
+    match({id:"cur-1",competitionCode:"PL",season:"2025",playedAt:"2025-09-01T18:00:00Z",home:"Alpha",homeId:"1",away:"Beta",awayId:"2"}),
+    match({id:"cur-2",competitionCode:"PL",season:"2025",playedAt:"2025-09-02T18:00:00Z",home:"Gamma",homeId:"3",away:"Delta",awayId:"4"})
+  ]);
+  const fixture={home:"Alpha",away:"Zeta",homeId:101,awayId:106,utcDate:"2025-09-10T16:00:00Z"};
+  const raw=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
+  assert.ok(raw.current,"current season already has >=3 teams");
+  const baseline=pickCompetitionBaseline(raw,fixture,alignContextTeamIds);
+  assert.equal(baseline,null,"Zeta is in neither tier, so no baseline should be picked rather than silently accepting a table missing one of the two teams");
 });
 
 test("insufficient data on both tiers is reported explicitly, never silently as a league average",()=>{
   const db=openHistoryDatabase(tempDb());
   importHistoryMatches(db,[match({id:"only-pair",competitionCode:"ELC",season:"2025",playedAt:"2025-09-01T18:00:00Z",home:"Alpha",homeId:"1",away:"Beta",awayId:"2"})]);
-  const baseline=buildCompetitionBaseline(db,"ELC","2025","2025-09-10T00:00:00Z");
-  assert.equal(baseline.baselineSource,"INSUFFICIENT");
-  assert.equal(baseline.standings,null);
+  const raw=buildCompetitionBaseline(db,"ELC","2025","2025-09-10T00:00:00Z");
+  assert.equal(raw.current,null);
+  assert.equal(raw.previous,null);
+  const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,utcDate:"2025-09-10T16:00:00Z"};
+  assert.equal(pickCompetitionBaseline(raw,fixture,alignContextTeamIds),null);
   db.close();
 });
