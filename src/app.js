@@ -8,7 +8,7 @@ import { getOddsApiIoMarkets } from "./connectors/oddsApiIo.js";
 import { analyseFixture } from "./engine/analyse.js";
 import { alignContextTeamIds } from "./engine/contextIds.js";
 import { getUpcomingApiFootballMatches, getFixturesRisk, getFixturesOdds, getApiFootballCompetitionContext, getFinishedFixturesForDate, configureApiFootball, beginApiFootballRefresh, getApiFootballTelemetry } from "./connectors/apiFootball.js";
-import { dashboardText, dashboardKeyboard, listText, listKeyboard, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard, statisticsText, shadowStatisticsText, shadowMatchText } from "./ui/telegram.js";
+import { dashboardText, dashboardKeyboard, listText, listKeyboard, sortListItems, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard, statisticsText, shadowStatisticsText, shadowMatchText } from "./ui/telegram.js";
 import { appendLocalHistory, buildLocalHistoryContext, loadRawLocalHistory, mergeWithLocalHistory } from "./history/localHistory.js";
 import { backfillFromProviderCaches } from "./history/cacheBackfill.js";
 import { discoverFixtures } from "./fixtures/discovery.js";
@@ -430,7 +430,7 @@ async function callback(q){
     return tg("editMessageText",{chat_id:id,message_id:q.message.message_id,text:shadowMatchText(x),parse_mode:"HTML",reply_markup:detailKeyboard(x.id)});
   }
   if(q.data.startsWith("list:")){
-    const cat=q.data.split(":")[1],items=state.results.filter(x=>x.category===cat);
+    const cat=q.data.split(":")[1],items=sortListItems(cat,state.results.filter(x=>x.category===cat));
     return tg("sendMessage",{chat_id:id,text:listText(cat,items),parse_mode:"HTML",reply_markup:listKeyboard(items)});
   }
   if(q.data.startsWith("metric:")){

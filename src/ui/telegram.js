@@ -144,6 +144,21 @@ export function listText(category, items) {
   }).join("\n\n");
 }
 
+export function sortListItems(category, items) {
+  if (category !== "NEAR") return items;
+  return [...items].sort((a,b)=>{
+    const probabilityA=Number.isFinite(a.best?.probability)?a.best.probability:-Infinity;
+    const probabilityB=Number.isFinite(b.best?.probability)?b.best.probability:-Infinity;
+    if(probabilityA!==probabilityB)return probabilityB-probabilityA;
+    const fdsA=Number.isFinite(a.best?.fds)?a.best.fds:-Infinity;
+    const fdsB=Number.isFinite(b.best?.fds)?b.best.fds:-Infinity;
+    if(fdsA!==fdsB)return fdsB-fdsA;
+    const kickoffA=Date.parse(a.utcDate);
+    const kickoffB=Date.parse(b.utcDate);
+    return (Number.isFinite(kickoffA)?kickoffA:Infinity)-(Number.isFinite(kickoffB)?kickoffB:Infinity);
+  });
+}
+
 export function listKeyboard(items) {
   const rows=items.slice(0,20).map(x=>[{text:`Открыть · ${x.home.slice(0,14)} — ${x.away.slice(0,14)}`,callback_data:`card:${x.id}`}]);
   rows.push([{text:"⬅️ Dashboard",callback_data:"dashboard"}]);

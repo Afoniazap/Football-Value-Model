@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dashboardText, cardText, listKeyboard, listText, metricText, statisticsText } from "../src/ui/telegram.js";
+import { dashboardText, cardText, listKeyboard, listText, metricText, sortListItems, statisticsText } from "../src/ui/telegram.js";
 
 test("dashboard does not present provider failure as genuine zero fixtures",()=>{
   const text=dashboardText({
@@ -102,6 +102,28 @@ test("VALUE/NEAR list показывает информативный двухс
   const button=listKeyboard([fixture]).inline_keyboard[0][0];
   assert.equal(button.callback_data,"card:priced");
   assert.doesNotMatch(button.text,/\n/);
+});
+
+test("NEAR list сортируется по probability выбранного best market, затем FDS и kickoff",()=>{
+  const near=(id,probability,fds,utcDate)=>pricedCard({id,home:id,category:"NEAR",utcDate,best:{...pricedCard().best,probability,fds}});
+  const items=[
+    near("p693",.693,90,"2026-09-05T15:00:00Z"),
+    near("p903",.903,70,"2026-09-05T15:00:00Z"),
+    near("p942",.942,60,"2026-09-05T15:00:00Z"),
+    near("p751",.751,80,"2026-09-05T15:00:00Z"),
+    near("tie-low-fds",.693,40,"2026-09-05T12:00:00Z"),
+    near("tie-late",.693,90,"2026-09-05T18:00:00Z"),
+    near("invalid",undefined,999,"2026-09-05T10:00:00Z")
+  ];
+  const sorted=sortListItems("NEAR",items);
+  assert.deepEqual(sorted.map(x=>x.id),[
+    "p942","p903","p751","p693","tie-late","tie-low-fds","invalid"
+  ]);
+  const rendered=listText("NEAR",sorted);
+  assert.ok(rendered.indexOf("p942")<rendered.indexOf("p903"));
+  assert.ok(rendered.indexOf("p903")<rendered.indexOf("p751"));
+  assert.ok(rendered.indexOf("p751")<rendered.indexOf("p693"));
+  assert.deepEqual(sortListItems("VALUE",items).map(x=>x.id),items.map(x=>x.id));
 });
 
 test("WAIT и NO_BET не выдаются как ставка",()=>{
