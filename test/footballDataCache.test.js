@@ -29,6 +29,21 @@ test("Football-Data season backfill caches official finished competition matches
   assert.equal(calls,1);
 });
 
+test("concurrent fixtures sharing one competition context reuse a single in-flight request per URL",async()=>{
+  let calls=0;
+  configureFootballData({cacheDir:fs.mkdtempSync(path.join(os.tmpdir(),"fvm-fd-inflight-")),fetchImpl:async url=>{
+    calls++;
+    await new Promise(resolve=>setTimeout(resolve,10));
+    return {ok:true,json:async()=>url.includes("standings")?{standings:[]}:{matches:[]}};
+  }});
+  // Two fixtures in the same league context racing before the first request's
+  // cache write lands — this must not fire 6 requests instead of 3.
+  const [a,b]=await Promise.all([getCompetitionContext("secret","PD"),getCompetitionContext("secret","PD")]);
+  assert.equal(calls,3,"the second caller must reuse the first's in-flight requests, not fire duplicates");
+  assert.deepEqual(a,b);
+  assert.equal(getFootballDataTelemetry().deduplicated,3);
+});
+
 test("Football-Data 429 включает persistent provider backoff и отдаёт допустимый stale cache без retry storm",async()=>{
   const cacheDir=fs.mkdtempSync(path.join(os.tmpdir(),"fvm-fd-429-"));let now=Date.parse("2026-08-31T00:00:00Z"),calls=0,limited=false;
   const fetchImpl=async()=>{calls++;if(limited)return {ok:false,status:429,headers:{get:name=>name==="retry-after"?"120":null},text:async()=>"rate limited"};return {ok:true,status:200,json:async()=>({matches:[{id:7,status:"FINISHED"}]})};};

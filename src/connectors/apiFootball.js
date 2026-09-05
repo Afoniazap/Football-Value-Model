@@ -371,8 +371,21 @@ async function requestAllPages(basePath,key,cachePolicy,{maxPages=Infinity}={}){
 }
 
 
+// Free-plan league+season fixture history is confirmed (live provider error)
+// to be restricted to these seasons: "Free plans do not have access to this
+// season, try from 2022 to 2024." Skip the call entirely outside this range
+// instead of spending a request every refresh on a call that cannot succeed.
+// Revisit if the plan changes.
+const FREE_PLAN_SEASON_MIN = 2022;
+const FREE_PLAN_SEASON_MAX = 2024;
+export function isApiFootballSeasonSupported(season) {
+  const year = Number(season);
+  return Number.isFinite(year) && year >= FREE_PLAN_SEASON_MIN && year <= FREE_PLAN_SEASON_MAX;
+}
+
 export async function getApiFootballCompetitionContext(key, leagueId, season) {
   if (!key || !leagueId || !season) return null;
+  if (!isApiFootballSeasonSupported(season)) return null;
 
   const data = await requestJson(
     `/fixtures?league=${leagueId}&season=${season}`,

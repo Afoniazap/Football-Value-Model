@@ -40,9 +40,20 @@ test("queries are temporal-safe and support home, away, competition, H2H and for
   assert.equal(getTeamAwayMatches(db,"Alpha FC",before,20).length,1);
   assert.equal(getCompetitionSeasonMatches(db,"PL","2025",before).length,2);
   assert.equal(getCompetitionSeasonMatches(db,"PL","2025").length,3);
+  assert.equal(getCompetitionSeasonMatches(db,"PL",2025).length,3,"a bare-year season query must match rows stored as a bare year");
   assert.equal(getHeadToHead(db,"Alpha FC","Beta FC",before).length,1);
   assert.deepEqual(getTeamForm(db,"Alpha FC",before,5),{matches:2,points:4,ppg:2,goalsFor:2,goalsAgainst:1});
   assert.equal(auditHistoryIntegrity(db,before).futureLeakage,1);
+  db.close();
+});
+
+test("competition-season lookup matches a bare-year query against a full season.startDate value from football-data.org",()=>{
+  const db=openHistoryDatabase(tempDb());
+  const withDateSeason=row({id:"fd",playedAt:"2025-09-01T18:00:00Z"});
+  withDateSeason.competition={code:"PL",name:"Premier League",season:"2025-08-15"};
+  importHistoryMatches(db,[withDateSeason]);
+  assert.equal(getCompetitionSeasonMatches(db,"PL","2025").length,1,"fixtures encode seasonStart as a bare year (\"2025\") — the lookup must still find rows stored with a full startDate season");
+  assert.equal(getCompetitionSeasonMatches(db,"PL","2024").length,0);
   db.close();
 });
 

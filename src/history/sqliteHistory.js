@@ -186,7 +186,11 @@ export function getTeamLastMatches(db,team,before,limit=20){
 }
 export function getTeamHomeMatches(db,team,before,limit=20){const w=teamWhere(team);return db.prepare(`SELECT * FROM matches WHERE ${w.homeSql} AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...w.homeArgs,new Date(before).toISOString(),limit).map(decode);}
 export function getTeamAwayMatches(db,team,before,limit=20){const w=teamWhere(team);return db.prepare(`SELECT * FROM matches WHERE ${w.awaySql} AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...w.awayArgs,new Date(before).toISOString(),limit).map(decode);}
-export function getCompetitionSeasonMatches(db,competition,season,before="9999-12-31T23:59:59.999Z",limit=1000){return db.prepare("SELECT * FROM matches WHERE (competitionCode=? OR competition=?) AND season=? AND kickoff < ? ORDER BY kickoff DESC LIMIT ?").all(competition,competition,String(season),new Date(before).toISOString(),limit).map(decode);}
+// season is stored verbatim from whichever provider supplied the match:
+// API-Football gives a bare year ("2026"), football-data.org's own
+// season.startDate gives a full date ("2026-08-28"). Match on the leading
+// year so a caller asking for season "2026" finds both representations.
+export function getCompetitionSeasonMatches(db,competition,season,before="9999-12-31T23:59:59.999Z",limit=1000){return db.prepare("SELECT * FROM matches WHERE (competitionCode=? OR competition=?) AND substr(season,1,4)=? AND kickoff < ? ORDER BY kickoff DESC LIMIT ?").all(competition,competition,String(season).slice(0,4),new Date(before).toISOString(),limit).map(decode);}
 export function getHeadToHead(db,home,away,before,limit=20){const h=teamWhere(home),a=teamWhere(away);return db.prepare(`SELECT * FROM matches WHERE ((${h.homeSql} AND ${a.awaySql}) OR (${a.homeSql} AND ${h.awaySql})) AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...h.homeArgs,...a.awayArgs,...a.homeArgs,...h.awayArgs,new Date(before).toISOString(),limit).map(decode);}
 
 export function getTeamForm(db,team,before,limit=5){

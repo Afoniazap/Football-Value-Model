@@ -6,12 +6,14 @@ import path from "node:path";
 import {
   configureApiFootball,
   beginApiFootballRefresh,
+  getApiFootballCompetitionContext,
   getApiFootballTelemetry,
   getFinishedFixturesForDate,
   getFixtureRisk,
   getFixturesRisk,
   getFixturesOdds,
-  getUpcomingApiFootballMatches
+  getUpcomingApiFootballMatches,
+  isApiFootballSeasonSupported
 } from "../src/connectors/apiFootball.js";
 
 function tempDir(){return fs.mkdtempSync(path.join(os.tmpdir(),"fvm-api-football-"));}
@@ -176,4 +178,44 @@ test("free odds pagination stops at page 3 and falls back only to unresolved fix
   assert.equal(urls.some(url=>new URL(url).searchParams.get("page")==="4"),false);
   assert.equal(urls.filter(url=>new URL(url).searchParams.has("fixture")).length,1);
   assert.equal(urls.length,4);
+});
+
+test("isApiFootballSeasonSupported matches the free-plan window confirmed by the provider itself",()=>{
+  assert.equal(isApiFootballSeasonSupported(2021),false);
+  assert.equal(isApiFootballSeasonSupported(2022),true);
+  assert.equal(isApiFootballSeasonSupported(2024),true);
+  assert.equal(isApiFootballSeasonSupported(2025),false);
+  assert.equal(isApiFootballSeasonSupported(2026),false);
+  assert.equal(isApiFootballSeasonSupported(undefined),false);
+});
+
+test("league+season context for an unsupported season (2025/2026) is skipped without any network call",async()=>{
+  let calls=0;
+  configureApiFootball({cacheDir:tempDir(),minGapMs:0,fetchImpl:async()=>{calls++;return response(validEmpty);}});
+  const context=await getApiFootballCompetitionContext("secret",39,2026);
+  assert.equal(context,null);
+  assert.equal(calls,0,"a season known to fail on the free plan must not spend a request every refresh");
+});
+
+test("league+season context for a supported season (2022-2024) still calls the provider as before",async()=>{
+  let calls=0;
+  const finished=[{fixture:{id:1,date:"2024-08-20T18:00:00Z",status:{short:"FT"}},league:{id:39},teams:{home:{id:1,name:"A"},away:{id:2,name:"B"}},goals:{home:2,away:1}}];
+  configureApiFootball({cacheDir:tempDir(),minGapMs:0,fetchImpl:async()=>{calls++;return response({...validEmpty,response:finished});}});
+  const context=await getApiFootballCompetitionContext("secret",39,2024);
+  assert.equal(calls,1,"a genuinely supported season must still be requested — the provider is not disabled globally");
+  assert.equal(context.finished.length,1);
+  assert.equal(context.standings.standings.find(s=>s.type==="TOTAL").table.length,2);
+});
+
+test("date-scoped fixtures, odds, injuries and lineups remain unaffected by the season guard",async()=>{
+  let calls=0;
+  const fixture={fixture:{id:5,date:"2026-09-05T18:00:00Z",status:{short:"NS"}},league:{id:39,name:"Premier League",country:"England",season:2026},teams:{home:{id:1,name:"A"},away:{id:2,name:"B"}}};
+  configureApiFootball({cacheDir:tempDir(),minGapMs:0,now:()=>Date.parse("2026-09-05T00:00:00Z"),fetchImpl:async url=>{
+    calls++;
+    const date=new URL(url).searchParams.get("date");
+    return response(date==="2026-09-05"?{...validEmpty,response:[fixture]}:validEmpty);
+  }});
+  const upcoming=await getUpcomingApiFootballMatches("secret",24);
+  assert.equal(upcoming.length,1,"date-scoped discovery for the current 2026 season must still work — only the league+season context call is season-gated");
+  assert.ok(calls>0);
 });

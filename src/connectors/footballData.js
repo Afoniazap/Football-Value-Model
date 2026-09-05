@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 
 const BASE = "https://api.football-data.org/v4";
 let runtime={cacheDir:null,now:()=>Date.now(),fetchImpl:(...args)=>fetch(...args),rateLimitBackoffMs:60_000};
-let rateLimitUntil=0,networkQueue=Promise.resolve();
+let rateLimitUntil=0,networkQueue=Promise.resolve(),inFlight=new Map();
 const freshTelemetry=()=>({requests:0,cacheHits:0,staleHits:0,avoided:0,deduplicated:0,rateLimited:false,degraded:false});
 let telemetry=freshTelemetry();
 export class FootballDataError extends Error{constructor(code,message){super(message);this.name="FootballDataError";this.code=code;}}
@@ -44,8 +44,18 @@ async function getJsonCached(url,token,ttlMs,staleMs=ttlMs){
     if(cached&&age<=staleMs){telemetry.staleHits++;return cached.data;}
     throw new FootballDataError("RATE_LIMIT","Football-Data: RATE LIMIT");
   }
-  try{const data=await queuedGetJson(url,token);write(file,data);return data;}
-  catch(error){telemetry.degraded=true;if(cached&&age<=staleMs){telemetry.staleHits++;return cached.data;}throw error;}
+  // Fixtures that share a competition context (e.g. several fixtures in the
+  // same league) can race to request the same URL before the first request's
+  // cache write lands. Reuse the in-flight promise instead of firing a second
+  // identical request against the 10 req/min free-tier limit.
+  if(inFlight.has(url)){telemetry.deduplicated++;telemetry.avoided++;return inFlight.get(url);}
+  const promise=(async()=>{
+    try{const data=await queuedGetJson(url,token);write(file,data);return data;}
+    catch(error){telemetry.degraded=true;if(cached&&age<=staleMs){telemetry.staleHits++;return cached.data;}throw error;}
+    finally{inFlight.delete(url);}
+  })();
+  inFlight.set(url,promise);
+  return promise;
 }
 
 export async function getUpcomingMatches(token, horizonHours = 24) {

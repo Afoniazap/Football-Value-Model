@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { beginFootballDataRefresh, getFootballDataTelemetry, getUpcomingMatches, getCompetitionContext, getFinishedFootballDataMatchesForDate, configureFootballData } from "./connectors/footballData.js";
+import { beginFootballDataRefresh, getFootballDataTelemetry, getUpcomingMatches, getCompetitionContext, getFinishedCompetitionSeason, getFinishedFootballDataMatchesForDate, configureFootballData } from "./connectors/footballData.js";
 import { getOddsForCompetitionResult, matchOddsEvent, extractMarkets } from "./connectors/odds.js";
 import { getOddsApiIoMarkets } from "./connectors/oddsApiIo.js";
 import { analyseFixture } from "./engine/analyse.js";
@@ -17,6 +17,8 @@ import { loadMarketBetStatistics, updateMarketBetHistory } from "./statistics/ma
 import { auditMarketSnapshots, enforceMarketFreshness, resolveMarketSnapshots } from "./markets/marketSnapshots.js";
 import { databaseStats, getTeamLastMatches, hasSourceDate, importHistoryMatches, loadAllHistory, openHistoryDatabase } from "./history/sqliteHistory.js";
 import { completedUtcDates } from "./history/harvestDates.js";
+import { buildCompetitionBaseline, baselineCoversFixture } from "./history/competitionBaseline.js";
+import { ensurePreviousSeasonHistory } from "./history/previousSeasonBackfill.js";
 import { buildDualShadow, loadDualShadowStatistics, updateDualShadowHistory } from "./shadow/dualShadow.js";
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
@@ -171,6 +173,24 @@ async function refresh(){
     const codes=[...new Set(fixtures.map(x=>x.competitionCode).filter(Boolean))];
     const contexts={}, odds={}, contextDiagnostics={};
     state.providers.context={fallbacks:[],failures:[]};
+
+    // Previous season is already fully obtainable from football-data.org for
+    // most current competitions and, once imported, needs no further network
+    // requests — cache-first via a local SQLite count, at most one fetch per
+    // competition ever, never per fixture and never per refresh once present.
+    const competitionSeasons=[...new Map(
+      fixtures.filter(f=>f.competitionCode&&f.seasonStart).map(f=>[f.competitionCode,f.seasonStart])
+    ).entries()];
+    state.providers.previousSeasonBackfill={};
+    for(const [code,seasonStart] of competitionSeasons){
+      state.providers.previousSeasonBackfill[code]=await ensurePreviousSeasonHistory(
+        historyDatabase,code,seasonStart,
+        {
+          fetchSeason:(competitionCode,season)=>getFinishedCompetitionSeason(env.FOOTBALL_DATA_TOKEN.trim(),competitionCode,season),
+          importMatches:matches=>appendHistory(matches,"FOOTBALL_DATA")
+        }
+      );
+    }
 
     const contextKeys=[...new Set(
       fixtures
@@ -329,20 +349,43 @@ async function refresh(){
         confirmedLineups:(risk.lineups||[]).length>=2
       }:null;
 
-      const baseContext=alignContextTeamIds(
-        contexts[`${f.apiFootballLeagueId}|${f.seasonStart}`] || {
-          standings:null,
-          finished:[],
-          scheduled:[]
-        },f);
+      const rawContext=contexts[`${f.apiFootballLeagueId}|${f.seasonStart}`] || {
+        standings:null,
+        finished:[],
+        scheduled:[]
+      };
+      // A live API standings table (rawContext.standings) always wins when it
+      // exists. Only when it doesn't do we ask SQLite for a genuine, all-teams
+      // competition baseline instead of falling straight to the two-team
+      // local-history average — temporal safety is inherited from
+      // getCompetitionSeasonMatches's own `kickoff < before` clause. The
+      // baseline is only actually used for THIS fixture if both its teams are
+      // findable in it after alignment — a genuine table that doesn't
+      // recognise either team (wrong competition, name-alias gap) must fall
+      // through to the existing two-team fallback rather than regress a
+      // fixture that previously had a usable local-history context.
+      const rawBaseline=!rawContext.standings
+        ? buildCompetitionBaseline(historyDatabase,f.competitionCode,f.seasonStart,f.utcDate)
+        : null;
+      const alignedCandidate=rawBaseline?.standings ? alignContextTeamIds({...rawContext,standings:rawBaseline.standings},f) : null;
+      const candidateCoversFixture=Boolean(alignedCandidate&&baselineCoversFixture(alignedCandidate.standings,f));
+      const competitionBaseline=candidateCoversFixture ? rawBaseline : null;
+      const baseContext=competitionBaseline ? alignedCandidate : alignContextTeamIds(rawContext,f);
 
       const mergedContext=mergeWithLocalHistory(baseContext,fixtureHistory(f),f);
       const localMeta=mergedContext.localHistoryMeta;
-      const hasLocalModelContext=Boolean(mergedContext.standings && localMeta?.homeMatches>=4 && localMeta?.awayMatches>=4);
-      const contextDiagnosticBase=hasLocalModelContext
-        ? {status:"OK",source:"LOCAL_HISTORY",finished:mergedContext.finished.length,provenance:localMeta.provenance,temporalSafe:true}
-        : contextDiagnostics[`${f.apiFootballLeagueId}|${f.seasonStart}`]||{status:"UNAVAILABLE",reason:"NO_CONTEXT_MAPPING"};
-      const fixtureContextDiagnostic={...contextDiagnosticBase,localHistory:{
+      const hasLocalModelContext=!competitionBaseline && Boolean(mergedContext.standings && localMeta?.homeMatches>=4 && localMeta?.awayMatches>=4);
+      const contextDiagnosticBase=competitionBaseline
+        ? {status:"OK",source:"COMPETITION_BASELINE",finished:mergedContext.finished.length,temporalSafe:true}
+        : hasLocalModelContext
+          ? {status:"OK",source:"LOCAL_HISTORY",finished:mergedContext.finished.length,provenance:localMeta.provenance,temporalSafe:true}
+          : contextDiagnostics[`${f.apiFootballLeagueId}|${f.seasonStart}`]||{status:"UNAVAILABLE",reason:"NO_CONTEXT_MAPPING"};
+      const baselineDiagnostic=competitionBaseline
+        ? {baselineSource:competitionBaseline.baselineSource,baselineSample:competitionBaseline.baselineSample,baselineTeams:competitionBaseline.baselineTeams,sampleCurrentSeason:competitionBaseline.sampleCurrentSeason,samplePreviousSeason:competitionBaseline.samplePreviousSeason,sampleTotal:competitionBaseline.sampleCurrentSeason+competitionBaseline.samplePreviousSeason,competitionCoverage:competitionBaseline.baselineTeams,historySource:competitionBaseline.baselineSource,freshness:competitionBaseline.baselineSource==="CURRENT_SEASON"?"CURRENT":"STALE_PREVIOUS_SEASON"}
+        : hasLocalModelContext
+          ? {baselineSource:"FALLBACK_TWO_TEAM",baselineSample:(localMeta?.homeMatches||0)+(localMeta?.awayMatches||0),baselineTeams:2,sampleCurrentSeason:rawBaseline?.sampleCurrentSeason||0,samplePreviousSeason:rawBaseline?.samplePreviousSeason||0,sampleTotal:(localMeta?.homeMatches||0)+(localMeta?.awayMatches||0),competitionCoverage:2,historySource:"LOCAL_HISTORY",freshness:"FALLBACK"}
+          : {baselineSource:rawContext.standings?"LIVE_API":"NONE",baselineSample:0,baselineTeams:rawContext.standings?(rawContext.standings.standings?.find(s=>s.type==="TOTAL")?.table||[]).length:0,sampleCurrentSeason:rawBaseline?.sampleCurrentSeason||0,samplePreviousSeason:rawBaseline?.samplePreviousSeason||0,sampleTotal:0,competitionCoverage:rawContext.standings?(rawContext.standings.standings?.find(s=>s.type==="TOTAL")?.table||[]).length:0,historySource:rawContext.standings?"LIVE_API":"NONE",freshness:rawContext.standings?"LIVE":"NONE"};
+      const fixtureContextDiagnostic={...contextDiagnosticBase,baseline:baselineDiagnostic,localHistory:{
         homeMatches:localMeta?.homeMatches||0,
         awayMatches:localMeta?.awayMatches||0,
         provenance:localMeta?.provenance||[],
