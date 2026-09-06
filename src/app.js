@@ -8,11 +8,11 @@ import { getOddsApiIoMarkets } from "./connectors/oddsApiIo.js";
 import { analyseFixture } from "./engine/analyse.js";
 import { alignContextTeamIds } from "./engine/contextIds.js";
 import { getUpcomingApiFootballMatches, getFixturesRisk, getFixturesOdds, getApiFootballCompetitionContext, getFinishedFixturesForDate, configureApiFootball, beginApiFootballRefresh, getApiFootballTelemetry } from "./connectors/apiFootball.js";
-import { dashboardText, dashboardKeyboard, listText, listKeyboard, sortListItems, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard, statisticsText, shadowStatisticsText, shadowMatchText } from "./ui/telegram.js";
+import { dashboardText, dashboardKeyboard, listText, listKeyboard, sortListItems, cardText, backKeyboard, metricKeyboard, metricText, detailKeyboard, statisticsText, shadowStatisticsText, shadowMatchText, historyMenuText, historyMenuKeyboard, historyCategoryText, historyCategoryKeyboard, historyListText, historyListKeyboard, historyMatchText, historyMatchKeyboard, historyMatchHash } from "./ui/telegram.js";
 import { appendLocalHistory, buildLocalHistoryContext, loadRawLocalHistory, mergeWithLocalHistory } from "./history/localHistory.js";
 import { backfillFromProviderCaches } from "./history/cacheBackfill.js";
 import { discoverFixtures } from "./fixtures/discovery.js";
-import { loadPredictionStatistics, updatePredictionHistory } from "./statistics/predictionHistory.js";
+import { loadPredictionStatistics, updatePredictionHistory, updatePredictionSnapshots, updateSnapshotGrading, loadHistoryEvents, listHistoryDates, listHistoryMatches } from "./statistics/predictionHistory.js";
 import { loadMarketBetStatistics, updateMarketBetHistory } from "./statistics/marketBetHistory.js";
 import { auditMarketSnapshots, enforceMarketFreshness, resolveMarketSnapshots } from "./markets/marketSnapshots.js";
 import { databaseStats, getTeamLastMatches, hasSourceDate, importHistoryMatches, loadAllHistory, openHistoryDatabase } from "./history/sqliteHistory.js";
@@ -434,6 +434,10 @@ async function refresh(){
     const completedHistory=loadAllHistory(historyDatabase),storedAt=new Date().toISOString();
     state.statistics=updatePredictionHistory(PREDICTION_HISTORY_FILE,state.results,completedHistory,storedAt);
     state.marketStatistics=updateMarketBetHistory(MARKET_BET_HISTORY_FILE,state.results,completedHistory,storedAt);
+    // Full-lifecycle snapshot/transition/grading history — same file as
+    // above, additive event types (see statistics/predictionHistory.js).
+    updatePredictionSnapshots(PREDICTION_HISTORY_FILE,state.results,storedAt);
+    updateSnapshotGrading(PREDICTION_HISTORY_FILE,completedHistory,storedAt);
     state.shadowStatistics=updateDualShadowHistory(DUAL_SHADOW_HISTORY_FILE,state.results,completedHistory,storedAt);
     state.providers.apiFootball=getApiFootballTelemetry(env.REFRESH_MINUTES||30);
     if(state.providers.history&&historyDatabase){
@@ -502,6 +506,28 @@ async function callback(q){
       reply_markup:metricKeyboard(x)
     });
   }
+  if(q.data==="history"){
+    const dates=listHistoryDates(loadHistoryEvents(PREDICTION_HISTORY_FILE));
+    return tg("sendMessage",{chat_id:id,text:historyMenuText(dates),parse_mode:"HTML",reply_markup:historyMenuKeyboard(dates)});
+  }
+  if(q.data.startsWith("history:date:")){
+    const date=q.data.slice("history:date:".length);
+    const events=loadHistoryEvents(PREDICTION_HISTORY_FILE);
+    const counts=Object.fromEntries(["VALUE","NEAR","WAIT","NO_BET"].map(cat=>[cat,listHistoryMatches(events,{date,category:cat}).length]));
+    return tg("editMessageText",{chat_id:id,message_id:q.message.message_id,text:historyCategoryText(date,counts),parse_mode:"HTML",reply_markup:historyCategoryKeyboard(date,counts)});
+  }
+  if(q.data.startsWith("history:cat:")){
+    const [,,date,category]=q.data.split(":");
+    const timelines=listHistoryMatches(loadHistoryEvents(PREDICTION_HISTORY_FILE),{date,category});
+    return tg("editMessageText",{chat_id:id,message_id:q.message.message_id,text:historyListText(date,category,timelines),parse_mode:"HTML",reply_markup:historyListKeyboard(date,category,timelines)});
+  }
+  if(q.data.startsWith("history:match:")){
+    const [,,date,category,hash]=q.data.split(":");
+    const timelines=listHistoryMatches(loadHistoryEvents(PREDICTION_HISTORY_FILE),{date,category});
+    const timeline=timelines.find(t=>historyMatchHash(t.fixtureKey)===hash);
+    if(!timeline)return;
+    return tg("editMessageText",{chat_id:id,message_id:q.message.message_id,text:historyMatchText(timeline),parse_mode:"HTML",reply_markup:historyMatchKeyboard(date,category)});
+  }
 }
 async function message(m){
   const id=m.chat.id;if(!permitted(id))return tg("sendMessage",{chat_id:id,text:"Доступ закрыт."}).catch(()=>{});
@@ -510,7 +536,11 @@ async function message(m){
   if(t==="/refresh"){await tg("sendMessage",{chat_id:id,text:"Запущен полный анализ FVM..."});await refresh();return dashboard(id)}
   if(t==="/id")return tg("sendMessage",{chat_id:id,text:`Ваш chat_id: <code>${id}</code>`,parse_mode:"HTML"});
   if(t==="/stats")return tg("sendMessage",{chat_id:id,text:statisticsText(state.statistics,state.marketStatistics),parse_mode:"HTML",reply_markup:backKeyboard()});
-  return tg("sendMessage",{chat_id:id,text:"Команды: /start /refresh /stats /id"});
+  if(t==="/history"){
+    const dates=listHistoryDates(loadHistoryEvents(PREDICTION_HISTORY_FILE));
+    return tg("sendMessage",{chat_id:id,text:historyMenuText(dates),parse_mode:"HTML",reply_markup:historyMenuKeyboard(dates)});
+  }
+  return tg("sendMessage",{chat_id:id,text:"Команды: /start /refresh /stats /history /id"});
 }
 async function main(){
   console.log("FVM Engine v0.5 starting...");

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { localDate } from "../engine/utils.js";
 
 function esc(s="") { return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
@@ -64,7 +65,8 @@ export function dashboardKeyboard(state) {
     [{text:"⚙️ Pipeline",callback_data:"pipeline"},
      {text:"🔄 Обновить",callback_data:"refresh"}],
     [{text:"📈 Статистика",callback_data:"statistics"},
-     {text:"🧪 Shadow",callback_data:"shadow:stats"}]
+     {text:"🧪 Shadow",callback_data:"shadow:stats"}],
+    [{text:"📜 История",callback_data:"history"}]
   ]);
 }
 
@@ -551,3 +553,97 @@ Raw FDS: ${b.rawFds ?? "N/A"}/100
 }
 
 export function backKeyboard(){ return kb([[{text:"⬅️ Dashboard",callback_data:"dashboard"}]]); }
+
+// ============================================================================
+// 📜 История — browses statistics/predictionHistory.js's persisted
+// SNAPSHOT/TRANSITION/SNAPSHOT_RESULT event stream. Telegram inline
+// callback_data has a 64-byte limit, so match rows are addressed by a short
+// hash of their fixtureKey rather than the key itself; the handler re-runs
+// the same date+category query and matches the hash back to a fixtureKey.
+// ============================================================================
+
+export function historyMatchHash(fixtureKey){return crypto.createHash("sha1").update(fixtureKey).digest("hex").slice(0,10);}
+
+export function historyMenuText(dates){
+  return dates.length ? `<b>📜 История</b>\n\nВыберите дату (${dates.length}):` : "<b>📜 История</b>\n\nПока нет сохранённых снимков.";
+}
+export function historyMenuKeyboard(dates){
+  const rows=dates.slice(0,14).map(date=>[{text:date,callback_data:`history:date:${date}`}]);
+  rows.push([{text:"⬅️ Dashboard",callback_data:"dashboard"}]);
+  return kb(rows);
+}
+
+export function historyCategoryText(date,counts){
+  const total=Object.values(counts).reduce((sum,value)=>sum+value,0);
+  return `<b>📜 История · ${date}</b>\n\nМатчей: <b>${total}</b>\nВыберите категорию:`;
+}
+export function historyCategoryKeyboard(date,counts){
+  const total=Object.values(counts).reduce((sum,value)=>sum+value,0);
+  const cats=[["VALUE","🎯"],["NEAR","👀"],["WAIT","⏳"],["NO_BET","❌"]];
+  const rows=cats.map(([cat,icon])=>[{text:`${icon} ${cat} (${counts[cat]||0})`,callback_data:`history:cat:${date}:${cat}`}]);
+  rows.push([{text:`ALL (${total})`,callback_data:`history:cat:${date}:ALL`}]);
+  rows.push([{text:"⬅️ Даты",callback_data:"history"}]);
+  return kb(rows);
+}
+
+function historySummaryLine(snapshot){
+  if(!snapshot)return "N/A";
+  const price=Number.isFinite(snapshot.odds)?`@${compactNumber(snapshot.odds,2)}`:"";
+  const model=Number.isFinite(snapshot.modelProbability)?`Model ${compactNumber(snapshot.modelProbability*100)}`:null;
+  const edge=Number.isFinite(snapshot.edge)?`Edge ${compactNumber(snapshot.edge)}`:null;
+  const fds=Number.isFinite(snapshot.fds)?`FDS ${snapshot.fds}`:null;
+  const label=snapshot.selection?esc(betLabel({label:snapshot.selection,market:snapshot.market,line:snapshot.line})):null;
+  return [
+    `${compactKyivDate(snapshot.createdAt)} · <b>${snapshot.category}</b>`,
+    [label,price].filter(Boolean).join(" "),
+    [model,edge,fds].filter(Boolean).join(" · ")
+  ].filter(Boolean).join("\n");
+}
+
+export function historyListText(date,category,timelines){
+  const title=`<b>📜 ${date} · ${category}</b>`;
+  if(!timelines.length)return `${title}\n\nСписок пуст.`;
+  return `${title}\n\n`+timelines.map(t=>{
+    const last=t.lastPreMatch||t.first;
+    const tags=[t.newToday?"NEW TODAY":null,t.lateSignal?t.lateSignal.replace("_"," "):null].filter(Boolean).join(" · ");
+    const result=t.result?`${t.result.finalScore?`${t.result.finalScore.home}:${t.result.finalScore.away}`:"?"} · ${t.result.settlement}`:"ожидает результата";
+    return `<b>${esc(t.home)} — ${esc(t.away)}</b> · ${compactKyivDate(t.kickoff)}\n`+
+      `FIRST: ${historySummaryLine(t.first)}${tags?`\n${tags}`:""}\n`+
+      `LAST: ${historySummaryLine(last)}\n`+
+      `FINAL: ${result}`;
+  }).join("\n\n");
+}
+export function historyListKeyboard(date,category,timelines){
+  const rows=timelines.slice(0,20).map(t=>[{text:`${t.home.slice(0,14)} — ${t.away.slice(0,14)}`,callback_data:`history:match:${date}:${category}:${historyMatchHash(t.fixtureKey)}`}]);
+  rows.push([{text:"⬅️ Категории",callback_data:`history:date:${date}`}]);
+  return kb(rows);
+}
+
+export function historyMatchText(timeline){
+  const {home,away,kickoff,first,lastPreMatch,transitions,result}=timeline;
+  const last=lastPreMatch||first;
+  const tags=[timeline.newToday?"NEW TODAY":null,timeline.lateSignal?timeline.lateSignal.replace("_"," "):null].filter(Boolean).join(" · ");
+  const lines=[
+    `<b>📜 ${esc(home)} — ${esc(away)}</b> · ${compactKyivDate(kickoff)}`,"",
+    `<b>FIRST SEEN</b>${tags?` · ${tags}`:""}`,
+    historySummaryLine(first),""
+  ];
+  if(transitions.length){
+    lines.push("<b>Переходы</b>");
+    for(const t of transitions)lines.push(`${compactKyivDate(t.createdAt)}: ${t.fromCategory} → ${t.toCategory}${t.reason?` (${esc(t.reason)})`:""}`);
+    lines.push("");
+  }
+  lines.push("<b>LAST PRE-MATCH</b>",historySummaryLine(last),"");
+  lines.push("<b>FINAL</b>");
+  if(result){
+    const label=result.selection?esc(betLabel({label:result.selection,market:result.market,line:result.line})):"";
+    const score=result.finalScore?`${result.finalScore.home}:${result.finalScore.away}`:"N/A";
+    lines.push(`${score} · ${label} — <b>${result.settlement}</b>${Number.isFinite(result.profitLossUnits)?` (${signedNumber(result.profitLossUnits)}u)`:""}`);
+  }else{
+    lines.push("Матч ещё не завершён либо результат не найден.");
+  }
+  return lines.join("\n");
+}
+export function historyMatchKeyboard(date,category){
+  return kb([[{text:"⬅️ Список",callback_data:`history:cat:${date}:${category}`}]]);
+}

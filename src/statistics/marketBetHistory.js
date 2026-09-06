@@ -36,6 +36,9 @@ function settle(prediction,match){
   return null;
 }
 function profit(settlement,odds){return ({WIN:Number(odds)-1,HALF_WIN:(Number(odds)-1)/2,PUSH:0,HALF_LOSS:-.5,LOSS:-1,VOID:0})[settlement];}
+// Reused by statistics/predictionHistory.js so grading a candidate's actual
+// selected market (not just plain 1X2 win/draw/away) has one implementation.
+export { settle as settleMarket, profit as profitForSettlement };
 function summarize(predictions,resultByKey){
   const graded=predictions.map(row=>resultByKey.get(row.snapshotKey)).filter(Boolean),settled=graded.filter(row=>row.settlement!=="VOID");
   const unitProfit=settled.reduce((sum,row)=>sum+row.unitProfit,0);
