@@ -149,17 +149,18 @@ export function listText(category, items) {
 }
 
 export function sortListItems(category, items) {
-  if (category !== "NEAR") return items;
+  if (!["VALUE","NEAR","WAIT","NO_BET"].includes(category)) return items;
   return [...items].sort((a,b)=>{
-    const probabilityA=Number.isFinite(a.best?.probability)?a.best.probability:-Infinity;
-    const probabilityB=Number.isFinite(b.best?.probability)?b.best.probability:-Infinity;
-    if(probabilityA!==probabilityB)return probabilityB-probabilityA;
+    const kickoffA=Date.parse(a.utcDate);
+    const kickoffB=Date.parse(b.utcDate);
+    const kickoffDifference=(Number.isFinite(kickoffA)?kickoffA:Infinity)-(Number.isFinite(kickoffB)?kickoffB:Infinity);
+    if(kickoffDifference!==0)return kickoffDifference;
     const fdsA=Number.isFinite(a.best?.fds)?a.best.fds:-Infinity;
     const fdsB=Number.isFinite(b.best?.fds)?b.best.fds:-Infinity;
     if(fdsA!==fdsB)return fdsB-fdsA;
-    const kickoffA=Date.parse(a.utcDate);
-    const kickoffB=Date.parse(b.utcDate);
-    return (Number.isFinite(kickoffA)?kickoffA:Infinity)-(Number.isFinite(kickoffB)?kickoffB:Infinity);
+    const edgeA=Number.isFinite(a.best?.edge)?a.best.edge:-Infinity;
+    const edgeB=Number.isFinite(b.best?.edge)?b.best.edge:-Infinity;
+    return edgeB-edgeA;
   });
 }
 

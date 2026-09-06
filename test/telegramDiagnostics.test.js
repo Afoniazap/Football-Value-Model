@@ -104,26 +104,22 @@ test("VALUE/NEAR list показывает информативный двухс
   assert.doesNotMatch(button.text,/\n/);
 });
 
-test("NEAR list сортируется по probability выбранного best market, затем FDS и kickoff",()=>{
-  const near=(id,probability,fds,utcDate)=>pricedCard({id,home:id,category:"NEAR",utcDate,best:{...pricedCard().best,probability,fds}});
+test("VALUE, NEAR, WAIT и NO_BET сортируются по kickoff, затем FDS и Edge без мутации state",()=>{
+  const item=(id,utcDate,fds,edge)=>pricedCard({id,home:id,utcDate,best:{...pricedCard().best,fds,edge}});
   const items=[
-    near("p693",.693,90,"2026-09-05T15:00:00Z"),
-    near("p903",.903,70,"2026-09-05T15:00:00Z"),
-    near("p942",.942,60,"2026-09-05T15:00:00Z"),
-    near("p751",.751,80,"2026-09-05T15:00:00Z"),
-    near("tie-low-fds",.693,40,"2026-09-05T12:00:00Z"),
-    near("tie-late",.693,90,"2026-09-05T18:00:00Z"),
-    near("invalid",undefined,999,"2026-09-05T10:00:00Z")
+    item("late","2026-09-05T18:00:00Z",99,99),
+    item("early","2026-09-05T12:00:00Z",10,10),
+    item("same-low-fds","2026-09-05T15:00:00Z",40,99),
+    item("same-high-fds-low-edge","2026-09-05T15:00:00Z",80,5),
+    item("same-high-fds-high-edge","2026-09-05T15:00:00Z",80,12),
+    item("invalid","not-a-date",999,999)
   ];
-  const sorted=sortListItems("NEAR",items);
-  assert.deepEqual(sorted.map(x=>x.id),[
-    "p942","p903","p751","p693","tie-late","tie-low-fds","invalid"
-  ]);
-  const rendered=listText("NEAR",sorted);
-  assert.ok(rendered.indexOf("p942")<rendered.indexOf("p903"));
-  assert.ok(rendered.indexOf("p903")<rendered.indexOf("p751"));
-  assert.ok(rendered.indexOf("p751")<rendered.indexOf("p693"));
-  assert.deepEqual(sortListItems("VALUE",items).map(x=>x.id),items.map(x=>x.id));
+  const expected=["early","same-high-fds-high-edge","same-high-fds-low-edge","same-low-fds","late","invalid"];
+  const original=items.map(x=>x.id);
+  for(const category of ["VALUE","NEAR","WAIT","NO_BET"]){
+    assert.deepEqual(sortListItems(category,items).map(x=>x.id),expected);
+    assert.deepEqual(items.map(x=>x.id),original);
+  }
 });
 
 test("WAIT и NO_BET не выдаются как ставка",()=>{
