@@ -125,16 +125,32 @@ export function baselineCoversFixture(alignedStandings, fixture) {
 }
 
 /**
- * Picks whichever tier actually covers this fixture's two teams, preferring
- * current season over previous when both do. `alignFn` is
- * alignContextTeamIds itself (injected so this module never has to know
- * about engine/contextIds.js's own dependency chain).
+ * Picks whichever tier actually covers this fixture's two teams AND is deep
+ * enough for them specifically, preferring current season over previous when
+ * both qualify. `alignFn` is alignContextTeamIds itself (injected so this
+ * module never has to know about engine/contextIds.js's own dependency
+ * chain).
+ *
+ * MIN_TEAMS_FOR_GENUINE_BASELINE (in `tier`, above) only bars a tier that is
+ * NARROW — built from too few distinct teams competition-wide. It says
+ * nothing about DEPTH: a tier can easily clear that bar (e.g. 26 teams) while
+ * every one of those teams has played exactly one game — the competition's
+ * opening matchday. teamStrengthModel's attack/defence ratios are exactly as
+ * fragile on that single game as on a live table below
+ * MIN_GAMES_FOR_MATURE_STANDINGS (proven: MLS 2026's opening-round baseline —
+ * baselineSample=13, baselineTeams=26, every team's playedGames=1 —
+ * collapsed λ to the clamp floor/ceiling for 5 fixtures and silently
+ * degraded 3 more that happened not to hit both bounds at once). So a
+ * candidate tier must pass the SAME fixture-specific depth bar already used
+ * for the live table (rawStandingsMature), not just baselineCoversFixture's
+ * plain presence/identity check, before it can be accepted here.
  */
 export function pickCompetitionBaseline(baseline, fixture, alignFn) {
   for (const candidate of [baseline?.current, baseline?.previous]) {
     if (!candidate) continue;
     const aligned = alignFn({ standings: candidate.standings, finished: [], scheduled: [] }, fixture);
-    if (baselineCoversFixture(aligned.standings, fixture)) return { ...candidate, standings: aligned.standings };
+    if (baselineCoversFixture(aligned.standings, fixture) && rawStandingsMature(aligned.standings, fixture))
+      return { ...candidate, standings: aligned.standings };
   }
   return null;
 }

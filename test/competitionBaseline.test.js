@@ -17,11 +17,21 @@ function match({id,competitionCode="PL",season="2025",playedAt,home,homeId,away,
     score:{fullTime:{home:hg,away:ag}},provenance:{source:"FOOTBALL_DATA"},fetchedAt:playedAt};
 }
 
+// A full mini round-robin (each of Alpha/Beta/Gamma/Delta reaches exactly 4
+// games) rather than 3 sparse matches — pickCompetitionBaseline now requires
+// MIN_GAMES_FOR_MATURE_STANDINGS (4) per fixture-specific team, not just
+// presence, so any team this file uses as a fixture's own home/away side
+// must individually clear that bar within this seed.
 function seedFourTeamSeason(db,{competitionCode="PL",season="2025",datePrefix="2025-09"}={}){
   importHistoryMatches(db,[
     match({id:`${season}-${competitionCode}-1`,competitionCode,season,playedAt:`${datePrefix}-01T18:00:00Z`,home:"Alpha",homeId:"1",away:"Beta",awayId:"2",hg:2,ag:1}),
-    match({id:`${season}-${competitionCode}-2`,competitionCode,season,playedAt:`${datePrefix}-05T18:00:00Z`,home:"Gamma",homeId:"3",away:"Delta",awayId:"4",hg:0,ag:0}),
-    match({id:`${season}-${competitionCode}-3`,competitionCode,season,playedAt:`${datePrefix}-08T18:00:00Z`,home:"Beta",homeId:"2",away:"Gamma",awayId:"3",hg:3,ag:1})
+    match({id:`${season}-${competitionCode}-2`,competitionCode,season,playedAt:`${datePrefix}-02T18:00:00Z`,home:"Gamma",homeId:"3",away:"Delta",awayId:"4",hg:0,ag:0}),
+    match({id:`${season}-${competitionCode}-3`,competitionCode,season,playedAt:`${datePrefix}-03T18:00:00Z`,home:"Beta",homeId:"2",away:"Gamma",awayId:"3",hg:3,ag:1}),
+    match({id:`${season}-${competitionCode}-4`,competitionCode,season,playedAt:`${datePrefix}-04T18:00:00Z`,home:"Delta",homeId:"4",away:"Alpha",awayId:"1",hg:1,ag:2}),
+    match({id:`${season}-${competitionCode}-5`,competitionCode,season,playedAt:`${datePrefix}-05T18:00:00Z`,home:"Alpha",homeId:"1",away:"Gamma",awayId:"3",hg:1,ag:1}),
+    match({id:`${season}-${competitionCode}-6`,competitionCode,season,playedAt:`${datePrefix}-06T18:00:00Z`,home:"Beta",homeId:"2",away:"Delta",awayId:"4",hg:2,ag:0}),
+    match({id:`${season}-${competitionCode}-7`,competitionCode,season,playedAt:`${datePrefix}-07T18:00:00Z`,home:"Alpha",homeId:"1",away:"Delta",awayId:"4",hg:2,ag:2}),
+    match({id:`${season}-${competitionCode}-8`,competitionCode,season,playedAt:`${datePrefix}-08T18:00:00Z`,home:"Gamma",homeId:"3",away:"Beta",awayId:"2",hg:1,ag:3})
   ]);
 }
 function pick(db,code,season,before,fixture){
@@ -37,7 +47,7 @@ test("competition-wide baseline is built from all teams, not the two fixture tea
   const total=baseline.standings.standings.find(s=>s.type==="TOTAL").table;
   assert.equal(total.length,4,"all four teams must appear, not just two");
   assert.equal(baseline.baselineTeams,4);
-  assert.equal(baseline.baselineSample,3);
+  assert.equal(baseline.baselineSample,8);
   db.close();
 });
 
@@ -50,7 +60,7 @@ test("previous season is used only as a distinct fallback tier, never blended wi
   importHistoryMatches(db,[match({id:"2025-thin",competitionCode:"PL",season:"2025",playedAt:"2025-08-20T18:00:00Z",home:"Alpha",homeId:"1",away:"Beta",awayId:"2"})]);
   const raw=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
   assert.equal(raw.sampleCurrentSeason,1);
-  assert.equal(raw.samplePreviousSeason,3);
+  assert.equal(raw.samplePreviousSeason,8);
   assert.equal(raw.current,null,"two teams is no wider than the two-team fallback, so current season must not count as a genuine tier");
   const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,utcDate:"2025-09-10T16:00:00Z"};
   const baseline=pickCompetitionBaseline(raw,fixture,alignContextTeamIds);
@@ -79,7 +89,7 @@ test("temporal safety: matches at or after the fixture kickoff are never include
   const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,utcDate:"2025-09-10T16:00:00Z"};
   const baseline=pick(db,"PL","2025","2025-09-10T00:00:00Z",fixture);
   const alpha=baseline.standings.standings.find(s=>s.type==="TOTAL").table.find(row=>row.team.name==="Alpha");
-  assert.equal(alpha.playedGames,1,"the 2025-09-20 match is after the fixture's own kickoff and must not count");
+  assert.equal(alpha.playedGames,4,"the 2025-09-20 match is after the fixture's own kickoff and must not count (only the 4 pre-kickoff seed games do)");
   db.close();
 });
 
@@ -295,9 +305,11 @@ test("67% DRAW regression: a thin current-season table no longer feeds teamStren
     match({id:"p1",competitionCode:"CL",season:"2024",playedAt:"2024-09-01T18:00:00Z",home:"Barcelona",homeId:"81",away:"OppA",awayId:"901",hg:2,ag:1}),
     match({id:"p2",competitionCode:"CL",season:"2024",playedAt:"2024-09-08T18:00:00Z",home:"OppB",homeId:"902",away:"Barcelona",awayId:"81",hg:1,ag:2}),
     match({id:"p3",competitionCode:"CL",season:"2024",playedAt:"2024-09-15T18:00:00Z",home:"Barcelona",homeId:"81",away:"OppC",awayId:"903",hg:2,ag:0}),
+    match({id:"p3b",competitionCode:"CL",season:"2024",playedAt:"2024-09-22T18:00:00Z",home:"OppD",homeId:"904",away:"Barcelona",awayId:"81",hg:0,ag:1}),
     match({id:"p4",competitionCode:"CL",season:"2024",playedAt:"2024-09-05T18:00:00Z",home:"Feyenoord",homeId:"675",away:"OppA",awayId:"901",hg:1,ag:1}),
     match({id:"p5",competitionCode:"CL",season:"2024",playedAt:"2024-09-12T18:00:00Z",home:"OppB",homeId:"902",away:"Feyenoord",awayId:"675",hg:1,ag:2}),
-    match({id:"p6",competitionCode:"CL",season:"2024",playedAt:"2024-09-19T18:00:00Z",home:"Feyenoord",homeId:"675",away:"OppC",awayId:"903",hg:2,ag:1})
+    match({id:"p6",competitionCode:"CL",season:"2024",playedAt:"2024-09-19T18:00:00Z",home:"Feyenoord",homeId:"675",away:"OppC",awayId:"903",hg:2,ag:1}),
+    match({id:"p6b",competitionCode:"CL",season:"2024",playedAt:"2024-09-26T18:00:00Z",home:"OppD",homeId:"904",away:"Feyenoord",awayId:"675",hg:0,ag:2})
   ]);
   const fixture={home:"Barcelona",away:"Feyenoord",homeId:81,awayId:675,competitionCode:"CL",seasonStart:"2025",utcDate:"2025-09-10T16:00:00Z"};
   // Thin CURRENT live table — the exact shape (low goals over few games) that
@@ -325,9 +337,11 @@ test("CEILING regression: a thin current-season table no longer feeds teamStreng
     match({id:"p1",competitionCode:"MLS",season:"2024",playedAt:"2024-09-01T18:00:00Z",home:"Minnesota United",homeId:"9001",away:"OppA",awayId:"9101",hg:2,ag:1}),
     match({id:"p2",competitionCode:"MLS",season:"2024",playedAt:"2024-09-08T18:00:00Z",home:"OppB",homeId:"9102",away:"Minnesota United",awayId:"9001",hg:1,ag:1}),
     match({id:"p2b",competitionCode:"MLS",season:"2024",playedAt:"2024-09-15T18:00:00Z",home:"Minnesota United",homeId:"9001",away:"OppC",awayId:"9103",hg:1,ag:0}),
+    match({id:"p2c",competitionCode:"MLS",season:"2024",playedAt:"2024-09-22T18:00:00Z",home:"OppD",homeId:"9104",away:"Minnesota United",awayId:"9001",hg:0,ag:2}),
     match({id:"p3",competitionCode:"MLS",season:"2024",playedAt:"2024-09-05T18:00:00Z",home:"FC Dallas",homeId:"9002",away:"OppA",awayId:"9101",hg:1,ag:2}),
     match({id:"p4",competitionCode:"MLS",season:"2024",playedAt:"2024-09-12T18:00:00Z",home:"OppB",homeId:"9102",away:"FC Dallas",awayId:"9002",hg:0,ag:1}),
-    match({id:"p4b",competitionCode:"MLS",season:"2024",playedAt:"2024-09-19T18:00:00Z",home:"FC Dallas",homeId:"9002",away:"OppC",awayId:"9103",hg:2,ag:1})
+    match({id:"p4b",competitionCode:"MLS",season:"2024",playedAt:"2024-09-19T18:00:00Z",home:"FC Dallas",homeId:"9002",away:"OppC",awayId:"9103",hg:2,ag:1}),
+    match({id:"p4c",competitionCode:"MLS",season:"2024",playedAt:"2024-09-26T18:00:00Z",home:"OppD",homeId:"9104",away:"FC Dallas",awayId:"9002",hg:0,ag:1})
   ]);
   const fixture={home:"Minnesota United",away:"FC Dallas",homeId:9001,awayId:9002,competitionCode:"MLS",seasonStart:"2025",utcDate:"2025-09-10T16:00:00Z"};
   // Thin CURRENT live table, both sides high-scoring — the mirror-image shape
@@ -346,5 +360,157 @@ test("CEILING regression: a thin current-season table no longer feeds teamStreng
   const merged=mergeWithLocalHistory(result.baseContext,[],fixture);
   const fixedStrength=teamStrengthModel(fixture,merged);
   assert.notDeepEqual(fixedStrength.lambdas,{home:3.4,away:3.1},"must not reproduce the exact reported ceiling λ pair");
+  db.close();
+});
+
+// ============================================================================
+// Baseline DEPTH follow-up — a picked tier can clear MIN_TEAMS_FOR_GENUINE_
+// BASELINE (wide: many distinct teams) while every one of those teams,
+// including this fixture's own two, has played only 1-3 games (shallow).
+// pickCompetitionBaseline must now also require MIN_GAMES_FOR_MATURE_
+// STANDINGS for the fixture's specific two teams in whichever tier it is
+// about to accept — reusing the exact bar already used for the live table,
+// not a new number.
+// ============================================================================
+
+// Builds a "wide but shallow" tier: `width` teams total, each appearing in
+// exactly one game (an opening-matchday shape), via `width/2` distinct pairs.
+function seedOpeningMatchday(db,{competitionCode="PL",season="2025",datePrefix="2025-09",width=6,homeName="Alpha",homeId="1",homePlayedGames=1,awayName="Beta",awayId="2",awayPlayedGames=1}={}){
+  const rows=[];
+  // The fixture's own two teams get exactly the requested playedGames each,
+  // via that many distinct 1-off opponents (never each other, so their
+  // numbers stay independent and easy to reason about).
+  for(let i=0;i<homePlayedGames;i++)
+    rows.push(match({id:`${season}-${competitionCode}-home${i}`,competitionCode,season,playedAt:`${datePrefix}-0${i+1}T18:00:00Z`,home:homeName,homeId,away:`HomeOpp${i}`,awayId:`h-opp-${i}`,hg:1,ag:0}));
+  for(let i=0;i<awayPlayedGames;i++)
+    rows.push(match({id:`${season}-${competitionCode}-away${i}`,competitionCode,season,playedAt:`${datePrefix}-07T${String(i).padStart(2,"0")}:00:00Z`,home:`AwayOpp${i}`,homeId:`a-opp-${i}`,away:awayName,awayId,hg:1,ag:1}));
+  // Pad the remaining width with independent one-off pairs so the tier
+  // clears MIN_TEAMS_FOR_GENUINE_BASELINE purely on team count. home/away
+  // already contributed 2 + homePlayedGames + awayPlayedGames distinct teams
+  // (the two named teams plus one opponent per game each).
+  const nonPadTeams=2+homePlayedGames+awayPlayedGames;
+  const padPairs=Math.max(0,Math.ceil((width-nonPadTeams)/2));
+  for(let i=0;i<padPairs;i++)
+    rows.push(match({id:`${season}-${competitionCode}-pad${i}`,competitionCode,season,playedAt:`${datePrefix}-06T${String(i%24).padStart(2,"0")}:00:00Z`,home:`Pad${i}A`,homeId:`pad-${i}-a`,away:`Pad${i}B`,awayId:`pad-${i}-b`,hg:2,ag:1}));
+  importHistoryMatches(db,rows);
+}
+
+test("DEPTH A) a wide (26-team) current baseline with 1 game each for the fixture's two teams is rejected in favour of a mature previous-season baseline",()=>{
+  const db=openHistoryDatabase(tempDb());
+  seedOpeningMatchday(db,{season:"2025",datePrefix:"2025-09",width:26,homePlayedGames:1,awayPlayedGames:1});
+  seedFourTeamSeason(db,{season:"2024",datePrefix:"2024-09"}); // Alpha/Beta each get 4 games — mature previous tier
+  const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,competitionCode:"PL",seasonStart:"2025",utcDate:"2025-09-10T16:00:00Z"};
+  const raw=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
+  assert.ok(raw.current,"the current tier clears the team-count bar (26 teams)");
+  const baseline=pickCompetitionBaseline(raw,fixture,alignContextTeamIds);
+  assert.equal(baseline.baselineSource,"PREVIOUS_SEASON","the wide-but-shallow current tier must be rejected, not just the live table");
+  db.close();
+});
+
+test("DEPTH B) asymmetric depth (home=3, away=5) is still rejected — BOTH teams must individually clear the bar",()=>{
+  const db=openHistoryDatabase(tempDb());
+  seedOpeningMatchday(db,{season:"2025",datePrefix:"2025-09",width:10,homePlayedGames:3,awayPlayedGames:5});
+  seedFourTeamSeason(db,{season:"2024",datePrefix:"2024-09"});
+  const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,competitionCode:"PL",seasonStart:"2025",utcDate:"2025-09-10T16:00:00Z"};
+  const raw=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
+  const baseline=pickCompetitionBaseline(raw,fixture,alignContextTeamIds);
+  assert.equal(baseline.baselineSource,"PREVIOUS_SEASON","home=3 alone is enough to reject the current tier, regardless of away=5");
+  db.close();
+});
+
+test("DEPTH C) both teams at exactly 4 games each is accepted as CURRENT_SEASON",()=>{
+  const db=openHistoryDatabase(tempDb());
+  seedOpeningMatchday(db,{season:"2025",datePrefix:"2025-09",width:10,homePlayedGames:4,awayPlayedGames:4});
+  const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,competitionCode:"PL",seasonStart:"2025",utcDate:"2025-09-30T16:00:00Z"};
+  const raw=buildCompetitionBaseline(db,"PL","2025","2025-09-30T00:00:00Z");
+  const baseline=pickCompetitionBaseline(raw,fixture,alignContextTeamIds);
+  assert.equal(baseline.baselineSource,"CURRENT_SEASON");
+  const total=baseline.standings.standings.find(s=>s.type==="TOTAL").table;
+  assert.equal(total.find(r=>r.team.id===101).playedGames,4);
+  assert.equal(total.find(r=>r.team.id===102).playedGames,4);
+  db.close();
+});
+
+test("DEPTH D) current and previous both shallow for this fixture: local history is used instead",()=>{
+  const db=openHistoryDatabase(tempDb());
+  seedOpeningMatchday(db,{season:"2025",datePrefix:"2025-09",width:26,homePlayedGames:1,awayPlayedGames:1});
+  seedOpeningMatchday(db,{season:"2024",datePrefix:"2024-09",width:10,homePlayedGames:2,awayPlayedGames:2}); // previous exists but is ALSO shallow for Alpha/Beta
+  const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,competitionCode:"PL",seasonStart:"2025",utcDate:"2025-09-10T16:00:00Z"};
+  const rawContext={standings:null,finished:[],scheduled:[]};
+  const result=resolveTeamStrengthBaseline(db,rawContext,fixture,alignContextTeamIds,fixture.utcDate);
+  assert.equal(result.competitionBaseline,null,"neither tier is deep enough for Alpha/Beta specifically");
+  assert.equal(result.baseContext.standings,null);
+
+  const localHistoryRows=[];
+  for(let i=1;i<=4;i++){
+    localHistoryRows.push({recordKey:`SIM:h${i}`,sourceFixtureId:`h${i}`,playedAt:`2025-08-0${i}T18:00:00Z`,homeTeam:{id:101,name:"Alpha"},awayTeam:{id:9000+i,name:`LOpp${i}`},score:{fullTime:{home:1,away:0}},status:"FT",provenance:{source:"SIM"}});
+    localHistoryRows.push({recordKey:`SIM:a${i}`,sourceFixtureId:`a${i}`,playedAt:`2025-08-1${i}T18:00:00Z`,homeTeam:{id:9100+i,name:`LOpp${i}b`},awayTeam:{id:102,name:"Beta"},score:{fullTime:{home:0,away:1}},status:"FT",provenance:{source:"SIM"}});
+  }
+  const merged=mergeWithLocalHistory(result.baseContext,localHistoryRows,fixture);
+  assert.ok(merged.standings,"local history must supply standings once both SQLite tiers are rejected for depth");
+  assert.equal(merged.localHistoryMeta.homeMatches,4);
+  assert.equal(merged.localHistoryMeta.awayMatches,4);
+  const strength=teamStrengthModel(fixture,merged);
+  assert.ok(strength,"local history is mature enough to produce a real Team Strength estimate");
+  db.close();
+});
+
+test("DEPTH E) current shallow, previous unavailable, local history insufficient: Team Strength is null (WAIT), not fabricated",()=>{
+  const db=openHistoryDatabase(tempDb());
+  seedOpeningMatchday(db,{season:"2025",datePrefix:"2025-09",width:26,homePlayedGames:1,awayPlayedGames:1});
+  // No previous-season rows seeded at all — genuinely absent.
+  const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,competitionCode:"PL",seasonStart:"2025",utcDate:"2025-09-10T16:00:00Z"};
+  const rawContext={standings:null,finished:[],scheduled:[]};
+  const result=resolveTeamStrengthBaseline(db,rawContext,fixture,alignContextTeamIds,fixture.utcDate);
+  assert.equal(result.competitionBaseline,null);
+  assert.equal(result.baseContext.standings,null);
+  const merged=mergeWithLocalHistory(result.baseContext,[],fixture); // no local history either
+  assert.equal(merged.standings,null);
+  assert.equal(teamStrengthModel(fixture,merged),null,"no usable source anywhere must yield WAIT, not a fabricated forecast");
+  db.close();
+});
+
+test("DEPTH F) MLS-shaped regression: a 26-team/13-match opening-matchday baseline (1 game per team) must not be accepted",()=>{
+  const db=openHistoryDatabase(tempDb());
+  seedOpeningMatchday(db,{competitionCode:"MLS",season:"2026",datePrefix:"2026-09",width:26,homeName:"CF Montreal",homeId:"1614",homePlayedGames:1,awayName:"Charlotte",awayId:"18310",awayPlayedGames:1});
+  const fixture={home:"CF Montreal",away:"Charlotte",homeId:1614,awayId:18310,competitionCode:"MLS",seasonStart:"2026",utcDate:"2026-09-09T23:30:00+00:00"};
+  const raw=buildCompetitionBaseline(db,"MLS","2026","2026-09-09T23:30:00+00:00");
+  assert.equal(raw.current.baselineSample,13,"reproduces the exact reported shape: 13 matches");
+  assert.equal(raw.current.baselineTeams,26,"reproduces the exact reported shape: 26 teams");
+  const baseline=pickCompetitionBaseline(raw,fixture,alignContextTeamIds);
+  assert.equal(baseline,null,"wide-but-1-game-per-team must NOT be accepted merely for clearing the team-count bar");
+  db.close();
+});
+
+// 5 flagged + 3 previously-unflagged production fixtures from the 09.09
+// refresh (HEAD be52619) — every one of them drew its λ from this exact
+// same wide/shallow (26 teams, 1 game each) MLS opening-matchday tier. None
+// of the 8 should still reach teamStrengthModel through that tier.
+test("DEPTH G) all 8 real 09.09 MLS fixtures (5 flagged + 3 previously-unflagged) reject the n=1 opening-matchday baseline",()=>{
+  const db=openHistoryDatabase(tempDb());
+  const fixtures=[
+    {home:"CF Montreal",away:"Charlotte",homeId:1614,awayId:18310},
+    {home:"Chicago Fire",away:"Inter Miami",homeId:1607,awayId:9568},
+    {home:"Minnesota United FC",away:"FC Dallas",homeId:1612,awayId:1597},
+    {home:"Houston Dynamo",away:"Real Salt Lake",homeId:1600,awayId:1606},
+    {home:"Los Angeles FC",away:"New York Red Bulls",homeId:1616,awayId:1602},
+    {home:"Atlanta United FC",away:"Orlando City SC",homeId:1608,awayId:1598},
+    {home:"Austin",away:"Colorado Rapids",homeId:16489,awayId:1610},
+    {home:"Portland Timbers",away:"St. Louis City",homeId:1617,awayId:20787}
+  ].map(f=>({...f,competitionCode:"MLS",seasonStart:"2026",utcDate:"2026-09-09T23:30:00+00:00"}));
+
+  // One real opening matchday: each of the 16 named teams plus enough filler
+  // pairs to reach the real 26-team/13-match shape, every team exactly 1 game.
+  const rows=fixtures.map((f,i)=>match({id:`md1-${i}`,competitionCode:"MLS",season:"2026",playedAt:`2026-09-0${(i%9)+1}T18:00:00Z`,home:f.home,homeId:String(f.homeId),away:f.away,awayId:String(f.awayId),hg:i%3,ag:(i+1)%3}));
+  rows.push(match({id:"md1-pad",competitionCode:"MLS",season:"2026",playedAt:"2026-09-01T12:00:00Z",home:"PadA",homeId:"pad-a",away:"PadB",awayId:"pad-b",hg:1,ag:0}));
+  importHistoryMatches(db,rows);
+
+  const raw=buildCompetitionBaseline(db,"MLS","2026","2026-09-09T23:30:00+00:00");
+  assert.equal(raw.current.baselineTeams,18,"16 real teams + 2 filler teams");
+  for(const fixture of fixtures){
+    const result=resolveTeamStrengthBaseline(db,{standings:null,finished:[],scheduled:[]},fixture,alignContextTeamIds,fixture.utcDate);
+    assert.equal(result.competitionBaseline,null,`${fixture.home} - ${fixture.away}: the 1-game-per-team tier must not be accepted`);
+    assert.equal(result.baseContext.standings,null,`${fixture.home} - ${fixture.away}: no standings should reach teamStrengthModel`);
+  }
   db.close();
 });
