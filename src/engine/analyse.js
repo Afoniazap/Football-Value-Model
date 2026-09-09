@@ -69,12 +69,48 @@ export function analyseFixture(fixture, context, oddsData, config, squadData=nul
   const markets = evaluateMarkets(fixture,strength,cons,oddsData);
   const priced = markets.filter(x=>Number.isFinite(x.edge) && Number.isFinite(x.ev));
 
+  // Section 14 sanity/plausibility guards — additive red flags only, no
+  // threshold changes. Both lambda clamps hitting their data floor at once
+  // (0.25/0.20) is the exact, proven root cause behind implausible OU/AH
+  // "91%+" readings on thin/degenerate context: the score matrix stops
+  // reflecting real team data and collapses to a fixed artifact shared by
+  // every fixture in that state. Uses the model's own existing clamp
+  // constants — not a new invented threshold.
+  const extremeExpectedGoals = strength.lambdas.home <= 0.25 && strength.lambdas.away <= 0.20;
+  if (extremeExpectedGoals)
+    redFlags.push("EXTREME_EXPECTED_GOALS: λ на нижней границе — context вырожден");
+  // A model priced as near-certain (fairOdds<=1.05) while the market prices
+  // the same selection as a longshot (odds>=4, i.e. implied <=25%) is not a
+  // value signal — a >4x fair/market gap means model and market are pricing
+  // different events (wrong competition/context, degenerate λ, stale odds),
+  // documented disagreement threshold per audit section 14.
+  if (priced.some(c => Number.isFinite(c.fairOdds) && c.fairOdds <= 1.05 && Number.isFinite(c.odds) && c.odds >= 4))
+    redFlags.push("EXTREME_MODEL_MARKET_DISAGREEMENT: модель и рынок расходятся кратно");
+
+  // Section 12: OU/AH totals are priced solely from Team Strength's score
+  // matrix — formModel never contributes to it (see models.js), so the
+  // blended 1X2 cons.agreement/stability is not evidence about the
+  // totals/handicap estimate and must not be borrowed to inflate their
+  // confidence. Only 1X2/DNB (genuinely multi-model) use cons.agreement.
+  const ouModelCoverage = 1/2; // exactly one model ever produces the totals/AH score matrix
   const ranked = priced.map(c => {
-    const metrics = decisionMetrics(c,dataQuality,cons.agreement,stability,oddsData?.agreement,redFlags);
+    const singleModelMarket = c.market === "OU" || c.market === "AH";
+    const metrics = decisionMetrics(c,dataQuality,
+      singleModelMarket ? null : cons.agreement,
+      singleModelMarket ? null : stability,
+      oddsData?.agreement,redFlags);
     return {...c,...metrics};
   }).sort((a,b)=>b.fds-a.fds);
 
-  const best = ranked[0] || null;
+  // OU/AH are priced entirely from this fixture's score matrix; when both λ
+  // are collapsed to their data floor (extremeExpectedGoals) that matrix is
+  // a shared degenerate artifact, not a real estimate — such a candidate
+  // must never win `best` and dictate category, no matter how attractive its
+  // (equally degenerate) edge/EV/FDS look. 1X2 is unaffected: it blends in
+  // formModel, an independent estimate. All candidates, degraded or not,
+  // stay visible in `markets:ranked` for audit/transparency.
+  const eligibleForBest = c => !(extremeExpectedGoals && (c.market==="OU"||c.market==="AH"));
+  const best = ranked.find(eligibleForBest) || null;
   let category = "WAIT", reason = "Нет доступных коэффициентов для подтверждения value.";
 
   if (best) {
@@ -110,6 +146,7 @@ export function analyseFixture(fixture, context, oddsData, config, squadData=nul
       sciPenalty: Number(sciPenalty.toFixed(1))
     },
     marketAgreement:oddsData?.agreement ?? null,
+    ouModelCoverage, ouModelAgreement:null, ouStability:null,
     sci, redFlags, models:cons.models.map(m=>({name:m.name,quality:m.quality,explanation:m.explanation})),
     consensusProbability:cons.probability,
     markets:ranked, marketAvailable:!!oddsData, marketSource:oddsData?.source || null,

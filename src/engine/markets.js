@@ -5,7 +5,13 @@ function probabilityFromMatrix(matrix, predicate) {
   return matrix.filter(predicate).reduce((s,x)=>s+x.p,0);
 }
 
-export function asianSettlementOutcome(homeGoals, awayGoals, side, line) {
+export function asianSettlementOutcome(homeGoals, awayGoals, side, rawLine) {
+  // `diff + l` below is a numeric add — if a provider ever supplies line as a
+  // string, `+` would silently string-concatenate instead of adding
+  // (confirmed: line="1" turned a genuine PUSH into a LOSE). Normalize once,
+  // up front, the same way totalsSettlementOutcome's subtraction already
+  // does implicitly.
+  const line = Number(rawLine);
   const legs = Number.isInteger(line*2) ? [line] : [Math.floor(line*2)/2, Math.ceil(line*2)/2];
   const settleLeg = l => {
     const diff = side === "home" ? homeGoals-awayGoals : awayGoals-homeGoals;
@@ -57,13 +63,60 @@ function evaluateTwoWay(label, probability, odds, marketFair, meta={}) {
   };
 }
 
-function evaluateQuarterSettlement(label,settlement,odds,marketFair,meta={}){
+// A line can only be priced as a plain binary (evaluateTwoWay, above) when a
+// push is structurally impossible: half lines (n.5). Every OTHER line —
+// integer (n.0, e.g. OU2.0/AH0) as well as quarter (n.25/n.75) — carries real
+// win/halfWin/push/halfLoss/lose mechanics and must go through
+// evaluateSettlementMarket instead. Integer lines were previously priced with
+// evaluateTwoWay's strict P(over)/P(under) and a naive 1/probability fair
+// price, which ignores push probability entirely and systematically misprices
+// the fair odds (see markets.js audit, section 10 of the OU/Asian totals task).
+// Number.isInteger does NOT coerce strings (Number.isInteger("2")===false)
+// while arithmetic on the same value does (`"2"*2`===4) — a provider that
+// ever supplies a quoted numeric point ("2" instead of 2) would silently
+// misclassify a real integer (push-capable) line as a half line under a
+// naive `Number.isInteger(line*2)` check. Normalize to a real Number first.
+export function isHalfLine(line){const n=Number(line);return Number.isInteger(n*2)&&!Number.isInteger(n);}
+
+// Handles BOTH integer push lines and quarter lines with a single formula:
+// asianSettlementOutcome/totalsSettlementOutcome already average one leg
+// (integer: win/push/lose only) or two legs (quarter: win/halfWin/push=0/
+// halfLoss/lose) — win+halfWin*.5 / lose+halfLoss*.5 reduces to the exact
+// section-10 push-aware fair-odds formula for integer lines, and to the
+// already-audited stake-weighted formula for quarter lines.
+//
+// `probability` is the LITERAL full-win probability (settlement.win) — the
+// same meaning `probability` already has for 1X2 and half-line markets, so
+// nothing that reads `.probability` (Telegram "Model %", ranking, etc.) has
+// to know a market is settlement-based to interpret it correctly. It is NOT
+// what Edge is computed from, though: a literal "chance of a clean win"
+// (concept A, section 6) is not the same concept as a de-vigged two-way
+// market price (concept D), so subtracting one from the other would repeat
+// the exact mismatch this audit found for integer lines. Edge instead uses
+// `breakEvenProbability` (1/fairOdds) — proven, by symmetry, to be the same
+// concept D quantity the market side represents: this settlement's
+// win/halfWin/push/halfLoss/lose is the exact mirror of the opposite side's
+// lose/halfLoss/push/halfWin/win, so both sides' break-even-equivalent
+// probabilities always sum to exactly 1, the same structural property a
+// de-vigged two-way market price has.
+function evaluateSettlementMarket(label,settlement,odds,marketFair,meta={}){
   const winStake=settlement.win+settlement.halfWin*.5;
   const lossStake=settlement.lose+settlement.halfLoss*.5;
-  const probability=winStake/(winStake+lossStake);
+  const stakeAtRisk=winStake+lossStake;
+  const breakEvenProbability=stakeAtRisk>0?winStake/stakeAtRisk:null;
   const fairOdds=winStake>0?1+lossStake/winStake:Infinity;
   const ev=(settlement.win*(odds-1)+settlement.halfWin*(odds-1)/2-settlement.halfLoss*.5-settlement.lose)*100;
-  return {label,probability,odds,fairOdds,marketFair,edge:(probability-marketFair)*100,ev,...meta};
+  const probabilityEdge=Number.isFinite(breakEvenProbability)&&Number.isFinite(marketFair)?(breakEvenProbability-marketFair)*100:null;
+  return {
+    label,odds,marketFair,
+    probability:settlement.win,
+    fullWinProbability:settlement.win,halfWinProbability:settlement.halfWin,
+    pushProbability:settlement.push,halfLossProbability:settlement.halfLoss,
+    fullLossProbability:settlement.lose,
+    breakEvenProbability,fairOdds,edge:probabilityEdge,probabilityEdge,ev,
+    oddsSemantics:"SETTLEMENT_DISTRIBUTION",
+    ...meta
+  };
 }
 
 export function evaluateMarkets(fixture, teamStrength, consensus, oddsData) {
@@ -97,19 +150,22 @@ export function evaluateMarkets(fixture, teamStrength, consensus, oddsData) {
     const lineBenchmark=benchmark.totals[line];
     if (!over || !under || !lineBenchmark) continue;
     const [fairOver,fairUnder] = removeMarginTwoWay(lineBenchmark.over,lineBenchmark.under);
-    const pOver = probabilityFromMatrix(matrix,x=>x.h+x.a>line);
-    const pUnder = probabilityFromMatrix(matrix,x=>x.h+x.a<line);
     const shared={market:"OU",line,benchmarkBookmaker:lineBenchmark.bookmaker,benchmarkMarketOdds:{over:lineBenchmark.over,under:lineBenchmark.under},benchmarkOverround:lineBenchmark.overround};
     const overMeta={...shared,bookmaker:over.bookmaker,bestBookmaker:over.bookmaker,bestOdds:over.odds,benchmarkOdds:lineBenchmark.over};
     const underMeta={...shared,bookmaker:under.bookmaker,bestBookmaker:under.bookmaker,bestOdds:under.odds,benchmarkOdds:lineBenchmark.under};
-    if (Number.isInteger(line*2)) {
+    if (isHalfLine(line)) {
+      // No push is possible on a half line, so a plain P(over)/P(under) split is exact.
+      const pOver = probabilityFromMatrix(matrix,x=>x.h+x.a>line);
+      const pUnder = probabilityFromMatrix(matrix,x=>x.h+x.a<line);
       results.push(evaluateTwoWay(`ТБ ${line}`,pOver,over.odds,fairOver,overMeta));
       results.push(evaluateTwoWay(`ТМ ${line}`,pUnder,under.odds,fairUnder,underMeta));
     } else {
+      // Integer lines (real push mass) and quarter lines (half-win/half-loss)
+      // both need the full settlement distribution, not a binary split.
       const overSettlement=totalsSettlement(matrix,"over",line);
       const underSettlement=totalsSettlement(matrix,"under",line);
-      results.push(evaluateQuarterSettlement(`ТБ ${line}`,overSettlement,over.odds,fairOver,{...overMeta,settlement:overSettlement}));
-      results.push(evaluateQuarterSettlement(`ТМ ${line}`,underSettlement,under.odds,fairUnder,{...underMeta,settlement:underSettlement}));
+      results.push(evaluateSettlementMarket(`ТБ ${line}`,overSettlement,over.odds,fairOver,{...overMeta,settlement:overSettlement}));
+      results.push(evaluateSettlementMarket(`ТМ ${line}`,underSettlement,under.odds,fairUnder,{...underMeta,settlement:underSettlement}));
     }
   }
 
@@ -128,9 +184,11 @@ export function evaluateMarkets(fixture, teamStrength, consensus, oddsData) {
     const effectiveProbability = settlement.win + settlement.push*0.5;
     const label=`${side==="home"?"Ф1":"Ф2"}(${item.point>0?"+":""}${item.point})`;
     const meta={market:"AH",bookmaker:item.bookmaker,bestBookmaker:item.bookmaker,bestOdds:item.odds,line:item.point,settlement,benchmarkBookmaker:lineBenchmark.bookmaker,benchmarkOdds:benchmarkOdds[0],benchmarkMarketOdds:{selection:benchmarkOdds[0],opposite:benchmarkOdds[1]},benchmarkOverround:lineBenchmark.overround};
-    results.push(Number.isInteger(item.point*2)
+    // Same push-aware routing as totals, above: only a genuine half line
+    // (±n.5) can never push, so only there is a plain binary split exact.
+    results.push(isHalfLine(item.point)
       ? evaluateTwoWay(label,effectiveProbability,item.odds,fairThis,meta)
-      : evaluateQuarterSettlement(label,settlement,item.odds,fairThis,meta));
+      : evaluateSettlementMarket(label,settlement,item.odds,fairThis,meta));
   }
 
   const pBtts = probabilityFromMatrix(matrix,x=>x.h>0 && x.a>0);

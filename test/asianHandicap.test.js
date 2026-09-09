@@ -45,7 +45,11 @@ test("quarter-line AH EV, fair odds and edge use stake-weighted settlement", () 
   assert.deepEqual(result.settlement, { win: 0.2, halfWin: 0.3, push: 0, halfLoss: 0, lose: 0.5 });
   assert.ok(Math.abs(result.ev - (-8)) < 1e-10);
   assert.ok(Math.abs(result.fairOdds - (1 + 0.5 / 0.35)) < 1e-10);
-  assert.ok(Math.abs(result.probability - (0.35 / 0.85)) < 1e-10);
+  // `probability` is the literal full-win chance; the break-even-equivalent
+  // Edge is derived from, is exposed separately (not misleadingly as "probability").
+  assert.equal(result.probability, result.fullWinProbability);
+  assert.equal(result.probability, 0.2);
+  assert.ok(Math.abs(result.breakEvenProbability - (0.35 / 0.85)) < 1e-10);
   const marketFair = 0.5;
   assert.ok(Math.abs(result.edge - ((0.35 / 0.85 - marketFair) * 100)) < 1e-10);
 });
@@ -64,7 +68,7 @@ function legacySettlement(matrix, side, line) {
   return { win, push, lose };
 }
 
-test("integer and half-line AH remain identical to legacy calculation", () => {
+test("half-line AH remains identical to the legacy calculation (no push is possible)", () => {
   const matrix = [
     { h: 2, a: 0, p: 0.15 },
     { h: 1, a: 0, p: 0.25 },
@@ -72,7 +76,7 @@ test("integer and half-line AH remain identical to legacy calculation", () => {
     { h: 0, a: 1, p: 0.2 },
     { h: 0, a: 2, p: 0.1 }
   ];
-  for (const line of [-1, -0.5, 0, 0.5, 1]) {
+  for (const line of [-0.5, 0.5]) {
     const legacy = legacySettlement(matrix, "home", line);
     const current = asianSettlement(matrix, "home", line);
     assert.deepEqual(current, { ...legacy, halfWin: 0, halfLoss: 0 });
@@ -81,6 +85,38 @@ test("integer and half-line AH remain identical to legacy calculation", () => {
     assert.ok(Math.abs(result.probability - effectiveProbability) < 1e-10);
     assert.ok(Math.abs(result.fairOdds - 1 / effectiveProbability) < 1e-10);
     assert.ok(Math.abs(result.ev - ((effectiveProbability * 2.2 - 1) * 100)) < 1e-10);
+  }
+});
+
+// Section 10/21 of the OU/Asian totals audit: integer AH lines (0, ±1, ±2...)
+// carry real push probability exactly like integer totals, and had the same
+// bug — routed through the plain binary path with a naive fairOdds ignoring
+// push. Must use the same push-aware settlement math.
+test("integer AH lines with real push mass use push-aware fair odds, not naive 1/probability", () => {
+  const matrix = [
+    { h: 2, a: 0, p: 0.15 },
+    { h: 1, a: 0, p: 0.25 },
+    { h: 0, a: 0, p: 0.3 },
+    { h: 0, a: 1, p: 0.2 },
+    { h: 0, a: 2, p: 0.1 }
+  ];
+  const expected = {
+    "-1": { win: 0.15, push: 0.25, lose: 0.6, fairOdds: 5 },
+    "0": { win: 0.4, push: 0.3, lose: 0.3, fairOdds: 1.75 },
+    "1": { win: 0.7, push: 0.2, lose: 0.1, fairOdds: 8 / 7 }
+  };
+  for (const line of [-1, 0, 1]) {
+    const legacy = legacySettlement(matrix, "home", line);
+    assert.ok(Math.abs(legacy.win - expected[line].win) < 1e-10);
+    assert.ok(Math.abs(legacy.push - expected[line].push) < 1e-10);
+    assert.ok(Math.abs(legacy.lose - expected[line].lose) < 1e-10);
+    const result = ahCandidate(matrix, line);
+    assert.ok(result.settlement, "integer AH lines must now expose a full settlement distribution");
+    assert.ok(Math.abs(result.pushProbability - expected[line].push) < 1e-10);
+    assert.ok(Math.abs(result.fairOdds - expected[line].fairOdds) < 1e-10, `line ${line}`);
+    const ev = (result.settlement.win * (result.fairOdds - 1) - result.settlement.lose) * 100;
+    assert.ok(Math.abs(ev) < 1e-9, `EV(fairOdds) must be ~0 for line ${line}`);
+    assert.equal(result.probability, result.fullWinProbability);
   }
 });
 

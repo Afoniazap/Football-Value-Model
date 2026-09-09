@@ -143,8 +143,16 @@ export function listText(category, items) {
   if (!items.length) return `<b>${title}</b>\n\nСписок пуст.`;
   return `<b>${title}</b>\n\n` + items.slice(0,20).map(x=>{
     const b=x.best;
+    // Settlement-based candidates (integer/quarter OU & AH lines) carry real
+    // push/half-win mass: `probability` there is the literal full-win chance,
+    // NOT the break-even figure Edge/EV are derived from — showing it as a
+    // bare "Model %" beside Edge implies a single shared concept that isn't
+    // there. Show Fair/EV (both derived from the same break-even quantity as
+    // Edge) instead, exactly as the audit's section 20 requires.
     const summary=b
-      ? `${betLabel(b)} @${compactNumber(b.odds,2)} · Model ${compactNumber(b.probability*100)}% · Edge ${compactNumber(b.edge)} · FDS ${b.fds}`
+      ? b.oddsSemantics==="SETTLEMENT_DISTRIBUTION"
+        ? `${betLabel(b)} @${compactNumber(b.odds,2)} · Fair ${b.fairOdds.toFixed(2)} · EV ${signedNumber(b.ev)}% · Edge ${compactNumber(b.edge)} · FDS ${b.fds}`
+        : `${betLabel(b)} @${compactNumber(b.odds,2)} · Model ${compactNumber(b.probability*100)}% · Edge ${compactNumber(b.edge)} · FDS ${b.fds}`
       : x.reason||"Нет рассчитанного кандидата";
     return `<b>${esc(x.home)} — ${esc(x.away)}</b> · ${compactKyivDate(x.utcDate)}\n${esc(summary)}`;
   }).join("\n\n");
@@ -226,9 +234,14 @@ export function cardText(x) {
     const stale=(x.marketFreshness||x.marketDiagnostic?.freshness)==="STALE";
     const prefix=stale?"🎯 <b>Ставка-кандидат:</b>":x.category==="VALUE"?"✅ <b>Ставка:</b>":"🎯 <b>Кандидат:</b>";
     const price=`${esc(betLabel(b))} @${compactNumber(b.odds,2)}`;
+    // For settlement-based candidates (real push/half-win mass), `probability`
+    // is the literal full-win-only chance — a different concept from the
+    // break-even quantity Fair/Edge/EV (shown on the next line) are derived
+    // from. Label it explicitly so it isn't read as "the model's price".
+    const probabilityLabel=b.oddsSemantics==="SETTLEMENT_DISTRIBUTION"?"Win-only":"P";
     lines.push(
       "",
-      `${prefix} <b>${price}</b>${stale?" ⚠️ STALE":""} · P <b>${compactNumber(b.probability*100)}%</b>`,
+      `${prefix} <b>${price}</b>${stale?" ⚠️ STALE":""} · ${probabilityLabel} <b>${compactNumber(b.probability*100)}%</b>`,
       `💰 Fair <b>${b.fairOdds.toFixed(2)}</b> · Edge <b>${signedNumber(b.edge)} п.п.</b> · EV <b>${signedNumber(b.ev)}%</b>`,
       "",
       `<b>${x.category}</b> · FDS <b>${b.fds}/100</b>`
@@ -494,15 +507,37 @@ X: ${pct(x.consensusProbability?.draw)}%
 
 Расчёт объединяет модели с весом по их качеству.`,
 
-    Fair:
-      `<b>Fair Odds: ${Number.isFinite(b.fairOdds) ? b.fairOdds.toFixed(2) : "N/A"}</b>
+    // Settlement-based candidates (real push/half-win mass) derive Fair/Edge/EV
+    // from `breakEvenProbability`, not the literal `probability` — see
+    // evaluateSettlementMarket in markets.js. Showing the "1/probability" or
+    // "probability×odds−1" formulas here for those candidates would describe a
+    // calculation the code doesn't actually perform (audit section 20).
+    Fair: b.oddsSemantics==="SETTLEMENT_DISTRIBUTION"
+      ? `<b>Fair Odds: ${Number.isFinite(b.fairOdds) ? b.fairOdds.toFixed(2) : "N/A"}</b>
+Справедливый коэффициент с учётом push/half-win.
+
+Win: ${pct(b.fullWinProbability)}% · HalfWin: ${pct(b.halfWinProbability)}% · Push: ${pct(b.pushProbability)}%
+HalfLoss: ${pct(b.halfLossProbability)}% · Lose: ${pct(b.fullLossProbability)}%
+Break-even вероятность: ${pct(b.breakEvenProbability)}%
+
+1 / ${pct(b.breakEvenProbability)}%
+= <b>${Number.isFinite(b.fairOdds) ? b.fairOdds.toFixed(2) : "N/A"}</b>`
+      : `<b>Fair Odds: ${Number.isFinite(b.fairOdds) ? b.fairOdds.toFixed(2) : "N/A"}</b>
 Справедливый коэффициент модели.
 
 1 / ${pct(b.probability)}%
 = <b>${Number.isFinite(b.fairOdds) ? b.fairOdds.toFixed(2) : "N/A"}</b>`,
 
-    Edge:
-      `<b>Edge: ${n1(b.edge)} п.п.</b>
+    Edge: b.oddsSemantics==="SETTLEMENT_DISTRIBUTION"
+      ? `<b>Edge: ${n1(b.edge)} п.п.</b>
+Перевес модели над рыночной вероятностью (break-even эквивалент, с учётом push/half-win).
+
+Модель (break-even): ${pct(b.breakEvenProbability)}%
+Рынок без маржи: ${pct(b.marketFair)}%
+
+${pct(b.breakEvenProbability)} − ${pct(b.marketFair)}
+= <b>${n1(b.edge)} п.п.</b>`
+      : `<b>Edge: ${n1(b.edge)} п.п.</b>
 Перевес модели над рыночной вероятностью.
 
 Model: ${pct(b.probability)}%
@@ -511,8 +546,18 @@ Model: ${pct(b.probability)}%
 ${pct(b.probability)} − ${pct(b.marketFair)}
 = <b>${n1(b.edge)} п.п.</b>`,
 
-    EV:
-      `<b>EV: ${n1(b.ev)}%</b>
+    EV: b.oddsSemantics==="SETTLEMENT_DISTRIBUTION"
+      ? `<b>EV: ${n1(b.ev)}%</b>
+Ожидаемая доходность с учётом push/half-win (ставка не всегда выигрывает или проигрывает целиком).
+
+Win ${pct(b.fullWinProbability)}% × полный коэффициент
+HalfWin ${pct(b.halfWinProbability)}% × половина коэффициента
+Push ${pct(b.pushProbability)}% — ставка возвращается
+HalfLoss ${pct(b.halfLossProbability)}% — теряется половина
+Lose ${pct(b.fullLossProbability)}% — теряется вся ставка
+
+= <b>${n1(b.ev)}%</b>`
+      : `<b>EV: ${n1(b.ev)}%</b>
 Ожидаемая математическая доходность.
 
 Model: ${pct(b.probability)}%
