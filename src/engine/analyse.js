@@ -70,15 +70,20 @@ export function analyseFixture(fixture, context, oddsData, config, squadData=nul
   const priced = markets.filter(x=>Number.isFinite(x.edge) && Number.isFinite(x.ev));
 
   // Section 14 sanity/plausibility guards — additive red flags only, no
-  // threshold changes. Both lambda clamps hitting their data floor at once
-  // (0.25/0.20) is the exact, proven root cause behind implausible OU/AH
-  // "91%+" readings on thin/degenerate context: the score matrix stops
-  // reflecting real team data and collapses to a fixed artifact shared by
-  // every fixture in that state. Uses the model's own existing clamp
-  // constants — not a new invented threshold.
-  const extremeExpectedGoals = strength.lambdas.home <= 0.25 && strength.lambdas.away <= 0.20;
+  // threshold changes. Both lambda clamps hitting the SAME bound at once —
+  // either both at the floor (0.25/0.20) or both at the ceiling (3.4/3.1) —
+  // is the exact, proven root cause behind implausible readings on
+  // thin/degenerate context: the score matrix stops reflecting real team
+  // data and collapses to a fixed artifact shared by every fixture in that
+  // state (09.09 forensic audit: floor/floor reproduces the reported 67%
+  // draw to the decimal — P(draw)=66.99%; ceiling/ceiling reproduces the
+  // reported OU "Fair 1.36" to the decimal). Uses the model's own existing
+  // clamp constants — not a new invented threshold.
+  const bothLambdasAtFloor = strength.lambdas.home <= 0.25 && strength.lambdas.away <= 0.20;
+  const bothLambdasAtCeiling = strength.lambdas.home >= 3.4 && strength.lambdas.away >= 3.1;
+  const extremeExpectedGoals = bothLambdasAtFloor || bothLambdasAtCeiling;
   if (extremeExpectedGoals)
-    redFlags.push("EXTREME_EXPECTED_GOALS: λ на нижней границе — context вырожден");
+    redFlags.push("EXTREME_EXPECTED_GOALS: λ на границе клампа — context вырожден");
   // A model priced as near-certain (fairOdds<=1.05) while the market prices
   // the same selection as a longshot (odds>=4, i.e. implied <=25%) is not a
   // value signal — a >4x fair/market gap means model and market are pricing
@@ -103,13 +108,22 @@ export function analyseFixture(fixture, context, oddsData, config, squadData=nul
   }).sort((a,b)=>b.fds-a.fds);
 
   // OU/AH are priced entirely from this fixture's score matrix; when both λ
-  // are collapsed to their data floor (extremeExpectedGoals) that matrix is
-  // a shared degenerate artifact, not a real estimate — such a candidate
+  // are collapsed to the same clamp bound (extremeExpectedGoals) that matrix
+  // is a shared degenerate artifact, not a real estimate — such a candidate
   // must never win `best` and dictate category, no matter how attractive its
-  // (equally degenerate) edge/EV/FDS look. 1X2 is unaffected: it blends in
-  // formModel, an independent estimate. All candidates, degraded or not,
-  // stay visible in `markets:ranked` for audit/transparency.
-  const eligibleForBest = c => !(extremeExpectedGoals && (c.market==="OU"||c.market==="AH"));
+  // (equally degenerate) edge/EV/FDS look. 1X2 normally blends in formModel,
+  // an independent estimate that can correct for a degenerate score matrix —
+  // but when modelsAvailable<2 (form absent, e.g. early-season/no-history
+  // fixtures) consensus.probability IS the raw degenerate matrix split with
+  // nothing to dilute it (09.09 audit: floor/floor produced a bare, unmixed
+  // P(draw)=66.99% that won `best` under this exact single-model condition,
+  // reproduced end-to-end via analyseFixture). All candidates, degraded or
+  // not, stay visible in `markets:ranked` for audit/transparency.
+  const degradedSingleModel1x2 = extremeExpectedGoals && cons.modelsAvailable < 2;
+  const eligibleForBest = c => !(
+    (extremeExpectedGoals && (c.market==="OU"||c.market==="AH")) ||
+    (degradedSingleModel1x2 && c.market==="1X2")
+  );
   const best = ranked.find(eligibleForBest) || null;
   let category = "WAIT", reason = "Нет доступных коэффициентов для подтверждения value.";
 

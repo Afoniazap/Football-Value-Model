@@ -168,13 +168,18 @@ test("sanity guards do not fire false positives across normal OU scenarios", () 
 // Section 3 ranking requirement: when a match has both a degraded-λ OU and a
 // normal 1X2 candidate, the degraded OU must not win `best` even though its
 // (equally degenerate) FDS is the same as or higher than the legitimate 1X2.
+// 1X2 here is genuinely "normal" (not single-model-degraded): a form model
+// is available, so consensus.probability is diluted by an independent
+// estimate, not read straight off the degenerate matrix.
 test("ranking never lets a degraded OU outrank a normal 1X2 for best", () => {
   const permissive={minDataQuality:0,minEdge:0,minEv:0,minConfidence:0,minStability:0};
   const table=[
     {team:{id:1,name:"Alpha"},playedGames:5,goalsFor:1,goalsAgainst:1},
     {team:{id:2,name:"Beta"},playedGames:5,goalsFor:1,goalsAgainst:1}
   ];
-  const context={standings:{standings:[{type:"TOTAL",table}]},finished:[]};
+  const finished=[];
+  for(let id=1;id<=4;id++)finished.push(match(id,1,9+id),match(id+4,9+id,2));
+  const context={standings:{standings:[{type:"TOTAL",table}]},finished};
   const oddsData={
     bookmakers:[{name:"Book",h2h:{home:5.0,draw:3.4,away:1.5},
       totals:[{name:"Over",point:0.5,odds:1.05},{name:"Under",point:0.5,odds:6.5}],spreads:[]}],
@@ -185,9 +190,54 @@ test("ranking never lets a degraded OU outrank a normal 1X2 for best", () => {
     }
   };
   const result=analyseFixture(fixture,context,oddsData,permissive,null);
+  assert.equal(result.modelsAvailable,2,"1X2 must genuinely blend a form model to make this test meaningful");
   const degradedOU=result.markets.filter(m=>m.market==="OU").sort((a,b)=>b.fds-a.fds)[0];
   const normal1x2=result.markets.filter(m=>m.market==="1X2").sort((a,b)=>b.fds-a.fds)[0];
   assert.ok(degradedOU.fds>=normal1x2.fds, "fixture must reproduce the degraded OU at least matching 1X2's FDS to make this test meaningful");
   assert.equal(result.best?.market,"1X2");
   assert.equal(result.best?.label,normal1x2.label);
+});
+
+// 09.09 forensic audit: production showed a repeated "X 67%" draw across
+// unrelated fixtures (Barcelona-Feyenoord, Stuttgart-Viking, PSG-Slovan
+// Bratislava, Napoli-Arsenal...), all FDS 35. Reproduced end-to-end: a thin
+// two-row TOTAL table (gf=ga=1 over 5 games, both teams) collapses both λ to
+// their floor (0.25/0.20) with no form model available (single-model
+// consensus) — the raw degenerate matrix's P(draw)=66.99% then had nothing
+// diluting it and could win `best`. Must now be excluded the same way
+// degraded OU/AH already are.
+test("a single-model degraded draw (the reproduced 09.09 '67% draw') cannot become best", () => {
+  const permissive={minDataQuality:0,minEdge:0,minEv:0,minConfidence:0,minStability:0};
+  const table=[
+    {team:{id:1,name:"Barcelona"},playedGames:5,goalsFor:1,goalsAgainst:1},
+    {team:{id:2,name:"Feyenoord"},playedGames:5,goalsFor:1,goalsAgainst:1}
+  ];
+  const context={standings:{standings:[{type:"TOTAL",table}]},finished:[]};
+  const oddsData={
+    bookmakers:[{name:"Book",h2h:{home:1.12,draw:14.8,away:9.0},totals:[],spreads:[]}],
+    best:{h2h:{home:{odds:1.12,bookmaker:"Book"},draw:{odds:14.8,bookmaker:"Book"},away:{odds:9.0,bookmaker:"Book"}},totals:{},spreads:{}}
+  };
+  const result=analyseFixture(fixture,context,oddsData,permissive,null);
+  assert.equal(result.modelsAvailable,1,"fixture must reproduce the real single-model (no form) condition");
+  const draw=result.markets.find(m=>m.label==="X");
+  assert.ok(Math.abs(draw.probability-0.6699)<1e-3, `must reproduce the reported 67% draw, got ${draw.probability}`);
+  assert.ok(result.redFlags.some(f=>f.startsWith("EXTREME_EXPECTED_GOALS")));
+  assert.notEqual(result.best?.label,"X");
+});
+
+// Symmetric ceiling case (09.09 audit): Minnesota United-FC Dallas's reported
+// "TB 5 Fair 1.36" is reproduced exactly by BOTH λ hitting their ceiling
+// (3.4/3.1) at once — the mirror image of the floor collapse, and previously
+// undetected because the guard only checked the floor.
+test("EXTREME_EXPECTED_GOALS also fires on the ceiling (both lambdas maxed), not just the floor", () => {
+  // Both teams score AND concede heavily relative to the (self-referential,
+  // two-row) league average — pushes both lambdaHome and lambdaAway past
+  // their respective ceiling (3.4 / 3.1), where the clamp then saturates them.
+  const table=[
+    {team:{id:1,name:"Minnesota United"},playedGames:3,goalsFor:30,goalsAgainst:30},
+    {team:{id:2,name:"FC Dallas"},playedGames:3,goalsFor:30,goalsAgainst:30}
+  ];
+  const context={standings:{standings:[{type:"TOTAL",table}]},finished:[]};
+  const result=analyseFixture(fixture,context,null,{minDataQuality:0,minEdge:0,minEv:0,minConfidence:0,minStability:0},null);
+  assert.ok(result.redFlags.some(f=>f.startsWith("EXTREME_EXPECTED_GOALS")), JSON.stringify(result.redFlags));
 });

@@ -17,7 +17,7 @@ import { loadMarketBetStatistics, updateMarketBetHistory } from "./statistics/ma
 import { auditMarketSnapshots, enforceMarketFreshness, resolveMarketSnapshots } from "./markets/marketSnapshots.js";
 import { databaseStats, getTeamLastMatches, hasSourceDate, importHistoryMatches, loadAllHistory, openHistoryDatabase } from "./history/sqliteHistory.js";
 import { completedUtcDates } from "./history/harvestDates.js";
-import { buildCompetitionBaseline, pickCompetitionBaseline } from "./history/competitionBaseline.js";
+import { resolveTeamStrengthBaseline } from "./history/competitionBaseline.js";
 import { ensurePreviousSeasonHistory } from "./history/previousSeasonBackfill.js";
 import { buildDualShadow, loadDualShadowStatistics, updateDualShadowHistory } from "./shadow/dualShadow.js";
 
@@ -354,26 +354,20 @@ async function refresh(){
         finished:[],
         scheduled:[]
       };
-      // A live API standings table (rawContext.standings) always wins when it
-      // exists. Only when it doesn't do we ask SQLite for a genuine, all-teams
-      // competition baseline instead of falling straight to the two-team
-      // local-history average — temporal safety is inherited from
-      // getCompetitionSeasonMatches's own `kickoff < before` clause. The
-      // baseline is only actually used for THIS fixture if both its teams are
-      // findable in it after alignment — a genuine table that doesn't
-      // recognise either team (wrong competition, name-alias gap) must fall
-      // through to the existing two-team fallback rather than regress a
-      // fixture that previously had a usable local-history context.
-      const rawBaseline=!rawContext.standings
-        ? buildCompetitionBaseline(historyDatabase,f.competitionCode,f.seasonStart,f.utcDate)
-        : null;
-      // Current season winning the team-count bar is not the same as it
-      // covering THIS fixture's two teams: a current-season tier assembled
-      // from several not-yet-identity-reconciled providers can be wide yet
-      // still miss a given team a cleaner previous-season table already has
-      // — so try current, then previous, independently, before giving up.
-      const competitionBaseline=rawBaseline?pickCompetitionBaseline(rawBaseline,f,alignContextTeamIds):null;
-      const baseContext=competitionBaseline ? {...rawContext,standings:competitionBaseline.standings} : alignContextTeamIds(rawContext,f);
+      // A live API standings table (rawContext.standings) wins only when it
+      // is actually MATURE for this fixture's two teams (>=4 games played
+      // each — the same per-team sample bar the two-team local-history
+      // fallback already requires of itself). Merely existing is not enough:
+      // on matchday 1 of a new competition/season a live table can be
+      // present yet show 0-3 games for these two teams, which collapses
+      // teamStrengthModel's λ to its clamp floor/ceiling regardless of the
+      // real teams involved (09.09 forensic audit — reproduced end-to-end:
+      // λ=(0.25,0.20) -> a bare, unmixed 67% draw). See
+      // resolveTeamStrengthBaseline for the full tier-selection order
+      // (mature live -> SQLite competition baseline, current then previous
+      // season -> two-team local-history fallback below -> null/WAIT).
+      const {baseContext,competitionBaseline,rawBaseline}=
+        resolveTeamStrengthBaseline(historyDatabase,rawContext,f,alignContextTeamIds,f.utcDate);
 
       const mergedContext=mergeWithLocalHistory(baseContext,fixtureHistory(f),f);
       const localMeta=mergedContext.localHistoryMeta;

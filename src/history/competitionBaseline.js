@@ -75,6 +75,40 @@ export function buildCompetitionBaseline(db, competitionCode, currentSeasonStart
   };
 }
 
+// Same per-team sample-size bar the two-team local-history fallback already
+// requires before it trusts itself (localHistory.js's homeMatches>=4 &&
+// awayMatches>=4, mirrored at app.js's localReady/hasLocalModelContext
+// checks) — reused here rather than inventing a new number, because it is
+// the project's existing answer to the same question: "is there enough
+// real signal for THIS fixture's two specific teams". A live current-season
+// standings table that exists but shows either team below this bar (e.g.
+// matchday 1 of a new competition/season) is exactly as thin as the
+// two-team fallback it currently outranks unconditionally, and must not
+// block a genuinely wider competition/previous-season baseline just for
+// technically being present.
+const MIN_GAMES_FOR_MATURE_STANDINGS = 4;
+
+/**
+ * True only if BOTH fixture teams appear in this (already
+ * alignContextTeamIds-processed) TOTAL table with at least
+ * MIN_GAMES_FOR_MATURE_STANDINGS games played each. A table that is merely
+ * non-null but reflects only 0-3 games for one of these two teams carries
+ * almost no real signal — teamStrengthModel's attack/defence ratios on that
+ * few games routinely collapse to the model's own λ clamp floor/ceiling
+ * (proven: a 5-game/λ-floor case still needed an extreme goals ratio to
+ * collapse, but 0-3 games collapses on ordinary, plausible scorelines).
+ */
+export function rawStandingsMature(alignedStandings, fixture) {
+  const table = alignedStandings?.standings?.find(s => s.type === "TOTAL")?.table || [];
+  const home = table.find(row => row.team?.id === fixture.homeId);
+  const away = table.find(row => row.team?.id === fixture.awayId);
+  return Boolean(
+    home && away &&
+    home.playedGames >= MIN_GAMES_FOR_MATURE_STANDINGS &&
+    away.playedGames >= MIN_GAMES_FOR_MATURE_STANDINGS
+  );
+}
+
 /**
  * True only if BOTH fixture teams are actually resolvable in this (already
  * alignContextTeamIds-processed) standings table. Strict equality is
@@ -103,4 +137,31 @@ export function pickCompetitionBaseline(baseline, fixture, alignFn) {
     if (baselineCoversFixture(aligned.standings, fixture)) return { ...candidate, standings: aligned.standings };
   }
   return null;
+}
+
+/**
+ * Chooses which standings table feeds teamStrengthModel for one fixture,
+ * given the raw live-API context. A live table wins only when it is mature
+ * FOR THIS FIXTURE (rawStandingsMature); otherwise the SQLite competition
+ * baseline (current season, then previous season — see pickCompetitionBaseline)
+ * is tried, and if neither actually covers this fixture's two teams, the
+ * live table's `standings` is cleared (not merely left thin) so the caller's
+ * own two-team local-history fallback can correctly decide instead of being
+ * pre-empted by a table that is merely non-null (09.09 forensic audit —
+ * this replaces the old, unconditional "rawContext.standings always wins
+ * when it exists" rule).
+ */
+export function resolveTeamStrengthBaseline(db, rawContext, fixture, alignFn, before) {
+  const alignedRawContext = alignFn(rawContext, fixture);
+  const liveStandingsMature = Boolean(alignedRawContext.standings) && rawStandingsMature(alignedRawContext.standings, fixture);
+  const rawBaseline = !liveStandingsMature
+    ? buildCompetitionBaseline(db, fixture.competitionCode, fixture.seasonStart, before)
+    : null;
+  const competitionBaseline = rawBaseline ? pickCompetitionBaseline(rawBaseline, fixture, alignFn) : null;
+  const baseContext = competitionBaseline
+    ? { ...rawContext, standings: competitionBaseline.standings }
+    : liveStandingsMature
+      ? alignedRawContext
+      : { ...alignedRawContext, standings: null };
+  return { baseContext, competitionBaseline, rawBaseline, liveStandingsMature };
 }
