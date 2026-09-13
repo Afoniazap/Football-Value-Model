@@ -20,6 +20,7 @@ import { completedUtcDates } from "./history/harvestDates.js";
 import { resolveTeamStrengthBaseline } from "./history/competitionBaseline.js";
 import { ensurePreviousSeasonHistory } from "./history/previousSeasonBackfill.js";
 import { buildDualShadow, loadDualShadowStatistics, updateDualShadowHistory } from "./shadow/dualShadow.js";
+import { saveStateSnapshot } from "./history/stateSnapshots.js";
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const DATA=path.join(ROOT,"data");
@@ -34,6 +35,7 @@ const MARKET_BET_HISTORY_FILE=path.join(DATA,"statistics","market-bets.jsonl");
 const DUAL_SHADOW_HISTORY_FILE=path.join(DATA,"statistics","dual-shadow.jsonl");
 const MARKET_SNAPSHOT_FILE=path.join(DATA,"market-cache","snapshots.json");
 const HISTORY_DB_FILE=path.join(DATA,"history","football.sqlite");
+const STATE_SNAPSHOTS_DIR=path.join(DATA,"history","state-snapshots");
 const historyDatabase=openHistoryDatabase(HISTORY_DB_FILE);
 let historyImported=false;
 let cacheBackfillDone=false;
@@ -444,6 +446,11 @@ async function refresh(){
     state.providers.footballData={...footballDataTelemetry,status:footballDataTelemetry.degraded?"DEGRADED":"OK"};
     state.performance={...timing,httpByProvider:{theOddsApi:primaryHealth.requests,oddsApiIo:oddsApiIo.requests,apiFootball:state.providers.apiFootball.requests,footballData:footballDataTelemetry.requests},httpTotal:primaryHealth.requests+oddsApiIo.requests+state.providers.apiFootball.requests+footballDataTelemetry.requests,cacheHits:primaryHealth.cacheHits+oddsApiIo.cacheHits+state.providers.apiFootball.cacheHits+state.providers.apiFootball.staleHits+footballDataTelemetry.cacheHits};
     save();
+    // Diagnostic-only, never allowed to affect the refresh — see
+    // saveStateSnapshot's own doc comment. Keeps a per-refresh copy of the
+    // full state for later investigation of anomalous Model %/Edge/EV/Fair
+    // signals after data/state.json itself has been overwritten.
+    saveStateSnapshot(STATE_SNAPSHOTS_DIR,state);
     console.log(`API-Football: req ${state.providers.apiFootball.requests} | cache ${state.providers.apiFootball.cacheHits+state.providers.apiFootball.staleHits} | saved ${state.providers.apiFootball.avoided} | est/day ${state.providers.apiFootball.estimatedDailyRequests}`);
     const fresh=state.results.filter(x=>x.marketFreshness==="FRESH").length,stale=state.results.filter(x=>x.marketFreshness==="STALE").length;
     const modelCount=results.filter(x=>["home","draw","away"].every(key=>Number.isFinite(x.consensusProbability?.[key]))).length;
