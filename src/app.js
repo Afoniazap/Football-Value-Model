@@ -18,6 +18,7 @@ import { auditMarketSnapshots, enforceMarketFreshness, resolveMarketSnapshots } 
 import { databaseStats, getTeamLastMatches, hasSourceDate, importHistoryMatches, loadAllHistory, openHistoryDatabase } from "./history/sqliteHistory.js";
 import { completedUtcDates } from "./history/harvestDates.js";
 import { resolveTeamStrengthBaseline } from "./history/competitionBaseline.js";
+import { resolveContextProvenance, describeTeamStrengthSource } from "./history/contextProvenance.js";
 import { ensurePreviousSeasonHistory } from "./history/previousSeasonBackfill.js";
 import { buildDualShadow, loadDualShadowStatistics, updateDualShadowHistory } from "./shadow/dualShadow.js";
 import { saveStateSnapshot } from "./history/stateSnapshots.js";
@@ -221,7 +222,7 @@ async function refresh(){
       state.stage=`3/9 API-Football Context: ${leagueId}`;
 
       let contextError=null;
-      contexts[contextKey]=await getApiFootballCompetitionContext(
+      const apiFootballContext=await getApiFootballCompetitionContext(
         env.API_FOOTBALL_KEY.trim(),
         Number(leagueId),
         season
@@ -230,30 +231,40 @@ async function refresh(){
         return null;
       });
 
-      if(!contexts[contextKey]){
+      let footballDataContext=null;
+      if(!apiFootballContext){
         const sample=fixtures.find(f =>
           String(f.apiFootballLeagueId)===String(leagueId) &&
           String(f.seasonStart)===String(season)
         );
 
         if(sample?.competitionCode){
-          contexts[contextKey]=await getCompetitionContext(
+          footballDataContext=await getCompetitionContext(
             env.FOOTBALL_DATA_TOKEN.trim(),
             sample.competitionCode
           ).catch(()=>null);
         }
       }
+      // Which provider ACTUALLY supplied contexts[contextKey] — not simply
+      // "did API-Football throw". getApiFootballCompetitionContext can
+      // resolve to null without throwing (e.g. isApiFootballSeasonSupported
+      // rejecting the season on a free plan), in which case contextError
+      // stays null even though the Football-Data fallback is what's really
+      // used — using contextError as a proxy for "which provider" mislabels
+      // provenance in that case (confirmed: Mirassol-Vitória, 2026 season).
+      const {context:resolvedContext,source:contextSource}=resolveContextProvenance(apiFootballContext,footballDataContext);
+      contexts[contextKey]=resolvedContext;
       if(contexts[contextKey]?.finished?.length){
-        appendHistory(contexts[contextKey].finished,contextError?"FOOTBALL_DATA":"API_FOOTBALL");
+        appendHistory(contexts[contextKey].finished,contextSource);
       }
       const usableContext=Boolean(contexts[contextKey]?.standings||(contexts[contextKey]?.finished||[]).length);
-      if(contextError&&usableContext)state.providers.context.fallbacks.push(`${contextKey}:FOOTBALL_DATA`);
+      if(contextSource==="FOOTBALL_DATA"&&usableContext)state.providers.context.fallbacks.push(`${contextKey}:FOOTBALL_DATA`);
       if(contextError&&!usableContext){
         const message=`API-Football context ${contextKey}: ${contextError.message}`;
         state.providers.context.failures.push(message);state.errors.push(message);
       }
       contextDiagnostics[contextKey]=usableContext
-        ? {status:"OK",source:contextError?"FOOTBALL_DATA":"API_FOOTBALL",standings:Boolean(contexts[contextKey]?.standings),finished:(contexts[contextKey]?.finished||[]).length}
+        ? {status:"OK",source:contextSource,standings:Boolean(contexts[contextKey]?.standings),finished:(contexts[contextKey]?.finished||[]).length}
         : {status:"UNAVAILABLE",source:null,reason:contextError?.message||"NO_STANDINGS_OR_HISTORY",footballDataErrors:contexts[contextKey]?.contextMeta?.errors||[]};
     }
 
@@ -372,18 +383,11 @@ async function refresh(){
         resolveTeamStrengthBaseline(historyDatabase,rawContext,f,alignContextTeamIds,f.utcDate);
 
       const mergedContext=mergeWithLocalHistory(baseContext,fixtureHistory(f),f);
-      const localMeta=mergedContext.localHistoryMeta;
-      const hasLocalModelContext=!competitionBaseline && Boolean(mergedContext.standings && localMeta?.homeMatches>=4 && localMeta?.awayMatches>=4);
-      const contextDiagnosticBase=competitionBaseline
-        ? {status:"OK",source:"COMPETITION_BASELINE",finished:mergedContext.finished.length,temporalSafe:true}
-        : hasLocalModelContext
-          ? {status:"OK",source:"LOCAL_HISTORY",finished:mergedContext.finished.length,provenance:localMeta.provenance,temporalSafe:true}
-          : contextDiagnostics[`${f.apiFootballLeagueId}|${f.seasonStart}`]||{status:"UNAVAILABLE",reason:"NO_CONTEXT_MAPPING"};
-      const baselineDiagnostic=competitionBaseline
-        ? {baselineSource:competitionBaseline.baselineSource,baselineSample:competitionBaseline.baselineSample,baselineTeams:competitionBaseline.baselineTeams,sampleCurrentSeason:rawBaseline.sampleCurrentSeason,samplePreviousSeason:rawBaseline.samplePreviousSeason,sampleTotal:rawBaseline.sampleCurrentSeason+rawBaseline.samplePreviousSeason,competitionCoverage:competitionBaseline.baselineTeams,historySource:competitionBaseline.baselineSource,freshness:competitionBaseline.baselineSource==="CURRENT_SEASON"?"CURRENT":"STALE_PREVIOUS_SEASON"}
-        : hasLocalModelContext
-          ? {baselineSource:"FALLBACK_TWO_TEAM",baselineSample:(localMeta?.homeMatches||0)+(localMeta?.awayMatches||0),baselineTeams:2,sampleCurrentSeason:rawBaseline?.sampleCurrentSeason||0,samplePreviousSeason:rawBaseline?.samplePreviousSeason||0,sampleTotal:(localMeta?.homeMatches||0)+(localMeta?.awayMatches||0),competitionCoverage:2,historySource:"LOCAL_HISTORY",freshness:"FALLBACK"}
-          : {baselineSource:rawContext.standings?"LIVE_API":"NONE",baselineSample:0,baselineTeams:rawContext.standings?(rawContext.standings.standings?.find(s=>s.type==="TOTAL")?.table||[]).length:0,sampleCurrentSeason:rawBaseline?.sampleCurrentSeason||0,samplePreviousSeason:rawBaseline?.samplePreviousSeason||0,sampleTotal:0,competitionCoverage:rawContext.standings?(rawContext.standings.standings?.find(s=>s.type==="TOTAL")?.table||[]).length:0,historySource:rawContext.standings?"LIVE_API":"NONE",freshness:rawContext.standings?"LIVE":"NONE"};
+      const rawContextSource=contextDiagnostics[`${f.apiFootballLeagueId}|${f.seasonStart}`]?.source||null;
+      const {contextDiagnosticBase,baselineDiagnostic,localMeta}=describeTeamStrengthSource({
+        competitionBaseline,rawBaseline,baseContext,mergedContext,rawContext,rawContextSource,
+        fallbackContextDiagnostic:contextDiagnostics[`${f.apiFootballLeagueId}|${f.seasonStart}`]
+      });
       const fixtureContextDiagnostic={...contextDiagnosticBase,baseline:baselineDiagnostic,localHistory:{
         homeMatches:localMeta?.homeMatches||0,
         awayMatches:localMeta?.awayMatches||0,
