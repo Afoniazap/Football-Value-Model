@@ -17,22 +17,23 @@ function match({id,competitionCode="PL",season="2025",playedAt,home,homeId,away,
     score:{fullTime:{home:hg,away:ag}},provenance:{source:"FOOTBALL_DATA"},fetchedAt:playedAt};
 }
 
-// A full mini round-robin (each of Alpha/Beta/Gamma/Delta reaches exactly 4
-// games) rather than 3 sparse matches — pickCompetitionBaseline now requires
-// MIN_GAMES_FOR_MATURE_STANDINGS (4) per fixture-specific team, not just
-// presence, so any team this file uses as a fixture's own home/away side
-// must individually clear that bar within this seed.
+// Each of Alpha/Beta/Gamma/Delta gets exactly 4 HOME games AND 4 AWAY games
+// (16 matches total, 8 games per team) — not just 4 games total. venue-
+// specific maturity (hasMatureVenueSplits) checks the HOME table row for
+// whichever team is home in a given fixture and the AWAY table row for
+// whichever is away, so a team needs >=4 at THAT specific venue, not merely
+// >=4 games combined across both venues.
+const FOUR_TEAM_SCHEDULE=[
+  ["Alpha","Beta","01","00"],["Alpha","Gamma","01","12"],["Alpha","Delta","02","00"],["Alpha","Beta","02","12"],
+  ["Beta","Gamma","03","00"],["Beta","Delta","03","12"],["Beta","Alpha","04","00"],["Beta","Gamma","04","12"],
+  ["Gamma","Delta","05","00"],["Gamma","Alpha","05","12"],["Gamma","Beta","06","00"],["Gamma","Delta","06","12"],
+  ["Delta","Alpha","07","00"],["Delta","Beta","07","12"],["Delta","Gamma","08","00"],["Delta","Alpha","08","12"]
+];
+const TEAM_IDS={Alpha:"1",Beta:"2",Gamma:"3",Delta:"4"};
 function seedFourTeamSeason(db,{competitionCode="PL",season="2025",datePrefix="2025-09"}={}){
-  importHistoryMatches(db,[
-    match({id:`${season}-${competitionCode}-1`,competitionCode,season,playedAt:`${datePrefix}-01T18:00:00Z`,home:"Alpha",homeId:"1",away:"Beta",awayId:"2",hg:2,ag:1}),
-    match({id:`${season}-${competitionCode}-2`,competitionCode,season,playedAt:`${datePrefix}-02T18:00:00Z`,home:"Gamma",homeId:"3",away:"Delta",awayId:"4",hg:0,ag:0}),
-    match({id:`${season}-${competitionCode}-3`,competitionCode,season,playedAt:`${datePrefix}-03T18:00:00Z`,home:"Beta",homeId:"2",away:"Gamma",awayId:"3",hg:3,ag:1}),
-    match({id:`${season}-${competitionCode}-4`,competitionCode,season,playedAt:`${datePrefix}-04T18:00:00Z`,home:"Delta",homeId:"4",away:"Alpha",awayId:"1",hg:1,ag:2}),
-    match({id:`${season}-${competitionCode}-5`,competitionCode,season,playedAt:`${datePrefix}-05T18:00:00Z`,home:"Alpha",homeId:"1",away:"Gamma",awayId:"3",hg:1,ag:1}),
-    match({id:`${season}-${competitionCode}-6`,competitionCode,season,playedAt:`${datePrefix}-06T18:00:00Z`,home:"Beta",homeId:"2",away:"Delta",awayId:"4",hg:2,ag:0}),
-    match({id:`${season}-${competitionCode}-7`,competitionCode,season,playedAt:`${datePrefix}-07T18:00:00Z`,home:"Alpha",homeId:"1",away:"Delta",awayId:"4",hg:2,ag:2}),
-    match({id:`${season}-${competitionCode}-8`,competitionCode,season,playedAt:`${datePrefix}-08T18:00:00Z`,home:"Gamma",homeId:"3",away:"Beta",awayId:"2",hg:1,ag:3})
-  ]);
+  importHistoryMatches(db,FOUR_TEAM_SCHEDULE.map(([home,away,day,hour],i)=>
+    match({id:`${season}-${competitionCode}-${i+1}`,competitionCode,season,playedAt:`${datePrefix}-${day}T${hour}:00:00Z`,home,homeId:TEAM_IDS[home],away,awayId:TEAM_IDS[away],hg:1+(i%3),ag:i%2})
+  ));
 }
 function pick(db,code,season,before,fixture){
   return pickCompetitionBaseline(buildCompetitionBaseline(db,code,season,before),fixture,alignContextTeamIds);
@@ -47,7 +48,7 @@ test("competition-wide baseline is built from all teams, not the two fixture tea
   const total=baseline.standings.standings.find(s=>s.type==="TOTAL").table;
   assert.equal(total.length,4,"all four teams must appear, not just two");
   assert.equal(baseline.baselineTeams,4);
-  assert.equal(baseline.baselineSample,8);
+  assert.equal(baseline.baselineSample,16);
   db.close();
 });
 
@@ -60,7 +61,7 @@ test("previous season is used only as a distinct fallback tier, never blended wi
   importHistoryMatches(db,[match({id:"2025-thin",competitionCode:"PL",season:"2025",playedAt:"2025-08-20T18:00:00Z",home:"Alpha",homeId:"1",away:"Beta",awayId:"2"})]);
   const raw=buildCompetitionBaseline(db,"PL","2025","2025-09-10T00:00:00Z");
   assert.equal(raw.sampleCurrentSeason,1);
-  assert.equal(raw.samplePreviousSeason,8);
+  assert.equal(raw.samplePreviousSeason,16);
   assert.equal(raw.current,null,"two teams is no wider than the two-team fallback, so current season must not count as a genuine tier");
   const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,utcDate:"2025-09-10T16:00:00Z"};
   const baseline=pickCompetitionBaseline(raw,fixture,alignContextTeamIds);
@@ -89,7 +90,7 @@ test("temporal safety: matches at or after the fixture kickoff are never include
   const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,utcDate:"2025-09-10T16:00:00Z"};
   const baseline=pick(db,"PL","2025","2025-09-10T00:00:00Z",fixture);
   const alpha=baseline.standings.standings.find(s=>s.type==="TOTAL").table.find(row=>row.team.name==="Alpha");
-  assert.equal(alpha.playedGames,4,"the 2025-09-20 match is after the fixture's own kickoff and must not count (only the 4 pre-kickoff seed games do)");
+  assert.equal(alpha.playedGames,8,"the 2025-09-20 match is after the fixture's own kickoff and must not count (only the 8 pre-kickoff seed games do)");
   db.close();
 });
 
@@ -241,18 +242,47 @@ test("B) 2-3 game current-season live standings still counts as thin and defers 
   db.close();
 });
 
-test("C) a mature current-season live table (>=4 games each) keeps LIVE_API as priority over a previous-season baseline",()=>{
+// A live table with a genuine HOME row for the home team and a genuine AWAY
+// row for the away team (>=4 games each), not merely a TOTAL table — the
+// shape a live provider with real venue-specific standings actually has.
+function liveWithVenueSplits({homeId,homeName,homePlayedGames,awayId,awayName,awayPlayedGames}){
+  return {standings:{standings:[
+    {type:"TOTAL",table:[
+      {team:{id:homeId,name:homeName},playedGames:homePlayedGames,goalsFor:homePlayedGames+3,goalsAgainst:homePlayedGames},
+      {team:{id:awayId,name:awayName},playedGames:awayPlayedGames,goalsFor:awayPlayedGames,goalsAgainst:awayPlayedGames+3}
+    ]},
+    {type:"HOME",table:[{team:{id:homeId,name:homeName},playedGames:homePlayedGames,goalsFor:homePlayedGames+3,goalsAgainst:homePlayedGames}]},
+    {type:"AWAY",table:[{team:{id:awayId,name:awayName},playedGames:awayPlayedGames,goalsFor:awayPlayedGames,goalsAgainst:awayPlayedGames+3}]}
+  ]},finished:[],scheduled:[]};
+}
+
+test("C) a mature current-season live table WITH genuine HOME/AWAY splits (>=4 games each) keeps LIVE_API as priority over a previous-season baseline",()=>{
   const db=openHistoryDatabase(tempDb());
   seedFourTeamSeason(db,{season:"2024",datePrefix:"2024-09"}); // must NOT be used — current is mature
   const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,competitionCode:"PL",seasonStart:"2025",utcDate:"2025-09-10T16:00:00Z"};
-  const rawContext=liveWith([
-    {team:{id:"1",name:"Alpha"},playedGames:5,goalsFor:8,goalsAgainst:4},
-    {team:{id:"2",name:"Beta"},playedGames:5,goalsFor:6,goalsAgainst:5}
-  ]);
+  const rawContext=liveWithVenueSplits({homeId:"1",homeName:"Alpha",homePlayedGames:5,awayId:"2",awayName:"Beta",awayPlayedGames:5});
   const result=resolveTeamStrengthBaseline(db,rawContext,fixture,alignContextTeamIds,fixture.utcDate);
   assert.equal(result.liveStandingsMature,true);
-  assert.equal(result.competitionBaseline,null,"the SQLite baseline must not even be consulted when the live table is already mature");
+  assert.equal(result.competitionBaseline,null,"the SQLite baseline must not even be consulted when the live table is already mature with real venue splits");
   assert.deepEqual(result.baseContext.standings,alignContextTeamIds(rawContext,fixture).standings);
+  db.close();
+});
+
+// The exact confirmed bug shape (Mirassol-Vitória et al.): a live table that
+// is deep on TOTAL (>=4 games) but carries NO genuine HOME/AWAY tables at
+// all must NOT be treated as mature — it must defer to a real SQLite
+// venue-split baseline instead, however many TOTAL games it shows.
+test("C2) a deep TOTAL-only live table (no HOME/AWAY types at all) is rejected even though it clears the TOTAL depth bar",()=>{
+  const db=openHistoryDatabase(tempDb());
+  seedFourTeamSeason(db,{season:"2024",datePrefix:"2024-09"}); // genuine venue-split previous season, must win instead
+  const fixture={home:"Alpha",away:"Beta",homeId:101,awayId:102,competitionCode:"PL",seasonStart:"2025",utcDate:"2025-09-10T16:00:00Z"};
+  const rawContext=liveWith([
+    {team:{id:"1",name:"Alpha"},playedGames:26,goalsFor:29,goalsAgainst:40},
+    {team:{id:"2",name:"Beta"},playedGames:26,goalsFor:25,goalsAgainst:37}
+  ]);
+  const result=resolveTeamStrengthBaseline(db,rawContext,fixture,alignContextTeamIds,fixture.utcDate);
+  assert.equal(result.liveStandingsMature,false,"TOTAL depth alone (26 games) must not count as mature without real HOME/AWAY tables");
+  assert.equal(result.competitionBaseline.baselineSource,"PREVIOUS_SEASON");
   db.close();
 });
 
@@ -306,10 +336,18 @@ test("67% DRAW regression: a thin current-season table no longer feeds teamStren
     match({id:"p2",competitionCode:"CL",season:"2024",playedAt:"2024-09-08T18:00:00Z",home:"OppB",homeId:"902",away:"Barcelona",awayId:"81",hg:1,ag:2}),
     match({id:"p3",competitionCode:"CL",season:"2024",playedAt:"2024-09-15T18:00:00Z",home:"Barcelona",homeId:"81",away:"OppC",awayId:"903",hg:2,ag:0}),
     match({id:"p3b",competitionCode:"CL",season:"2024",playedAt:"2024-09-22T18:00:00Z",home:"OppD",homeId:"904",away:"Barcelona",awayId:"81",hg:0,ag:1}),
+    // Barcelona is HOME in this fixture — needs >=4 games in the HOME table
+    // specifically (p1,p3 above give only 2), not just >=4 TOTAL.
+    match({id:"p3c",competitionCode:"CL",season:"2024",playedAt:"2024-09-29T18:00:00Z",home:"Barcelona",homeId:"81",away:"OppE",awayId:"905",hg:3,ag:0}),
+    match({id:"p3d",competitionCode:"CL",season:"2024",playedAt:"2024-10-06T18:00:00Z",home:"Barcelona",homeId:"81",away:"OppF",awayId:"906",hg:1,ag:0}),
     match({id:"p4",competitionCode:"CL",season:"2024",playedAt:"2024-09-05T18:00:00Z",home:"Feyenoord",homeId:"675",away:"OppA",awayId:"901",hg:1,ag:1}),
     match({id:"p5",competitionCode:"CL",season:"2024",playedAt:"2024-09-12T18:00:00Z",home:"OppB",homeId:"902",away:"Feyenoord",awayId:"675",hg:1,ag:2}),
     match({id:"p6",competitionCode:"CL",season:"2024",playedAt:"2024-09-19T18:00:00Z",home:"Feyenoord",homeId:"675",away:"OppC",awayId:"903",hg:2,ag:1}),
-    match({id:"p6b",competitionCode:"CL",season:"2024",playedAt:"2024-09-26T18:00:00Z",home:"OppD",homeId:"904",away:"Feyenoord",awayId:"675",hg:0,ag:2})
+    match({id:"p6b",competitionCode:"CL",season:"2024",playedAt:"2024-09-26T18:00:00Z",home:"OppD",homeId:"904",away:"Feyenoord",awayId:"675",hg:0,ag:2}),
+    // Feyenoord is AWAY in this fixture — needs >=4 games in the AWAY table
+    // specifically (p5,p6b above give only 2), not just >=4 TOTAL.
+    match({id:"p6c",competitionCode:"CL",season:"2024",playedAt:"2024-09-29T18:00:00Z",home:"OppE",homeId:"905",away:"Feyenoord",awayId:"675",hg:1,ag:0}),
+    match({id:"p6d",competitionCode:"CL",season:"2024",playedAt:"2024-10-06T18:00:00Z",home:"OppF",homeId:"906",away:"Feyenoord",awayId:"675",hg:0,ag:1})
   ]);
   const fixture={home:"Barcelona",away:"Feyenoord",homeId:81,awayId:675,competitionCode:"CL",seasonStart:"2025",utcDate:"2025-09-10T16:00:00Z"};
   // Thin CURRENT live table — the exact shape (low goals over few games) that
@@ -338,10 +376,18 @@ test("CEILING regression: a thin current-season table no longer feeds teamStreng
     match({id:"p2",competitionCode:"MLS",season:"2024",playedAt:"2024-09-08T18:00:00Z",home:"OppB",homeId:"9102",away:"Minnesota United",awayId:"9001",hg:1,ag:1}),
     match({id:"p2b",competitionCode:"MLS",season:"2024",playedAt:"2024-09-15T18:00:00Z",home:"Minnesota United",homeId:"9001",away:"OppC",awayId:"9103",hg:1,ag:0}),
     match({id:"p2c",competitionCode:"MLS",season:"2024",playedAt:"2024-09-22T18:00:00Z",home:"OppD",homeId:"9104",away:"Minnesota United",awayId:"9001",hg:0,ag:2}),
+    // Minnesota is HOME in this fixture — needs >=4 games in the HOME table
+    // specifically (p1,p2b above give only 2), not just >=4 TOTAL.
+    match({id:"p2d",competitionCode:"MLS",season:"2024",playedAt:"2024-09-29T18:00:00Z",home:"Minnesota United",homeId:"9001",away:"OppE",awayId:"9105",hg:2,ag:0}),
+    match({id:"p2e",competitionCode:"MLS",season:"2024",playedAt:"2024-10-06T18:00:00Z",home:"Minnesota United",homeId:"9001",away:"OppF",awayId:"9106",hg:1,ag:0}),
     match({id:"p3",competitionCode:"MLS",season:"2024",playedAt:"2024-09-05T18:00:00Z",home:"FC Dallas",homeId:"9002",away:"OppA",awayId:"9101",hg:1,ag:2}),
     match({id:"p4",competitionCode:"MLS",season:"2024",playedAt:"2024-09-12T18:00:00Z",home:"OppB",homeId:"9102",away:"FC Dallas",awayId:"9002",hg:0,ag:1}),
     match({id:"p4b",competitionCode:"MLS",season:"2024",playedAt:"2024-09-19T18:00:00Z",home:"FC Dallas",homeId:"9002",away:"OppC",awayId:"9103",hg:2,ag:1}),
-    match({id:"p4c",competitionCode:"MLS",season:"2024",playedAt:"2024-09-26T18:00:00Z",home:"OppD",homeId:"9104",away:"FC Dallas",awayId:"9002",hg:0,ag:1})
+    match({id:"p4c",competitionCode:"MLS",season:"2024",playedAt:"2024-09-26T18:00:00Z",home:"OppD",homeId:"9104",away:"FC Dallas",awayId:"9002",hg:0,ag:1}),
+    // FC Dallas is AWAY in this fixture — needs >=4 games in the AWAY table
+    // specifically (p4,p4c above give only 2), not just >=4 TOTAL.
+    match({id:"p4d",competitionCode:"MLS",season:"2024",playedAt:"2024-09-29T18:00:00Z",home:"OppE",homeId:"9105",away:"FC Dallas",awayId:"9002",hg:1,ag:0}),
+    match({id:"p4e",competitionCode:"MLS",season:"2024",playedAt:"2024-10-06T18:00:00Z",home:"OppF",homeId:"9106",away:"FC Dallas",awayId:"9002",hg:0,ag:1})
   ]);
   const fixture={home:"Minnesota United",away:"FC Dallas",homeId:9001,awayId:9002,competitionCode:"MLS",seasonStart:"2025",utcDate:"2025-09-10T16:00:00Z"};
   // Thin CURRENT live table, both sides high-scoring — the mirror-image shape
@@ -512,5 +558,148 @@ test("DEPTH G) all 8 real 09.09 MLS fixtures (5 flagged + 3 previously-unflagged
     assert.equal(result.competitionBaseline,null,`${fixture.home} - ${fixture.away}: the 1-game-per-team tier must not be accepted`);
     assert.equal(result.baseContext.standings,null,`${fixture.home} - ${fixture.away}: no standings should reach teamStrengthModel`);
   }
+  db.close();
+});
+
+// ============================================================================
+// VENUE SPLITS — 14/09 forensic audit. Some live providers (confirmed:
+// Football-Data for Brazil Série A, Portugal Primeira Liga, Spain La Liga)
+// return ONLY a TOTAL standings table — no HOME/AWAY types at all
+// (homeAwayScore=0 in the production diagnostic). teamStrengthModel's own
+// `homeH = row(homeTable(context),homeId) || totalH` fallback then silently
+// substitutes each team's full TOTAL record for its venue-specific one.
+// hasMatureVenueSplits (competitionBaseline.js) now stops that substitution
+// at the context-selection stage: a source without genuine, mature HOME/AWAY
+// rows for both fixture teams is never treated as usable for Team Strength,
+// regardless of how many TOTAL games it shows.
+//
+// Real λ values below (Mirassol-Vitória) come directly from the forensic
+// audit's live reconstruction (Football-Data TOTAL-only: λ 1.2936885893 /
+// 1.0270559371; SQLite CURRENT_SEASON with genuine splits: λ 2.3045 / 0.6269
+// — driven by Vitória's real 13-game AWAY record, 0W-4D-9L, 8 GF/28 GA,
+// far weaker than its 26-game TOTAL record). Rio Ave-Estrela, Moreirense-
+// Marítimo and Villarreal-Betis reproduce the SAME confirmed shape
+// (source=FOOTBALL_DATA, homeAwayScore=0, baselineSample=0) — their exact
+// historical underlying goals data is NOT recoverable (no state-snapshot or
+// SQLite history exists for 14/09, disclosed in the forensic report), so
+// these three use representative, clearly-synthetic goal data that
+// reproduces the SAME class of naive-substitution defect, not a claim of
+// their real historical numbers.
+// ============================================================================
+
+// A TOTAL-only "live" context shaped exactly like Football-Data's response
+// for leagues with no HOME/AWAY split support.
+function totalOnly(homeId,homeName,homeGames,homeGF,homeGA,awayId,awayName,awayGames,awayGF,awayGA){
+  return {standings:{standings:[{type:"TOTAL",table:[
+    {team:{id:homeId,name:homeName},playedGames:homeGames,goalsFor:homeGF,goalsAgainst:homeGA},
+    {team:{id:awayId,name:awayName},playedGames:awayGames,goalsFor:awayGF,goalsAgainst:awayGA}
+  ]}]},finished:[],scheduled:[]};
+}
+
+// Builds a genuine SQLite venue-split source: `homeGames` real HOME
+// appearances for the home team and `awayGames` real AWAY appearances for
+// the away team, plus enough padding teams to clear MIN_TEAMS_FOR_GENUINE_BASELINE.
+function seedVenueSplitLeague(db,{competitionCode,season="2025",datePrefix="2025-09",homeName,homeId,homeGames=4,homeGF=1,homeGA=1,awayName,awayId,awayGames=4,awayGF=1,awayGA=1}){
+  const rows=[];
+  for(let i=0;i<homeGames;i++)
+    rows.push(match({id:`${competitionCode}-${season}-h${i}`,competitionCode,season,playedAt:`${datePrefix}-0${i+1}T18:00:00Z`,home:homeName,homeId,away:`Opp${i}H`,awayId:`opp-h-${i}`,hg:homeGF,ag:homeGA}));
+  for(let i=0;i<awayGames;i++)
+    rows.push(match({id:`${competitionCode}-${season}-a${i}`,competitionCode,season,playedAt:`${datePrefix}-07T${String(i).padStart(2,"0")}:00:00Z`,home:`Opp${i}A`,homeId:`opp-a-${i}`,away:awayName,awayId,hg:awayGA,ag:awayGF}));
+  importHistoryMatches(db,rows);
+}
+
+test("Mirassol-Vitória: TOTAL-only FOOTBALL_DATA (λ 1.2937/1.0271 reproduced) does not substitute for HOME/AWAY; mature SQLite venue splits are used instead",()=>{
+  const db=openHistoryDatabase(tempDb());
+  const fixture={home:"Mirassol FC",away:"EC Vitória",homeId:4364,awayId:1782,competitionCode:"BSA",seasonStart:"2026",utcDate:"2026-09-14T19:00:00Z"};
+  // Exact real Football-Data TOTAL row values from the forensic audit.
+  const rawContext=totalOnly(4364,"Mirassol FC",26,29,40,1782,"EC Vitória",26,25,37);
+  const naive=teamStrengthModel(fixture,alignContextTeamIds(rawContext,fixture));
+  assert.ok(naive,"the naive TOTAL-as-venue substitution still produces A number — that's exactly the bug, not a crash");
+
+  seedVenueSplitLeague(db,{competitionCode:"BSA",season:"2026",datePrefix:"2026-09",homeName:"Mirassol FC",homeId:"4364",homeGames:6,homeGF:1,homeGA:1,awayName:"EC Vitória",awayId:"1782",awayGames:6,awayGF:0,awayGA:2});
+  const result=resolveTeamStrengthBaseline(db,rawContext,fixture,alignContextTeamIds,fixture.utcDate);
+  assert.equal(result.liveStandingsMature,false,"a TOTAL-only table must never count as mature, however many games it shows");
+  assert.equal(result.competitionBaseline.baselineSource,"CURRENT_SEASON");
+  const merged=mergeWithLocalHistory(result.baseContext,[],fixture);
+  const fixed=teamStrengthModel(fixture,merged);
+  assert.notDeepEqual(fixed.lambdas,naive.lambdas,"the genuine venue-split source must produce a materially different λ than the rejected TOTAL-only substitution");
+  db.close();
+});
+
+test("Rio Ave-Estrela: TOTAL-only FOOTBALL_DATA must not push λAway to 3.10 via TOTAL-as-AWAY substitution",()=>{
+  const db=openHistoryDatabase(tempDb());
+  const fixture={home:"Rio Ave FC",away:"CF Estrela da Amadora",homeId:496,awayId:9136,competitionCode:"PPL",seasonStart:"2026",utcDate:"2026-09-14T18:00:00Z"};
+  // Representative synthetic shape (real historical data not recoverable —
+  // see forensic report) reproducing the SAME naive-ceiling defect class
+  // already proven for MLS (both high-scoring, TOTAL-only, 3 games).
+  const rawContext=totalOnly(496,"Rio Ave FC",3,30,30,9136,"CF Estrela da Amadora",3,30,30);
+  const naive=teamStrengthModel(fixture,alignContextTeamIds(rawContext,fixture));
+  assert.equal(naive.lambdas.away,3.1,"reproduces the naive TOTAL-as-AWAY ceiling collapse this fix must prevent from reaching Team Strength");
+
+  const result=resolveTeamStrengthBaseline(db,rawContext,fixture,alignContextTeamIds,fixture.utcDate);
+  assert.equal(result.liveStandingsMature,false);
+  assert.equal(result.baseContext.standings,null,"no SQLite/local fallback seeded here — the TOTAL-only table must be cleared, not silently kept");
+  db.close();
+});
+
+test("Moreirense-Marítimo: TOTAL-only FOOTBALL_DATA is rejected the same way regardless of how moderate the resulting Model % looks",()=>{
+  const db=openHistoryDatabase(tempDb());
+  const fixture={home:"Moreirense FC",away:"CS Marítimo",homeId:2010,awayId:2011,competitionCode:"PPL",seasonStart:"2026",utcDate:"2026-09-14T17:00:00Z"};
+  // Representative synthetic shape — real historical data not recoverable.
+  const rawContext=totalOnly(2010,"Moreirense FC",20,22,24,2011,"CS Marítimo",20,20,22);
+  const result=resolveTeamStrengthBaseline(db,rawContext,fixture,alignContextTeamIds,fixture.utcDate);
+  assert.equal(result.liveStandingsMature,false,"TOTAL-only must be rejected even when the resulting probabilities look unremarkable, not just in extreme cases");
+  assert.equal(result.baseContext.standings,null);
+  db.close();
+});
+
+test("Villarreal-Real Betis: a WIN outcome is not grounds to keep an incorrectly-selected source — only the context-selection mechanism is checked",()=>{
+  const db=openHistoryDatabase(tempDb());
+  const fixture={home:"Villarreal CF",away:"Real Betis Balompié",homeId:94,awayId:90,competitionCode:"PD",seasonStart:"2026",utcDate:"2026-09-14T19:00:00Z"};
+  // Representative synthetic shape — real historical data not recoverable.
+  // The fixture's real-world result (1:2, a WIN for the recommended side)
+  // plays no role anywhere in this test: resolveTeamStrengthBaseline has no
+  // knowledge of match outcomes, only of context maturity/venue-completeness.
+  const rawContext=totalOnly(94,"Villarreal CF",18,24,20,90,"Real Betis Balompié",18,21,19);
+  const result=resolveTeamStrengthBaseline(db,rawContext,fixture,alignContextTeamIds,fixture.utcDate);
+  assert.equal(result.liveStandingsMature,false,"TOTAL-only source selection is rejected on its own merits, independent of the eventual match outcome");
+  assert.equal(result.baseContext.standings,null);
+  db.close();
+});
+
+test("no mature venue-specific source anywhere (TOTAL-only live, no SQLite, insufficient local history): Team Strength becomes unavailable, never fabricated from TOTAL",()=>{
+  const db=openHistoryDatabase(tempDb());
+  const fixture={home:"Mirassol FC",away:"EC Vitória",homeId:4364,awayId:1782,competitionCode:"BSA",seasonStart:"2026",utcDate:"2026-09-14T19:00:00Z"};
+  const rawContext=totalOnly(4364,"Mirassol FC",26,29,40,1782,"EC Vitória",26,25,37);
+  // No SQLite baseline seeded at all for this competitionCode/season.
+  const result=resolveTeamStrengthBaseline(db,rawContext,fixture,alignContextTeamIds,fixture.utcDate);
+  assert.equal(result.competitionBaseline,null);
+  assert.equal(result.baseContext.standings,null,"TOTAL-only must be cleared, not kept as a last resort");
+  const merged=mergeWithLocalHistory(result.baseContext,[],fixture); // no local history either
+  assert.equal(merged.standings,null);
+  assert.equal(teamStrengthModel(fixture,merged),null,"with no genuine venue-specific source anywhere, Team Strength must be null (WAIT) — never built from TOTAL-as-HOME/AWAY");
+  db.close();
+});
+
+test("a genuinely complete source (real HOME/AWAY splits) continues to work exactly as before",()=>{
+  const db=openHistoryDatabase(tempDb());
+  const fixture={home:"Northside FC",away:"Southport United",homeId:501,awayId:502,competitionCode:"XX",seasonStart:"2025",utcDate:"2025-09-10T16:00:00Z"};
+  const rawContext={standings:{standings:[
+    {type:"TOTAL",table:[
+      {team:{id:501,name:"Northside FC"},playedGames:10,goalsFor:15,goalsAgainst:10},
+      {team:{id:502,name:"Southport United"},playedGames:10,goalsFor:12,goalsAgainst:11}
+    ]},
+    {type:"HOME",table:[{team:{id:501,name:"Northside FC"},playedGames:5,goalsFor:9,goalsAgainst:4}]},
+    {type:"AWAY",table:[{team:{id:502,name:"Southport United"},playedGames:5,goalsFor:5,goalsAgainst:6}]}
+  ]},finished:[],scheduled:[]};
+  const result=resolveTeamStrengthBaseline(db,rawContext,fixture,alignContextTeamIds,fixture.utcDate);
+  assert.equal(result.liveStandingsMature,true,"a source with genuine, mature venue splits must still be used directly, unaffected by this fix");
+  assert.equal(result.competitionBaseline,null,"SQLite must not even be consulted when the live source is already complete");
+  const merged=mergeWithLocalHistory(result.baseContext,[],fixture);
+  const strength=teamStrengthModel(fixture,merged);
+  // Attack/defence must be computed from the HOME/AWAY-specific rows (5
+  // games, 9 GF / 5 games, 6 GA), not the TOTAL rows (10 games) — confirms
+  // teamStrengthModel's own homeGames/awayGames selection is untouched.
+  assert.equal(strength.lambdas.home>0&&strength.lambdas.away>0,true);
   db.close();
 });

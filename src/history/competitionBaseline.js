@@ -110,6 +110,41 @@ export function rawStandingsMature(alignedStandings, fixture) {
 }
 
 /**
+ * True only if this (already aligned) standings object carries a GENUINE
+ * HOME row for the fixture's home team and a GENUINE AWAY row for its away
+ * team, each with >=MIN_GAMES_FOR_MATURE_STANDINGS games — the same bar as
+ * rawStandingsMature, applied to the venue-specific tables instead of TOTAL.
+ *
+ * teamStrengthModel's own `homeH = row(homeTable(context),homeId) || totalH`
+ * fallback exists to survive a genuinely missing row within an otherwise
+ * real split (e.g. a team with zero recorded away games in a thin sample) —
+ * it was never meant to substitute for a provider that has no venue-specific
+ * data AT ALL. Some providers' standings endpoints (confirmed: Football-Data
+ * for Brazil Série A / Primeira Liga / La Liga) return ONLY a TOTAL table —
+ * no HOME/AWAY types are present in the response at all — in which case that
+ * silent fallback quietly substitutes each team's full home+away record for
+ * its venue-specific one. Forensic audit (Mirassol-Vitória, Rio Ave-Estrela,
+ * Moreirense-Marítimo, Villarreal-Betis — all source=FOOTBALL_DATA,
+ * homeAwayScore=0) proved this materially changes λ: Vitória's real 13-game
+ * AWAY record (0W-4D-9L, 8 GF/28 GA) is far weaker than its 26-game TOTAL
+ * record, and only the genuine split captures that. This check is what lets
+ * resolveTeamStrengthBaseline (below) tell "provider has real venue data" apart
+ * from "provider only has TOTAL", so the latter is never mistaken for the
+ * former regardless of how many TOTAL games it shows.
+ */
+export function hasMatureVenueSplits(alignedStandings, fixture) {
+  const homeTable = alignedStandings?.standings?.find(s => s.type === "HOME")?.table || [];
+  const awayTable = alignedStandings?.standings?.find(s => s.type === "AWAY")?.table || [];
+  const home = homeTable.find(row => row.team?.id === fixture.homeId);
+  const away = awayTable.find(row => row.team?.id === fixture.awayId);
+  return Boolean(
+    home && away &&
+    home.playedGames >= MIN_GAMES_FOR_MATURE_STANDINGS &&
+    away.playedGames >= MIN_GAMES_FOR_MATURE_STANDINGS
+  );
+}
+
+/**
  * True only if BOTH fixture teams are actually resolvable in this (already
  * alignContextTeamIds-processed) standings table. Strict equality is
  * required: alignContextTeamIds only reassigns a matched row's id to the
@@ -143,13 +178,17 @@ export function baselineCoversFixture(alignedStandings, fixture) {
  * degraded 3 more that happened not to hit both bounds at once). So a
  * candidate tier must pass the SAME fixture-specific depth bar already used
  * for the live table (rawStandingsMature), not just baselineCoversFixture's
- * plain presence/identity check, before it can be accepted here.
+ * plain presence/identity check, before it can be accepted here. It must
+ * also carry genuine venue-specific data (hasMatureVenueSplits) — a SQLite
+ * tier is built straight from real per-match home/away rows so this is
+ * normally automatic, but is checked explicitly rather than assumed, for the
+ * same reason a live provider's TOTAL-only table must never stand in for it.
  */
 export function pickCompetitionBaseline(baseline, fixture, alignFn) {
   for (const candidate of [baseline?.current, baseline?.previous]) {
     if (!candidate) continue;
     const aligned = alignFn({ standings: candidate.standings, finished: [], scheduled: [] }, fixture);
-    if (baselineCoversFixture(aligned.standings, fixture) && rawStandingsMature(aligned.standings, fixture))
+    if (baselineCoversFixture(aligned.standings, fixture) && rawStandingsMature(aligned.standings, fixture) && hasMatureVenueSplits(aligned.standings, fixture))
       return { ...candidate, standings: aligned.standings };
   }
   return null;
@@ -158,18 +197,28 @@ export function pickCompetitionBaseline(baseline, fixture, alignFn) {
 /**
  * Chooses which standings table feeds teamStrengthModel for one fixture,
  * given the raw live-API context. A live table wins only when it is mature
- * FOR THIS FIXTURE (rawStandingsMature); otherwise the SQLite competition
- * baseline (current season, then previous season — see pickCompetitionBaseline)
- * is tried, and if neither actually covers this fixture's two teams, the
- * live table's `standings` is cleared (not merely left thin) so the caller's
- * own two-team local-history fallback can correctly decide instead of being
- * pre-empted by a table that is merely non-null (09.09 forensic audit —
- * this replaces the old, unconditional "rawContext.standings always wins
- * when it exists" rule).
+ * FOR THIS FIXTURE (rawStandingsMature) AND actually has genuine venue-
+ * specific data for both teams (hasMatureVenueSplits) — a deep TOTAL-only
+ * table (e.g. Football-Data's Série A/Primeira Liga/La Liga standings, which
+ * carry no HOME/AWAY types at all) is exactly as unfit for teamStrengthModel's
+ * home/away-specific attack/defence factors as a thin one, no matter how many
+ * TOTAL games it shows (forensic audit: Mirassol-Vitória, Rio Ave-Estrela,
+ * Moreirense-Marítimo, Villarreal-Betis). Otherwise the SQLite competition
+ * baseline (current season, then previous season — see pickCompetitionBaseline,
+ * which enforces the same venue-split requirement) is tried, and if neither
+ * actually covers this fixture's two teams with real venue data, the live
+ * table's `standings` is cleared (not merely left thin) so the caller's own
+ * two-team local-history fallback — which always aggregates genuine per-match
+ * venue rows, never TOTAL-as-venue — can correctly decide instead of being
+ * pre-empted by a table that is merely non-null (09.09 forensic audit — this
+ * replaces the old, unconditional "rawContext.standings always wins when it
+ * exists" rule).
  */
 export function resolveTeamStrengthBaseline(db, rawContext, fixture, alignFn, before) {
   const alignedRawContext = alignFn(rawContext, fixture);
-  const liveStandingsMature = Boolean(alignedRawContext.standings) && rawStandingsMature(alignedRawContext.standings, fixture);
+  const liveStandingsMature = Boolean(alignedRawContext.standings)
+    && rawStandingsMature(alignedRawContext.standings, fixture)
+    && hasMatureVenueSplits(alignedRawContext.standings, fixture);
   const rawBaseline = !liveStandingsMature
     ? buildCompetitionBaseline(db, fixture.competitionCode, fixture.seasonStart, before)
     : null;
