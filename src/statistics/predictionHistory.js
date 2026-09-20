@@ -123,7 +123,12 @@ function snapshotFields(row){
     odds:num(b?.odds),oddsProvider:b?.bookmaker??b?.bestBookmaker??null,
     modelProbability:num(b?.probability),fairOdds:num(b?.fairOdds),marketProbability:num(b?.marketFair),
     edge:num(b?.edge),ev:num(b?.ev),confidence:num(b?.confidence),
-    dataQuality:num(row.dataQuality),stability:num(row.stability),fds:num(b?.fds),
+    // row.stability is the fixture's 1X2 Agreement-derived figure — it does
+    // not describe an OU/AH candidate (Section 12/audit fix), so history
+    // must record that honestly as N/A rather than the unrelated 1X2 value.
+    dataQuality:num(row.dataQuality),
+    stability:(b&&(b.market==="OU"||b.market==="AH"))?null:num(row.stability),
+    fds:num(b?.fds),
     category:row.category,
     marketFreshness:row.marketFreshness??row.marketDiagnostic?.freshness??null,
     // TEAM STRENGTH / FORM — structured numbers straight off consensus.models,

@@ -235,9 +235,12 @@ test("23. baselineSource/baselineFreshness/contextSource сохраняются"
   assert.equal(snapshot.localHistoryAwayMatches,4);
 });
 
-test("24. modelAgreement/stability/confidence/redFlags сохраняются",()=>{
+test("24. modelAgreement/stability/confidence/redFlags сохраняются (1X2 — Stability применим)",()=>{
   const target=file();
-  updatePredictionSnapshots(target,[richFixture()],"2026-09-06T08:00:00Z");
+  // 1X2 explicitly, not the default OU: since the OU/AH Stability-gate fix
+  // (below), the fixture-level Stability is only meaningful for 1X2/DNB.
+  const oneXTwo=richFixture({best:{...fixture().best,market:"1X2",label:"П1"}});
+  updatePredictionSnapshots(target,[oneXTwo],"2026-09-06T08:00:00Z");
   const snapshot=loadHistoryEvents(target).find(e=>e.type==="SNAPSHOT");
   assert.equal(snapshot.modelAgreement,82);
   assert.equal(snapshot.stability,70);
@@ -263,13 +266,17 @@ test("25. изменение λ без изменения category/odds всё �
 
 test("26. расширение history не меняет прогнозные поля — новые diagnostic-поля не участвуют в существующей логике",()=>{
   const target=file();
-  updatePredictionSnapshots(target,[richFixture()],"2026-09-06T08:00:00Z");
+  // 1X2 explicitly — see test 24's note; keeps this test's own concern
+  // (old fields pass through unaffected by the new diagnostic fields) clear
+  // of the separate OU/AH Stability-applicability fix below.
+  const oneXTwo=richFixture({best:{...fixture().best,market:"1X2",label:"П1"}});
+  updatePredictionSnapshots(target,[oneXTwo],"2026-09-06T08:00:00Z");
   const snapshot=loadHistoryEvents(target).find(e=>e.type==="SNAPSHOT");
   // The original MATERIAL_FIELDS values (what drives dedup/VALUE display) are
   // exactly what fixture()/richFixture() computed — untouched by the new
   // diagnostic fields living alongside them on the same event.
-  assert.equal(snapshot.market,"OU");
-  assert.equal(snapshot.selection,"ТМ 3.5");
+  assert.equal(snapshot.market,"1X2");
+  assert.equal(snapshot.selection,"П1");
   assert.equal(snapshot.odds,2.05);
   assert.equal(snapshot.modelProbability,.847);
   assert.equal(snapshot.edge,31.2);
@@ -279,6 +286,15 @@ test("26. расширение history не меняет прогнозные п
   assert.equal(snapshot.stability,70);
   assert.equal(snapshot.fds,47);
   assert.equal(snapshot.category,"NEAR");
+});
+
+test("27. OU/AH в history сохраняют Stability как N/A (null), а не заимствованный 1X2 Stability",()=>{
+  const target=file();
+  const ou=richFixture(); // default best.market is "OU"
+  updatePredictionSnapshots(target,[ou],"2026-09-06T08:00:00Z");
+  const snapshot=loadHistoryEvents(target).find(e=>e.type==="SNAPSHOT");
+  assert.equal(snapshot.market,"OU");
+  assert.equal(snapshot.stability,null,"OU must not record the fixture's unrelated 1X2 Stability as its own");
 });
 
 test("daily audit разделяет категории и считает NEW TODAY / LATE NEAR / LATE VALUE",()=>{

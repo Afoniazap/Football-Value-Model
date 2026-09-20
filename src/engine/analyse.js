@@ -2,6 +2,13 @@ import { classifyMatch, teamStrengthModel, formModel, scheduleCongestion, consen
 import { evaluateMarkets, decisionMetrics } from "./markets.js";
 import { clamp } from "./utils.js";
 
+// OU/AH are priced solely from Team Strength's score matrix (formModel never
+// contributes — see models.js), so the blended 1X2 consensus/stability
+// describes a different, two-model question and is not evidence about these
+// markets. Single source of truth for that market-scope test, shared by the
+// Confidence computation and the VALUE gate below (Section 12/audit fix).
+function isSingleModelMarket(market){return market==="OU"||market==="AH";}
+
 export function calculateDataQuality(context,oddsData,form,squadData=null){
   const sampleScore=Math.round(clamp(((context?.finished||[]).length/120)*20,0,20));
   const formScore=form?15:0;
@@ -99,7 +106,7 @@ export function analyseFixture(fixture, context, oddsData, config, squadData=nul
   // confidence. Only 1X2/DNB (genuinely multi-model) use cons.agreement.
   const ouModelCoverage = 1/2; // exactly one model ever produces the totals/AH score matrix
   const ranked = priced.map(c => {
-    const singleModelMarket = c.market === "OU" || c.market === "AH";
+    const singleModelMarket = isSingleModelMarket(c.market);
     const metrics = decisionMetrics(c,dataQuality,
       singleModelMarket ? null : cons.agreement,
       singleModelMarket ? null : stability,
@@ -128,11 +135,22 @@ export function analyseFixture(fixture, context, oddsData, config, squadData=nul
   let category = "WAIT", reason = "Нет доступных коэффициентов для подтверждения value.";
 
   if (best) {
+    // Same market-scope test used above to null out Confidence's stability
+    // contribution for OU/AH (Section 12): `stability` here is the FIXTURE's
+    // 1X2 Agreement-derived figure, which describes agreement between Team
+    // Strength and Form on the 1X2 outcome — OU/AH never blends Form, so this
+    // number is not evidence about an OU/AH candidate either way. Requiring
+    // it in the VALUE gate for OU/AH silently borrowed an unrelated market's
+    // stability to gate a market it says nothing about (confirmed forensic
+    // audit finding). The gate is dropped for OU/AH, not defaulted to pass or
+    // fail — the same "N/A contributes nothing" semantics Confidence already
+    // uses one line above, applied to a boolean gate instead of a weighted sum.
+    const stabilityApplicable = !isSingleModelMarket(best.market);
     const passes = best.edge >= config.minEdge &&
       best.ev >= config.minEv &&
       best.confidence >= config.minConfidence &&
       dataQuality >= config.minDataQuality &&
-      stability >= config.minStability;
+      (!stabilityApplicable || stability >= config.minStability);
 
     if (passes) {
       category = "VALUE";

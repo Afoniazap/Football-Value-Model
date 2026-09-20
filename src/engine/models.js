@@ -37,9 +37,14 @@ function formStats(matches, teamId) {
   };
 }
 
-function daysSinceLastMatch(matches) {
+// referenceTime must be the fixture's own kickoff, not wall-clock Date.now():
+// scheduleCongestion analyses a FUTURE fixture, so "rest before this match"
+// is kickoff minus last match, not today minus last match — using Date.now()
+// made the same fixture/context produce a different SCI depending solely on
+// which day the bot happened to run (confirmed forensic audit finding).
+function daysSinceLastMatch(matches, referenceTime) {
   if (!matches.length) return null;
-  return (Date.now() - new Date(matches[0].utcDate).getTime()) / 86400000;
+  return (referenceTime - new Date(matches[0].utcDate).getTime()) / 86400000;
 }
 
 export function classifyMatch(fixture, context) {
@@ -114,10 +119,16 @@ export function formModel(fixture, context) {
 }
 
 export function scheduleCongestion(fixture, context) {
-  const hm = recentMatches(context, fixture.homeId, 5);
-  const am = recentMatches(context, fixture.awayId, 5);
-  const restH = daysSinceLastMatch(hm);
-  const restA = daysSinceLastMatch(am);
+  const kickoff = new Date(fixture.utcDate).getTime();
+  // Temporal safety: a match on/after this fixture's own kickoff (a data
+  // glitch, a rescheduled fixture reported "finished" early, etc.) must never
+  // stand in for "the last match before this one" — the same guarantee
+  // localHistory/baseline selection already enforce elsewhere in the engine.
+  const beforeKickoff = m => new Date(m.utcDate).getTime() < kickoff;
+  const hm = recentMatches(context, fixture.homeId, 5).filter(beforeKickoff);
+  const am = recentMatches(context, fixture.awayId, 5).filter(beforeKickoff);
+  const restH = daysSinceLastMatch(hm, kickoff);
+  const restA = daysSinceLastMatch(am, kickoff);
   if (restH === null || restA === null) return { score:50, differential:0, known:false };
 
   const load = days => clamp(100 - days*15, 5, 95);

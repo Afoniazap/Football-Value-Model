@@ -286,17 +286,22 @@ export function cardText(x) {
 
   if (b) {
     const thresholds=x.valueThresholds||{};
+    // OU/AH are priced solely off Team Strength's score matrix (no Form
+    // blend), so the fixture's 1X2 Agreement-derived Stability describes a
+    // different market and must not gate or be shown as if it applied here
+    // (same market-scope rule analyse.js's VALUE gate now uses).
+    const stabilityApplicable = b.market!=="OU" && b.market!=="AH";
     const gates = [
       { name:"Edge", value:b.edge, threshold:thresholds.minEdge, unit:" п.п." },
       { name:"EV", value:b.ev, threshold:thresholds.minEv, unit:"%" },
       { name:"Confidence", value:b.confidence, threshold:thresholds.minConfidence, unit:"" },
       { name:"Data Quality", value:x.dataQuality, threshold:thresholds.minDataQuality, unit:"" },
-      { name:"Stability", value:x.stability, threshold:thresholds.minStability, unit:"" }
+      ...(stabilityApplicable ? [{ name:"Stability", value:x.stability, threshold:thresholds.minStability, unit:"" }] : [])
     ].filter(g=>Number.isFinite(g.value)&&Number.isFinite(g.threshold));
 
     const failed = gates.filter(g => g.value < g.threshold);
 
-    if(gates.length){
+    if(gates.length || !stabilityApplicable){
       lines.push(
         "",
         "<b>VALUE Gates</b>",
@@ -309,6 +314,8 @@ export function cardText(x) {
           )
         )
       );
+      if(!stabilityApplicable)
+        lines.push(`⚪ Stability: N/A — ${esc(b.market)} оценивается по Team Strength, 1X2 Agreement сюда не относится`);
 
       if (failed.length) {
         const worst = failed

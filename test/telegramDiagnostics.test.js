@@ -95,6 +95,23 @@ test("Telegram VALUE Gates показывает thresholds из production confi
   assert.match(text,/Stab: 65\/75/);
 });
 
+// Section E of the OU/AH Stability-gate fix: OU/AH are priced off Team
+// Strength alone, so the fixture's 1X2 Agreement-derived Stability is not
+// evidence about them — VALUE Gates must not show it as a numeric OU/AH gate
+// (which would silently borrow an unrelated market's figure) and must not
+// leave the user guessing why no Stability line appears either.
+test("Telegram VALUE Gates для OU/AH показывает Stability как N/A вместо заимствованного 1X2 Stability",()=>{
+  const text=cardText(pricedCard({stability:65,best:{...pricedCard().best,market:"OU",label:"ТМ 3.5"}}));
+  assert.doesNotMatch(text,/Stab: 65\/\d+/,"must not render the fixture's 1X2 Stability as an OU gate value");
+  assert.match(text,/Stability: N\/A/);
+});
+
+test("Telegram VALUE Gates для 1X2 продолжает показывать реальный Stability (не затронуто OU/AH fix)",()=>{
+  const text=cardText(pricedCard({valueThresholds:{minEdge:9,minEv:12,minConfidence:73,minDataQuality:74,minStability:75}}));
+  assert.match(text,/Stab: 65\/75/);
+  assert.doesNotMatch(text,/Stability: N\/A/);
+});
+
 test("VALUE/NEAR list показывает информативный двухстрочный mobile summary",()=>{
   const fixture=pricedCard({home:"Barcelona",away:"Rayo Vallecano",utcDate:"2026-08-31T19:30:00Z",best:{...pricedCard().best,market:"OU",label:"ТМ 3.25",line:3.25,odds:2.52,probability:.62,edge:12.2,fds:48}});
   const text=listText("NEAR",[fixture]);
