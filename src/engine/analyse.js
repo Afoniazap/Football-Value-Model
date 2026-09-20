@@ -161,7 +161,7 @@ export function analyseFixture(fixture, context, oddsData, config, squadData=nul
     },
     marketAgreement:oddsData?.agreement ?? null,
     ouModelCoverage, ouModelAgreement:null, ouStability:null,
-    sci, redFlags, models:cons.models.map(m=>({name:m.name,quality:m.quality,explanation:m.explanation})),
+    sci, redFlags, models:cons.models.map(m=>({name:m.name,quality:m.quality,explanation:m.explanation,probability:m.probability,...(m.lambdas?{lambdas:m.lambdas}:{})})),
     consensusProbability:cons.probability,
     markets:ranked, marketAvailable:!!oddsData, marketSource:oddsData?.source || null,
     best

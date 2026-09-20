@@ -21,6 +21,28 @@ function fixture(overrides={}){
 function historyRow(home,away,playedAt,hg,ag){
   return {sourceFixtureId:"1",playedAt,homeTeam:{name:home},awayTeam:{name:away},status:"FINISHED",score:{fullTime:{home:hg,away:ag}},provenance:{source:"TEST"}};
 }
+// A fixture carrying the full diagnostic surface analyseFixture/app.js actually
+// attach (models[], consensusProbability, contextDiagnostic, redFlags, ...),
+// for the forensic-field tests below. fixture() above stays untouched so the
+// original 20 tests keep exercising the "these fields are absent" path.
+function richFixture(overrides={}){
+  return fixture({
+    modelCoverage:1,modelAgreement:82,sci:{score:91,known:true},
+    redFlags:["Низкий Consensus"],marketSource:"THE_ODDS_API",
+    marketDiagnostic:{normalizedBookmakers:7,freshness:"LIVE"},
+    consensusProbability:{home:.5,draw:.25,away:.25},
+    models:[
+      {name:"Team Strength",quality:78,explanation:"...",probability:{home:.52,draw:.24,away:.24},lambdas:{home:1.62,away:1.11}},
+      {name:"Opponent-adjusted Form proxy",quality:66,explanation:"...",probability:{home:.46,draw:.27,away:.27}}
+    ],
+    contextDiagnostic:{
+      status:"OK",source:"COMPETITION_BASELINE",temporalSafe:true,
+      baseline:{baselineSource:"CURRENT_SEASON",baselineSample:16,baselineTeams:4,freshness:"CURRENT"},
+      localHistory:{homeMatches:4,awayMatches:4,provenance:["LOCAL_HISTORY"],temporalSafe:true}
+    },
+    ...overrides
+  });
+}
 
 test("1. first seen сохраняется и не перезаписывается",()=>{
   const target=file();
@@ -181,6 +203,82 @@ test("20. отсутствующий результат не портит ист
   const additions=updateSnapshotGrading(target,[],"2026-09-06T21:00:00Z");
   assert.equal(additions.length,0);
   assert.deepEqual(loadHistoryEvents(target),before);
+});
+
+test("21. Team Strength probability/quality/λ сохраняются как структурированные числа",()=>{
+  const target=file();
+  updatePredictionSnapshots(target,[richFixture()],"2026-09-06T08:00:00Z");
+  const snapshot=loadHistoryEvents(target).find(e=>e.type==="SNAPSHOT");
+  assert.deepEqual(snapshot.teamStrengthProbability,{home:.52,draw:.24,away:.24});
+  assert.equal(snapshot.teamStrengthQuality,78);
+  assert.equal(snapshot.lambdaHome,1.62);
+  assert.equal(snapshot.lambdaAway,1.11);
+});
+
+test("22. Form probability/quality сохраняются как структурированные числа",()=>{
+  const target=file();
+  updatePredictionSnapshots(target,[richFixture()],"2026-09-06T08:00:00Z");
+  const snapshot=loadHistoryEvents(target).find(e=>e.type==="SNAPSHOT");
+  assert.deepEqual(snapshot.formProbability,{home:.46,draw:.27,away:.27});
+  assert.equal(snapshot.formQuality,66);
+});
+
+test("23. baselineSource/baselineFreshness/contextSource сохраняются",()=>{
+  const target=file();
+  updatePredictionSnapshots(target,[richFixture()],"2026-09-06T08:00:00Z");
+  const snapshot=loadHistoryEvents(target).find(e=>e.type==="SNAPSHOT");
+  assert.equal(snapshot.contextSource,"COMPETITION_BASELINE");
+  assert.equal(snapshot.baselineSource,"CURRENT_SEASON");
+  assert.equal(snapshot.baselineFreshness,"CURRENT");
+  assert.equal(snapshot.baselineSample,16);
+  assert.equal(snapshot.localHistoryHomeMatches,4);
+  assert.equal(snapshot.localHistoryAwayMatches,4);
+});
+
+test("24. modelAgreement/stability/confidence/redFlags сохраняются",()=>{
+  const target=file();
+  updatePredictionSnapshots(target,[richFixture()],"2026-09-06T08:00:00Z");
+  const snapshot=loadHistoryEvents(target).find(e=>e.type==="SNAPSHOT");
+  assert.equal(snapshot.modelAgreement,82);
+  assert.equal(snapshot.stability,70);
+  assert.equal(snapshot.confidence,75);
+  assert.deepEqual(snapshot.redFlags,["Низкий Consensus"]);
+});
+
+test("25. изменение λ без изменения category/odds всё равно создаёт новый snapshot (lifecycle reconstruction)",()=>{
+  const target=file();
+  updatePredictionSnapshots(target,[richFixture()],"2026-09-06T08:00:00Z");
+  const movedLambda=richFixture({
+    models:[
+      {name:"Team Strength",quality:78,explanation:"...",probability:{home:.52,draw:.24,away:.24},lambdas:{home:1.9,away:1.11}},
+      {name:"Opponent-adjusted Form proxy",quality:66,explanation:"...",probability:{home:.46,draw:.27,away:.27}}
+    ]
+  });
+  updatePredictionSnapshots(target,[movedLambda],"2026-09-06T09:00:00Z");
+  const snapshots=loadHistoryEvents(target).filter(e=>e.type==="SNAPSHOT");
+  assert.equal(snapshots.length,2,"a context/baseline-driven λ shift must be reconstructable even when category/odds are unchanged");
+  assert.equal(snapshots[0].lambdaHome,1.62);
+  assert.equal(snapshots[1].lambdaHome,1.9);
+});
+
+test("26. расширение history не меняет прогнозные поля — новые diagnostic-поля не участвуют в существующей логике",()=>{
+  const target=file();
+  updatePredictionSnapshots(target,[richFixture()],"2026-09-06T08:00:00Z");
+  const snapshot=loadHistoryEvents(target).find(e=>e.type==="SNAPSHOT");
+  // The original MATERIAL_FIELDS values (what drives dedup/VALUE display) are
+  // exactly what fixture()/richFixture() computed — untouched by the new
+  // diagnostic fields living alongside them on the same event.
+  assert.equal(snapshot.market,"OU");
+  assert.equal(snapshot.selection,"ТМ 3.5");
+  assert.equal(snapshot.odds,2.05);
+  assert.equal(snapshot.modelProbability,.847);
+  assert.equal(snapshot.edge,31.2);
+  assert.equal(snapshot.ev,70);
+  assert.equal(snapshot.confidence,75);
+  assert.equal(snapshot.dataQuality,60);
+  assert.equal(snapshot.stability,70);
+  assert.equal(snapshot.fds,47);
+  assert.equal(snapshot.category,"NEAR");
 });
 
 test("daily audit разделяет категории и считает NEW TODAY / LATE NEAR / LATE VALUE",()=>{

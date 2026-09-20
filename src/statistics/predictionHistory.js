@@ -95,12 +95,26 @@ function fixtureKey(row){
   return `${kickoff}|${canonicalTeamName(row.home)}|${canonicalTeamName(row.away)}`;
 }
 
+// quality/(sum of qualities) — the weights consensus() actually applied,
+// derived only from the already-computed quality values (never recomputed).
+function modelWeights(teamStrength,form){
+  const tsQ=Number(teamStrength?.quality),formQ=Number(form?.quality);
+  const sum=(Number.isFinite(tsQ)?tsQ:0)+(Number.isFinite(formQ)?formQ:0);
+  if(!sum)return null;
+  return {teamStrength:Number.isFinite(tsQ)?tsQ/sum:null,form:Number.isFinite(formQ)?formQ/sum:null};
+}
+
 // Everything a viewer needs to reconstruct what the model showed at a given
 // moment — see task spec section 2. `null` (not omission) for anything not
 // available yet, so downstream comparisons never mistake "missing" for 0.
 function snapshotFields(row){
   const b=row.best||null;
   const num=value=>Number.isFinite(Number(value))?Number(value):null;
+  const prob=p=>validProbability(p)?{home:num(p.home),draw:num(p.draw),away:num(p.away)}:null;
+  const teamStrength=(row.models||[]).find(m=>m.name==="Team Strength")||null;
+  const form=(row.models||[]).find(m=>m.name==="Opponent-adjusted Form proxy")||null;
+  const baseline=row.contextDiagnostic?.baseline||null;
+  const localHistory=row.contextDiagnostic?.localHistory||null;
   return {
     fixtureId:String(row.id),
     competition:row.competition||null,competitionCode:row.competitionCode||null,
@@ -111,13 +125,48 @@ function snapshotFields(row){
     edge:num(b?.edge),ev:num(b?.ev),confidence:num(b?.confidence),
     dataQuality:num(row.dataQuality),stability:num(row.stability),fds:num(b?.fds),
     category:row.category,
-    marketFreshness:row.marketFreshness??row.marketDiagnostic?.freshness??null
+    marketFreshness:row.marketFreshness??row.marketDiagnostic?.freshness??null,
+    // TEAM STRENGTH / FORM — structured numbers straight off consensus.models,
+    // never reconstructed from explanation text (task section 2, CRITICAL).
+    teamStrengthProbability:prob(teamStrength?.probability),
+    teamStrengthQuality:num(teamStrength?.quality),
+    lambdaHome:num(teamStrength?.lambdas?.home),
+    lambdaAway:num(teamStrength?.lambdas?.away),
+    formProbability:prob(form?.probability),
+    formQuality:num(form?.quality),
+    // CONSENSUS
+    consensusProbability:prob(row.consensusProbability),
+    consensusWeights:modelWeights(teamStrength,form),
+    // CONTEXT
+    contextSource:row.contextDiagnostic?.source??null,
+    baselineSource:baseline?.baselineSource??null,
+    baselineFreshness:baseline?.freshness??null,
+    baselineSample:num(baseline?.baselineSample),
+    baselineTeams:num(baseline?.baselineTeams),
+    localHistoryHomeMatches:num(localHistory?.homeMatches),
+    localHistoryAwayMatches:num(localHistory?.awayMatches),
+    temporalSafe:localHistory?.temporalSafe??null,
+    // DIAGNOSTICS
+    modelCoverage:num(row.modelCoverage),
+    modelAgreement:num(row.modelAgreement),
+    sci:num(row.sci?.score),
+    redFlags:Array.isArray(row.redFlags)?row.redFlags:null,
+    // MARKET
+    marketProvider:row.marketSource??null,
+    bookmakerCount:num(row.marketDiagnostic?.normalizedBookmakers)
   };
 }
 
-// The exact fields the task defines as "material" (section 5/6). Order fixed
-// so two snapshots compare equal iff every one of these matches.
-const MATERIAL_FIELDS=["market","selection","line","odds","modelProbability","edge","ev","confidence","dataQuality","stability","fds","category"];
+// The exact fields the task defines as "material" (section 5/6), extended
+// with the four new SCALAR fields whose change is itself forensically
+// significant (a context/baseline swap can move Model% at unchanged
+// odds/category). Object/array-valued fields (probabilities, redFlags,
+// weights) are deliberately excluded here: materialSignature's `.join("|")`
+// would stringify them to "[object Object]", making every value compare
+// equal instead of comparing content — a silent dedup bug, not a fix, so
+// those fields are recorded on every material snapshot but don't themselves
+// trigger one.
+const MATERIAL_FIELDS=["market","selection","line","odds","modelProbability","edge","ev","confidence","dataQuality","stability","fds","category","lambdaHome","lambdaAway","baselineSource","baselineFreshness"];
 function materialSignature(snapshot){return MATERIAL_FIELDS.map(field=>snapshot[field]).join("|");}
 
 /**
