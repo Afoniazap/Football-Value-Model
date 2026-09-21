@@ -77,6 +77,39 @@ test("обычные результаты обычных лиг (без penaltie
   assert.deepEqual(row.score.fullTime,{home:2,away:0});
 });
 
+// Confirmed (forensic audit, second contamination round): a knockout match
+// decided in extra time WITHOUT a shootout has no `penalties` field at all,
+// yet Football-Data's fullTime still includes the extra-time goals on top
+// of the 90-minute score (e.g. Juventus-Galatasaray: fullTime 3:2,
+// regularTime 3:0 -- 2 away goals scored in extra time). regularTime must
+// win here too, exactly like the penalty-shootout case, since the check is
+// "is regularTime present", not "are there penalties".
+test("AET без серии пенальти (extraTime, но penalties отсутствует) -> тоже regularTime",()=>{
+  const row = normalizeHistoryMatch({
+    id:7,utcDate:"2026-02-25T20:00:00Z",homeTeam:{id:1,name:"Juventus FC"},awayTeam:{id:2,name:"Galatasaray SK"},
+    score:{duration:"EXTRA_TIME",winner:"HOME_TEAM",fullTime:{home:3,away:2},regularTime:{home:3,away:0},extraTime:{home:0,away:2}}
+  },"FOOTBALL_DATA");
+  assert.deepEqual(row.score.fullTime,{home:3,away:0},"extra-time goals must not be counted into the stored regulation-time score either");
+});
+
+// API-Football's raw fixture objects have no `score.regularTime` field at
+// all (a completely different shape: score.fulltime/extratime/penalty,
+// lowercase, plus a top-level `goals` field) -- this fix must not affect
+// them. Confirmed separately (forensic audit) that API-Football's own
+// `goals` already excludes penalty-shootout goals, so the untouched
+// fallback path (`match.score?.fullTime?.home ?? match.goals?.home`)
+// remains correct and unaffected by this change.
+test("API-Football semantics не затронуты — нет score.regularTime, используется существующий fallback на goals",()=>{
+  const apiFootballShapedMatch={
+    id:"1634050",utcDate:"2026-09-01T18:00:00Z",
+    homeTeam:{id:9981,name:"Palmeiras W"},awayTeam:{id:16496,name:"Bahia W"},
+    goals:{home:1,away:1},
+    score:{halftime:{home:0,away:1},fulltime:{home:1,away:1},extratime:{home:null,away:null},penalty:{home:4,away:5}}
+  };
+  const row=normalizeHistoryMatch(apiFootballShapedMatch,"API_FOOTBALL");
+  assert.deepEqual(row.score.fullTime,{home:1,away:1},"API-Football's own goals field (already penalty-exclusive) must be used unchanged, not score.fulltime/regularTime");
+});
+
 test("локальный context использует разные соревнования и только матчи до kickoff", () => {
   const fixture = { homeId: 10, home: "Alpha FC", awayId: 20, away: "Beta", utcDate: "2026-08-27T18:00:00Z" };
   const rows = [];
