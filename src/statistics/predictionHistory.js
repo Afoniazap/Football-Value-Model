@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { canonicalTeamName, sameTeamIdentity } from "../history/teamAliases.js";
+import { canonicalTeamName } from "../history/teamAliases.js";
+import { matchHistoryRow } from "../history/resultMatching.js";
 import { settleMarket, profitForSettlement } from "./marketBetHistory.js";
 
 export const PRODUCTION_MODEL_VERSION="production-baseline-v1";
@@ -21,15 +22,7 @@ function appendEvents(filePath,events){
   fs.appendFileSync(filePath,`${events.map(event=>JSON.stringify(event)).join("\n")}\n`,"utf8");
 }
 function validProbability(p){const v=[p?.home,p?.draw,p?.away];return v.every(Number.isFinite)&&Math.abs(v.reduce((s,x)=>s+x,0)-1)<.02;}
-function historyMatch(prediction,history){
-  return (history||[]).filter(row=>{
-    const delta=Math.abs(new Date(row.playedAt)-new Date(prediction.kickoff));
-    const sources=[row.provenance?.source,...(row.provenance?.sources||[])];
-    const ids=sources.includes("API_FOOTBALL")&&String(row.sourceFixtureId||"")===String(prediction.fixtureId);
-    const names=sameTeamIdentity(row.homeTeam?.name,prediction.home)&&sameTeamIdentity(row.awayTeam?.name,prediction.away);
-    return (ids||names)&&delta<=12*3600_000;
-  }).sort((a,b)=>Math.abs(new Date(a.playedAt)-new Date(prediction.kickoff))-Math.abs(new Date(b.playedAt)-new Date(prediction.kickoff)))[0]||null;
-}
+const historyMatch = matchHistoryRow;
 function actualOutcome(match){const h=Number(match?.score?.fullTime?.home),a=Number(match?.score?.fullTime?.away);return !Number.isFinite(h)||!Number.isFinite(a)?null:h>a?"home":h<a?"away":"draw";}
 
 export function buildPredictionStatistics(events){

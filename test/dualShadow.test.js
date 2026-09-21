@@ -71,6 +71,19 @@ test("shadow append-safe, restart-safe, temporal-safe и settlement исполь
   assert.equal(stats.predictions,1);
 });
 
+// Shared resultMatching.js exact-ID path: same provider + same fixtureId
+// must grade shadow results even when the final kickoff drifted +3 days
+// past an interruption, exactly like predictionHistory.js already does.
+test("shadow грейдит перенесённый/прерванный fixture по тому же API-Football fixtureId за пределами 12h (shared matchHistoryRow)",()=>{
+  const file=path.join(fs.mkdtempSync(path.join(os.tmpdir(),"fvm-shadow-")),"dual-shadow.jsonl");
+  const rescheduledFixture={...fixture,id:"1552155",utcDate:"2026-09-05T16:45:00Z"};
+  const production=analyseFixture(rescheduledFixture,context(),null,config),row={...production,shadow:buildDualShadow(rescheduledFixture,context(),production.consensusProbability)};
+  updateDualShadowHistory(file,[row],[],"2026-09-05T12:00:00Z");
+  const finished=[{sourceFixtureId:"1552155",playedAt:"2026-09-08T12:00:00Z",homeTeam:{name:"Alpha FC"},awayTeam:{name:"Beta FC"},score:{fullTime:{home:2,away:1}},status:"FT",provenance:{source:"API_FOOTBALL"}}];
+  const stats=updateDualShadowHistory(file,[],finished,"2026-09-09T00:00:00Z");
+  assert.equal(stats.completed,1,"must grade via fixtureId despite kickoff drifting +3 days beyond the 12h name window");
+});
+
 test("shadow category и benchmark не подаются обратно в Production",()=>{
   const production=analyseFixture(fixture,context(),odds(),config),official={category:production.category,fair:production.best?.fairOdds,edge:production.best?.edge,ev:production.best?.ev,confidence:production.best?.confidence,fds:production.best?.fds};
   const combined={...production,shadow:buildDualShadow(fixture,context(),production.consensusProbability)};

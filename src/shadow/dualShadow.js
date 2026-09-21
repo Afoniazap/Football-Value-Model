@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { canonicalTeamName, sameTeamIdentity } from "../history/teamAliases.js";
+import { canonicalTeamName } from "../history/teamAliases.js";
+import { matchHistoryRow } from "../history/resultMatching.js";
 import { buildChallenger, CHALLENGER_MODEL_VERSION } from "./challenger.js";
 import { buildBaselineV2H, BASELINE_V2_H_MODEL_VERSION } from "./baselineV2H.js";
 
@@ -15,10 +16,7 @@ function read(file){try{return fs.readFileSync(file,"utf8").split(/\r?\n/).filte
 function append(file,rows){if(!rows.length)return;fs.mkdirSync(path.dirname(file),{recursive:true});fs.appendFileSync(file,`${rows.map(JSON.stringify).join("\n")}\n`,"utf8");}
 function top(p){return [...KEYS].sort((a,b)=>p[b]-p[a])[0];}
 function actual(match){const h=Number(match?.score?.fullTime?.home),a=Number(match?.score?.fullTime?.away);return !Number.isFinite(h)||!Number.isFinite(a)?null:h>a?"home":h<a?"away":"draw";}
-function historyMatch(prediction,history){return (history||[]).filter(row=>{
-  const close=Math.abs(new Date(row.playedAt)-new Date(prediction.kickoff))<=12*3600_000;
-  return close&&sameTeamIdentity(row.homeTeam?.name,prediction.home)&&sameTeamIdentity(row.awayTeam?.name,prediction.away);
-}).sort((a,b)=>Math.abs(new Date(a.playedAt)-new Date(prediction.kickoff))-Math.abs(new Date(b.playedAt)-new Date(prediction.kickoff)))[0]||null;}
+const historyMatch = matchHistoryRow;
 function metrics(p,result){const probability=Math.max(1e-12,p[result]);return {brier:KEYS.reduce((sum,key)=>sum+(p[key]-(key===result?1:0))**2,0),logLoss:-Math.log(probability),topPickCorrect:top(p)===result};}
 function gap(a,b){return valid(a)&&valid(b)?Math.max(...KEYS.map(key=>Math.abs(a[key]-b[key]))):null;}
 function h2hBenchmark(row,observedAt){

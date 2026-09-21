@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { asianSettlementOutcome, totalsSettlementOutcome } from "../engine/markets.js";
-import { canonicalTeamName, sameTeamIdentity } from "../history/teamAliases.js";
+import { canonicalTeamName } from "../history/teamAliases.js";
+import { matchHistoryRow } from "../history/resultMatching.js";
 
 export const MARKET_BET_MODEL_VERSION="production-market-v1";
 
@@ -13,12 +14,7 @@ function marketKey(row){
   const best=row.best||{},kickoff=String(row.utcDate||row.kickoff||"").slice(0,16);
   return [kickoff,canonicalTeamName(row.home),canonicalTeamName(row.away),row.category,best.market,best.label||best.selection||"",normalizedLine(best.line)??"",MARKET_BET_MODEL_VERSION].join("|");
 }
-function historyMatch(prediction,history){
-  return (history||[]).filter(row=>{
-    const delta=Math.abs(new Date(row.playedAt)-new Date(prediction.kickoff));
-    return delta<=12*3600_000&&sameTeamIdentity(row.homeTeam?.name,prediction.home)&&sameTeamIdentity(row.awayTeam?.name,prediction.away);
-  }).sort((a,b)=>Math.abs(new Date(a.playedAt)-new Date(prediction.kickoff))-Math.abs(new Date(b.playedAt)-new Date(prediction.kickoff)))[0]||null;
-}
+const historyMatch = matchHistoryRow;
 function sideFromSelection(selection){return /^(П1|Ф1|home)/i.test(selection)?"home":/^(П2|Ф2|away)/i.test(selection)?"away":null;}
 function settle(prediction,match){
   const status=String(match.status||"").toUpperCase();

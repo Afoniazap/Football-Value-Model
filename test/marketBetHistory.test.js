@@ -18,6 +18,18 @@ test("market history is append-only, deduplicated and persistent",()=>{
   assert.equal(loadMarketBetStatistics(target).predictions,1);
 });
 
+// Shared resultMatching.js exact-ID path: same provider + same fixtureId
+// must grade a market bet even when the final kickoff drifted +3 days past
+// an interruption, exactly like predictionHistory.js already does.
+test("interrupted/resumed fixture grades by API-Football fixtureId beyond 12h (shared matchHistoryRow)",()=>{
+  const target=file();
+  const rescheduled=bet({id:"1552155",utcDate:"2026-09-05T16:45:00Z",home:"Utrecht",away:"GO Ahead Eagles"});
+  updateMarketBetHistory(target,[rescheduled],[],"2026-09-05T12:00:00Z");
+  const finished=[{playedAt:"2026-09-08T12:00:00Z",homeTeam:{name:"FC Utrecht"},awayTeam:{name:"Go Ahead Eagles"},score:{fullTime:{home:1,away:0}},status:"FT",sourceFixtureId:"1552155",provenance:{source:"API_FOOTBALL"}}];
+  const stats=updateMarketBetHistory(target,[],finished,"2026-09-09T00:00:00Z");
+  assert.equal(stats.completed,1,"the market bet must be graded via the same fixtureId despite the kickoff drifting +3 days");
+});
+
 test("quarter AH grading preserves half win and unit profit",()=>{
   const target=file();
   updateMarketBetHistory(target,[bet()],[],"2026-09-03T12:00:00Z");
