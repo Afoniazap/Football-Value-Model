@@ -16,7 +16,7 @@ import { loadPredictionStatistics, updatePredictionHistory, updatePredictionSnap
 import { loadMarketBetStatistics, updateMarketBetHistory } from "./statistics/marketBetHistory.js";
 import { auditMarketSnapshots, enforceMarketFreshness, resolveMarketSnapshots } from "./markets/marketSnapshots.js";
 import { databaseStats, getTeamLastMatches, hasSourceDate, importHistoryMatches, loadAllHistory, openHistoryDatabase } from "./history/sqliteHistory.js";
-import { completedUtcDates } from "./history/harvestDates.js";
+import { completedUtcDates, recentRefetchDates } from "./history/harvestDates.js";
 import { resolveTeamStrengthBaseline } from "./history/competitionBaseline.js";
 import { resolveContextProvenance, describeTeamStrengthSource } from "./history/contextProvenance.js";
 import { ensurePreviousSeasonHistory } from "./history/previousSeasonBackfill.js";
@@ -97,6 +97,12 @@ async function tg(method,body={}){
 function permitted(id){return allowed.size===0||allowed.has(String(id));}
 function save(){fs.writeFileSync(path.join(DATA,"state.json"),JSON.stringify(state,null,2),"utf8");}
 
+// The 2 most recent harvestable dates are always re-verified regardless of
+// hasSourceDate (see recentRefetchDates) — 2 days comfortably covers a
+// match finishing very late, extra time, or a same/next-day reschedule,
+// without re-querying history that's already several days settled.
+const RECENT_REFETCH_DAYS=2;
+
 async function updateLocalHistory(){
   const cacheBackfill=cacheBackfillDone
     ? {added:0,skipped:true}
@@ -105,17 +111,18 @@ async function updateLocalHistory(){
   ensureHistoryDatabase();
 
   const dates=completedUtcDates(Date.now(),Number(env.HISTORY_HARVEST_LOOKBACK_DAYS||3));
+  const forceRefetch=recentRefetchDates(dates,RECENT_REFETCH_DAYS);
   const errors=[];
   let added=0;
   let skipped=0;
   for(const date of dates){
-    if(hasSourceDate(historyDatabase,"API_FOOTBALL",date))skipped++;
+    if(!forceRefetch.has(date)&&hasSourceDate(historyDatabase,"API_FOOTBALL",date))skipped++;
     else try{
       const finished=await getFinishedFixturesForDate(env.API_FOOTBALL_KEY.trim(),date);
       added+=appendHistory(finished,"API_FOOTBALL");
     }catch(error){errors.push(`API_FOOTBALL:${date}:${error.message}`);}
 
-    if(hasSourceDate(historyDatabase,"FOOTBALL_DATA",date))skipped++;
+    if(!forceRefetch.has(date)&&hasSourceDate(historyDatabase,"FOOTBALL_DATA",date))skipped++;
     else try{
       const finished=await getFinishedFootballDataMatchesForDate(env.FOOTBALL_DATA_TOKEN.trim(),date);
       added+=appendHistory(finished,"FOOTBALL_DATA");
