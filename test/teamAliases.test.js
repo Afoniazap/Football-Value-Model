@@ -88,3 +88,44 @@ test("новые alias-записи не расширяют совпадение
   assert.equal(sameTeamIdentity("Norwich","Norwich United"),false);
   assert.equal(sameTeamIdentity("Derby","Derby (Bermuda)"),false);
 });
+
+// Second targeted-recovery round (UEFA CL, Championship, Brazilian Série A
+// via Football-Data's BSA code, CONMEBOL Libertadores via CLI, 2 more
+// Ligue 1 pairs already present in previously-downloaded FL1 data) — 20
+// pending predictions confirmed to already have a real result in SQLite
+// under Football-Data's full legal/local name.
+test("targeted recovery round 2: короткое имя прогноза сопоставляется с полным именем провайдера (18 подтверждённых пар)",()=>{
+  const pairs=[
+    ["Feyenoord","Feyenoord Rotterdam"],["Napoli","SSC Napoli"],["Sporting CP","Sporting Clube de Portugal"],
+    ["Remo","Clube do Remo"],["Coritiba","Coritiba FBC"],["Flamengo","CR Flamengo"],
+    ["Botafogo","Botafogo FR"],["Palmeiras","SE Palmeiras"],["Marseille","Olympique de Marseille"],
+    ["QPR","Queens Park Rangers FC"],["Charlton","Charlton Athletic FC"],["Cruzeiro","Cruzeiro EC"],["Atletico Paranaense","CA Paranaense"],
+    ["Corinthians","SC Corinthians Paulista"],["Chapecoense-sc","Chapecoense AF"],["Gremio","Grêmio FBPA"],
+    ["Angers","Angers SCO"],["Rennes","Stade Rennais FC 1901"]
+  ];
+  for (const [prediction,provider] of pairs)
+    assert.equal(sameTeamIdentity(prediction,provider),true,`${prediction} <-> ${provider}`);
+});
+test("Charlton <-> Charlton Athletic FC",()=>{assert.equal(sameTeamIdentity("Charlton","Charlton Athletic FC"),true);});
+
+// Explicitly named regression cases from the task specification, verbatim.
+test("Palmeiras <-> SE Palmeiras",()=>{assert.equal(sameTeamIdentity("Palmeiras","SE Palmeiras"),true);});
+test("Feyenoord <-> Feyenoord Rotterdam",()=>{assert.equal(sameTeamIdentity("Feyenoord","Feyenoord Rotterdam"),true);});
+test("Napoli <-> SSC Napoli",()=>{assert.equal(sameTeamIdentity("Napoli","SSC Napoli"),true);});
+test("Sporting CP <-> Sporting Clube de Portugal",()=>{assert.equal(sameTeamIdentity("Sporting CP","Sporting Clube de Portugal"),true);});
+test("Angers <-> Angers SCO",()=>{assert.equal(sameTeamIdentity("Angers","Angers SCO"),true);});
+test("Rennes <-> Stade Rennais FC 1901",()=>{assert.equal(sameTeamIdentity("Rennes","Stade Rennais FC 1901"),true);});
+test("Marseille <-> Olympique de Marseille",()=>{assert.equal(sameTeamIdentity("Marseille","Olympique de Marseille"),true);});
+
+// Negative tests: near-neighbour / reserve / unrelated teams sharing a token
+// with a newly-added alias must NOT collapse into it.
+test("round 2 aliases не расширяют совпадение на несвязанные/похожие команды",()=>{
+  assert.equal(sameTeamIdentity("Corinthians","Corinthians U17"),false);
+  assert.equal(sameTeamIdentity("Corinthians","Corinthians W"),false);
+  assert.equal(sameTeamIdentity("Rennes","Rennes B"),false);
+  assert.equal(sameTeamIdentity("Angers","Angers B"),false);
+  assert.equal(sameTeamIdentity("Napoli","Napoli Primavera"),false);
+  assert.equal(sameTeamIdentity("Flamengo","Flamengo U20"),false);
+  assert.equal(sameTeamIdentity("QPR","Queens Park FC"),false,"a different club (Queen's Park, Scotland) must not match QPR");
+  assert.equal(sameTeamIdentity("Charlton","Bermondsey Charlton"),false);
+});

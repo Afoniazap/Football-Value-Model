@@ -62,6 +62,29 @@ export const TEAM_ALIAS_GROUPS = [
   ,{ name: "Norwich", aliases: ["Norwich City FC"] }
   ,{ name: "Birmingham", aliases: ["Birmingham City FC"] }
   ,{ name: "Atletico Madrid", aliases: ["Club Atlético de Madrid"] }
+  // Second targeted-recovery round (UEFA CL, Championship, Brazilian Série A
+  // via Football-Data's BSA code, CONMEBOL Libertadores via CLI, and 2 more
+  // Ligue 1 pairs already present in previously-downloaded FL1 data) — same
+  // verification as the first round: each pair checked individually against
+  // the full SQLite corpus, zero new collisions.
+  ,{ name: "Feyenoord", aliases: ["Feyenoord Rotterdam"] }
+  ,{ name: "Napoli", aliases: ["SSC Napoli"] }
+  ,{ name: "Sporting CP", aliases: ["Sporting Clube de Portugal"] }
+  ,{ name: "QPR", aliases: ["Queens Park Rangers FC"] }
+  ,{ name: "Charlton", aliases: ["Charlton Athletic FC"] }
+  ,{ name: "Remo", aliases: ["Clube do Remo"] }
+  ,{ name: "Coritiba", aliases: ["Coritiba FBC"] }
+  ,{ name: "Cruzeiro", aliases: ["Cruzeiro EC"] }
+  ,{ name: "Atletico Paranaense", aliases: ["CA Paranaense"] }
+  ,{ name: "Flamengo", aliases: ["CR Flamengo"] }
+  ,{ name: "Botafogo", aliases: ["Botafogo FR"] }
+  ,{ name: "Palmeiras", aliases: ["SE Palmeiras"] }
+  ,{ name: "Corinthians", aliases: ["SC Corinthians Paulista"] }
+  ,{ name: "Chapecoense-sc", aliases: ["Chapecoense AF"] }
+  ,{ name: "Gremio", aliases: ["Grêmio FBPA"] }
+  ,{ name: "Angers", aliases: ["Angers SCO"] }
+  ,{ name: "Rennes", aliases: ["Stade Rennais FC 1901"] }
+  ,{ name: "Marseille", aliases: ["Olympique de Marseille"] }
 ];
 
 // Confirmed collision (forensic audit): the generic suffix-strip below would
