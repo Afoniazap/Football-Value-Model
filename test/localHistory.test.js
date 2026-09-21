@@ -27,6 +27,56 @@ test("неполный результат не превращается в ну�
   assert.equal(normalizeHistoryMatch({ id: 1, utcDate: "2026-08-20T18:00:00Z", homeTeam: { id: 1, name: "A" }, awayTeam: { id: 2, name: "B" }, score: { fullTime: { home: null, away: null } } }, "API_FOOTBALL"), null);
 });
 
+// Forensic audit: Football-Data's own `fullTime` for a penalty-shootout match
+// equals regularTime + penalties (confirmed on all 11 CLI shootout matches,
+// e.g. LDU-Palmeiras: regularTime 3:2, penalties 3:4, fullTime 6:6) — not the
+// 90-minute result standard 1X2/OU/AH markets settle on.
+test("regularTime побеждает fullTime, когда серия пенальти отдаёт fullTime=regularTime+penalties",()=>{
+  const row = normalizeHistoryMatch({
+    id:576250,utcDate:"2026-09-16T22:00:00Z",homeTeam:{id:1,name:"LDU de Quito"},awayTeam:{id:2,name:"SE Palmeiras"},
+    score:{duration:"REGULAR",winner:"DRAW",fullTime:{home:6,away:6},regularTime:{home:3,away:2},penalties:{home:3,away:4}}
+  },"FOOTBALL_DATA");
+  assert.deepEqual(row.score.fullTime,{home:3,away:2},"stored score must be the 90-minute regulation result, not fullTime+penalties");
+});
+
+test("обычный FT без regularTime сохраняет прежнее поведение (fallback на fullTime)",()=>{
+  const row = normalizeHistoryMatch({
+    id:2,utcDate:"2026-08-20T18:00:00Z",homeTeam:{id:1,name:"A"},awayTeam:{id:2,name:"B"},
+    score:{fullTime:{home:2,away:1}}
+  },"FOOTBALL_DATA");
+  assert.deepEqual(row.score.fullTime,{home:2,away:1});
+});
+
+test("regularTime 0:0 используется корректно — не теряется из-за truthy/falsy 0",()=>{
+  const row = normalizeHistoryMatch({
+    id:3,utcDate:"2026-08-20T18:00:00Z",homeTeam:{id:1,name:"A"},awayTeam:{id:2,name:"B"},
+    score:{duration:"PENALTY_SHOOTOUT",fullTime:{home:5,away:4},regularTime:{home:0,away:0},penalties:{home:5,away:4}}
+  },"FOOTBALL_DATA");
+  assert.deepEqual(row.score.fullTime,{home:0,away:0},"a genuine 0:0 regulation score must not be treated as \"missing\" and fall through to fullTime");
+});
+
+test("частичный/null regularTime -> fallback на fullTime (обе стороны должны быть валидны, иначе не доверяем)",()=>{
+  const oneSideNull = normalizeHistoryMatch({
+    id:4,utcDate:"2026-08-20T18:00:00Z",homeTeam:{id:1,name:"A"},awayTeam:{id:2,name:"B"},
+    score:{fullTime:{home:3,away:2},regularTime:{home:3,away:null}}
+  },"FOOTBALL_DATA");
+  assert.deepEqual(oneSideNull.score.fullTime,{home:3,away:2});
+
+  const noRegularTimeObject = normalizeHistoryMatch({
+    id:5,utcDate:"2026-08-20T18:00:00Z",homeTeam:{id:1,name:"A"},awayTeam:{id:2,name:"B"},
+    score:{fullTime:{home:1,away:1}}
+  },"FOOTBALL_DATA");
+  assert.deepEqual(noRegularTimeObject.score.fullTime,{home:1,away:1});
+});
+
+test("обычные результаты обычных лиг (без penalties) не меняются",()=>{
+  const row = normalizeHistoryMatch({
+    id:6,utcDate:"2026-08-20T18:00:00Z",homeTeam:{id:1,name:"Alpha"},awayTeam:{id:2,name:"Beta"},
+    score:{winner:"HOME_TEAM",duration:"REGULAR",fullTime:{home:2,away:0},halfTime:{home:1,away:0}}
+  },"FOOTBALL_DATA");
+  assert.deepEqual(row.score.fullTime,{home:2,away:0});
+});
+
 test("локальный context использует разные соревнования и только матчи до kickoff", () => {
   const fixture = { homeId: 10, home: "Alpha FC", awayId: 20, away: "Beta", utcDate: "2026-08-27T18:00:00Z" };
   const rows = [];

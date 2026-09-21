@@ -24,8 +24,24 @@ export function normalizeHistoryMatch(match, provenance, fetchedAt = new Date().
   const playedAt = match.playedAt || match.utcDate || match.fixture?.date || null;
   const home = match.homeTeam || match.teams?.home || {};
   const away = match.awayTeam || match.teams?.away || {};
-  const homeGoals = finiteScore(match.score?.fullTime?.home ?? match.goals?.home);
-  const awayGoals = finiteScore(match.score?.fullTime?.away ?? match.goals?.away);
+  // Football-Data's own `fullTime` for a penalty-shootout match is NOT the
+  // 90-minute regulation score — confirmed (forensic audit) to literally
+  // equal regularTime + penalties (e.g. LDU-Palmeiras: regularTime 3:2,
+  // penalties 3:4, fullTime 6:6). Standard 1X2/OU/AH settlement is a
+  // regulation-time market, so `regularTime` — when both sides are present,
+  // 0:0 included — must win over `fullTime`. Never derive it by arithmetic
+  // (fullTime minus penalties): only trust a score the provider itself
+  // reports as the regulation result.
+  // Number.isFinite (not finiteScore's Number(...)-coercing helper) on the
+  // raw field: null/undefined must read as "absent", not coerce to 0 — a
+  // genuine 0:0 regulation score has to stay 0:0, not get treated as missing.
+  const rawRegularHome = match.score?.regularTime?.home;
+  const rawRegularAway = match.score?.regularTime?.away;
+  const hasRegularTime = Number.isFinite(rawRegularHome) && Number.isFinite(rawRegularAway);
+  const regularHomeGoals = hasRegularTime ? rawRegularHome : null;
+  const regularAwayGoals = hasRegularTime ? rawRegularAway : null;
+  const homeGoals = hasRegularTime ? regularHomeGoals : finiteScore(match.score?.fullTime?.home ?? match.goals?.home);
+  const awayGoals = hasRegularTime ? regularAwayGoals : finiteScore(match.score?.fullTime?.away ?? match.goals?.away);
   const source = String(provenance || match.provenance?.source || "UNKNOWN").toUpperCase();
   const sourceFixtureId = String(match.sourceFixtureId || match.id || match.fixture?.id || "");
   const seasonValue = typeof match.season === "object"
