@@ -22,11 +22,60 @@ export const TEAM_ALIAS_GROUPS = [
   ,{ name: "Sao Paulo", aliases: ["São Paulo", "São Paulo FC"], evidence: { source: "THESPORTSDB", teamId: "134291" } }
   ,{ name: "Bragantino", aliases: ["Red Bull Bragantino", "RB Bragantino"], evidence: { source: "THESPORTSDB", teamId: "134736" } }
   ,{ name: "NEC Nijmegen", aliases: ["NEC"], evidence: { source: "THESPORTSDB", teamId: "133760" } }
+  // Forensic audit (22 alias-gap pending predictions, season-scoped backfill
+  // task): Football-Data's season endpoint returns full legal club names
+  // ("US Sassuolo Calcio", "Sporting Clube de Braga", "1. FSV Mainz 05"...)
+  // while fixture-discovery stores the short/common name ("Sassuolo",
+  // "SC Braga", "FSV Mainz 05"). The generic suffix-strip below only covers
+  // a narrow, safe set of single-word legal-form tokens (fc/cf/afc/sc/...) —
+  // confirmed (Stage A collision test against the full 16k-row SQLite corpus)
+  // that widening it to cover these longer forms (US, Calcio, Clube,
+  // Deportivo, Club, RCD, County, City, Town, year suffixes like "1909")
+  // creates real cross-club collisions elsewhere ("Nacional" alone merges
+  // 4+ distinct clubs from Uruguay/Portugal/Ecuador/Colombia; "Athletic"
+  // merges Athletic Bilbao with a dozen unrelated lower-league "X Athletic"
+  // sides). Curated, per-club exact pairs — the same mechanism already used
+  // above for THESPORTSDB-sourced ambiguity — carries none of that risk.
+  ,{ name: "Celta Vigo", aliases: ["RC Celta de Vigo"] }
+  ,{ name: "Lecce", aliases: ["US Lecce"] }
+  ,{ name: "Atalanta", aliases: ["Atalanta BC"] }
+  ,{ name: "Bologna", aliases: ["Bologna FC 1909"] }
+  ,{ name: "Estoril", aliases: ["GD Estoril Praia"] }
+  ,{ name: "SC Braga", aliases: ["Sporting Clube de Braga"] }
+  ,{ name: "Rayo Vallecano", aliases: ["Rayo Vallecano de Madrid"] }
+  ,{ name: "Genoa", aliases: ["Genoa CFC"] }
+  ,{ name: "Como", aliases: ["Como 1907"] }
+  ,{ name: "Ipswich", aliases: ["Ipswich Town FC"] }
+  ,{ name: "Monaco", aliases: ["AS Monaco FC"] }
+  ,{ name: "Twente", aliases: ["FC Twente '65"] }
+  ,{ name: "Telstar", aliases: ["Telstar 1963"] }
+  ,{ name: "Cambuur", aliases: ["SC Cambuur-Leeuwarden"] }
+  ,{ name: "Frosinone", aliases: ["Frosinone Calcio"] }
+  ,{ name: "Parma", aliases: ["Parma Calcio 1913"] }
+  ,{ name: "FSV Mainz 05", aliases: ["1. FSV Mainz 05"] }
+  ,{ name: "Sassuolo", aliases: ["US Sassuolo Calcio"] }
+  ,{ name: "Alaves", aliases: ["Deportivo Alavés"] }
+  ,{ name: "Espanyol", aliases: ["RCD Espanyol de Barcelona"] }
+  ,{ name: "Academico Viseu", aliases: ["Académico de Viseu FC"] }
+  ,{ name: "Derby", aliases: ["Derby County FC"] }
+  ,{ name: "West Brom", aliases: ["West Bromwich Albion FC"] }
+  ,{ name: "Norwich", aliases: ["Norwich City FC"] }
+  ,{ name: "Birmingham", aliases: ["Birmingham City FC"] }
+  ,{ name: "Atletico Madrid", aliases: ["Club Atlético de Madrid"] }
 ];
+
+// Confirmed collision (forensic audit): the generic suffix-strip below would
+// otherwise reduce "Vitória SC" (Vitória Guimarães, Portugal, Primeira Liga)
+// to the same "vitoria" key as Brazil's "Vitória"/"EC Vitória" (Série A) —
+// two entirely different clubs on two different continents. A narrow,
+// explicit exception for this one confirmed string, not a change to the
+// general rule (which stays correct for every other "X SC" club).
+const KEEP_FULL_FORM = new Set(["vitoria sc"]);
 
 export function canonicalTeamName(value = "") {
   const cleaned=String(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9а-яё]+/gi, " ").trim().replace(/\s+/g, " ");
+  if (KEEP_FULL_FORM.has(cleaned)) return cleaned;
   const withoutClubSuffix=cleaned.replace(/\b(fc|cf|afc|sc|ac|cd|fk|rc|ca|ud|club|sk|vv|kf)\b/g, " ").trim().replace(/\s+/g, " ");
   // Для коротких названий суффикс является частью identity: NEC (Нидерланды)
   // и NEC FC (Уганда) не должны объединяться в одну команду.
