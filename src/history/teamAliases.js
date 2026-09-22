@@ -13,11 +13,11 @@ export const TEAM_ALIAS_GROUPS = [
   ,{ name: "Swansea City", aliases: ["Swansea City AFC"], evidence: { source: "THESPORTSDB", teamId: "133614" } }
   ,{ name: "Hull City", aliases: ["Hull City AFC"], evidence: { source: "THESPORTSDB", teamId: "133617" } }
   ,{ name: "Paderborn", aliases: ["SC Paderborn 07"], evidence: { source: "THESPORTSDB", teamId: "134551", historicalLeagues:[{id:"4399",season:"2025-2026",name:"German 2. Bundesliga"}] } }
-  ,{ name: "Elversberg", aliases: ["SV 07 Elversberg"], evidence: { source: "THESPORTSDB", teamId: "138411", historicalLeagues:[{id:"4399",season:"2025-2026",name:"German 2. Bundesliga"}] } }
+  ,{ name: "Elversberg", aliases: ["SV 07 Elversberg", "SV Elversberg"], evidence: { source: "THESPORTSDB", teamId: "138411", historicalLeagues:[{id:"4399",season:"2025-2026",name:"German 2. Bundesliga"}] } }
   ,{ name: "Excelsior", aliases: ["SBV Excelsior"], evidence: { source: "THESPORTSDB", teamId: "133757" } }
   ,{ name: "AZ Alkmaar", aliases: ["AZ"], evidence: { source: "THESPORTSDB", teamId: "133767" } }
   ,{ name: "Maritimo", aliases: ["Marítimo", "CS Marítimo"], evidence: { source: "THESPORTSDB", teamId: "134023" } }
-  ,{ name: "Troyes", aliases: ["ES Troyes AC"], evidence: { source: "THESPORTSDB", teamId: "134789", historicalLeagues:[{id:"4401",season:"2025-2026",name:"French Ligue 2"}] } }
+  ,{ name: "Troyes", aliases: ["ES Troyes AC", "Estac Troyes"], evidence: { source: "THESPORTSDB", teamId: "134789", historicalLeagues:[{id:"4401",season:"2025-2026",name:"French Ligue 2"}] } }
   ,{ name: "Atletico Mineiro", aliases: ["Atlético Mineiro", "CA Mineiro"], evidence: { source: "THESPORTSDB", teamId: "134299" } }
   ,{ name: "Sao Paulo", aliases: ["São Paulo", "São Paulo FC"], evidence: { source: "THESPORTSDB", teamId: "134291" } }
   ,{ name: "Bragantino", aliases: ["Red Bull Bragantino", "RB Bragantino"], evidence: { source: "THESPORTSDB", teamId: "134736" } }
@@ -85,6 +85,44 @@ export const TEAM_ALIAS_GROUPS = [
   ,{ name: "Angers", aliases: ["Angers SCO"] }
   ,{ name: "Rennes", aliases: ["Stade Rennais FC 1901"] }
   ,{ name: "Marseille", aliases: ["Olympique de Marseille"] }
+  // Third targeted-recovery round (Shadow V3 Phase 1 identity forensic
+  // audit): insertRow() stores canonicalTeamName(raw) directly without
+  // alias resolution, so two literal spellings of the same club end up as
+  // two different homeTeamNormalized/awayTeamNormalized strings in SQLite
+  // even when this table already recognizes them as one team via
+  // sameTeamIdentity. These 21 pairs were confirmed with a read-only,
+  // full-SQLite-corpus check (every competitionCode/source, not just the
+  // 5 Shadow V3 leagues; zero rows changed): each key set maps to exactly
+  // the 2-3 raw spellings of ONE real club, with no collision with any
+  // unrelated club (see the negative-match tests below and in
+  // test/teamAliases.test.js "round 3 aliases не расширяют совпадение...").
+  ,{ name: "Real Betis", aliases: ["Real Betis Balompié"] }
+  ,{ name: "Real Sociedad", aliases: ["Real Sociedad de Fútbol"] }
+  ,{ name: "Newcastle", aliases: ["Newcastle United FC", "Newcastle United"] }
+  ,{ name: "Leeds", aliases: ["Leeds United FC", "Leeds United"] }
+  ,{ name: "Fiorentina", aliases: ["ACF Fiorentina"] }
+  ,{ name: "Udinese", aliases: ["Udinese Calcio"] }
+  ,{ name: "Cagliari", aliases: ["Cagliari Calcio"] }
+  ,{ name: "Lazio", aliases: ["SS Lazio"] }
+  ,{ name: "Nice", aliases: ["OGC Nice"] }
+  ,{ name: "Strasbourg", aliases: ["RC Strasbourg Alsace"] }
+  ,{ name: "Auxerre", aliases: ["AJ Auxerre"] }
+  ,{ name: "Lille", aliases: ["Lille OSC"] }
+  ,{ name: "1899 Hoffenheim", aliases: ["TSG 1899 Hoffenheim"] }
+  ,{ name: "Bayer Leverkusen", aliases: ["Bayer 04 Leverkusen"] }
+  ,{ name: "Union Berlin", aliases: ["1. FC Union Berlin"] }
+  ,{ name: "Werder Bremen", aliases: ["SV Werder Bremen"] }
+  ,{ name: "Tottenham", aliases: ["Tottenham Hotspur FC", "Tottenham Hotspur"] }
+  ,{ name: "Lens", aliases: ["Racing Club de Lens"] }
+  ,{ name: "Brighton", aliases: ["Brighton & Hove Albion FC"] }
+  ,{ name: "Inter", aliases: ["FC Internazionale Milano"] }
+  ,{ name: "Lyon", aliases: ["Olympique Lyonnais"] }
+  // Within-2026/27-live-season spelling splits: two providers disagree on
+  // the form of a newly-promoted club's name within the SAME season (not a
+  // historical-vs-live mismatch) -- still must collapse to one identity or
+  // the club looks like two different opponents in its own debut season.
+  ,{ name: "Racing Santander", aliases: ["Real Racing Club de Santander"] }
+  ,{ name: "Coventry", aliases: ["Coventry City FC", "Coventry City"] }
 ];
 
 // Confirmed collision (forensic audit): the generic suffix-strip below would
@@ -127,4 +165,19 @@ export function teamSearchAliases(value) {
 
 export function teamIdentityEvidence(value) {
   return groupFor(value)?.evidence || null;
+}
+
+// insertRow() (src/history/sqliteHistory.js) stores canonicalTeamName(raw)
+// directly, never alias-resolved -- so two literal spellings of the same
+// club can end up as two different homeTeamNormalized/awayTeamNormalized
+// strings in SQLite even when this table already knows they're one team.
+// canonicalTeamIdentity() is the alias-aware read-time resolver for callers
+// that need a SINGLE stable key per team (e.g. building a team index from
+// raw SQLite rows): it returns the alias group's own canonical name when
+// one exists, else falls back to plain canonicalTeamName(). Existing
+// query-time consumers (teamWhere/sameTeamIdentity/teamSearchAliases) are
+// unaffected -- this is a new, additive export.
+export function canonicalTeamIdentity(value) {
+  const group = groupFor(value);
+  return group ? canonicalTeamName(group.name) : canonicalTeamName(value);
 }

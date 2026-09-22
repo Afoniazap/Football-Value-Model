@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { sameTeamIdentity, teamSearchAliases, canonicalTeamName } from "../src/history/teamAliases.js";
+import { sameTeamIdentity, teamSearchAliases, canonicalTeamName, canonicalTeamIdentity } from "../src/history/teamAliases.js";
 
 test("подтверждённые aliases учитывают диакритику и исторические названия", () => {
   assert.equal(sameTeamIdentity("Jagiellonia", "Jagiellonia Białystok"), true);
@@ -128,4 +128,78 @@ test("round 2 aliases не расширяют совпадение на несв
   assert.equal(sameTeamIdentity("Flamengo","Flamengo U20"),false);
   assert.equal(sameTeamIdentity("QPR","Queens Park FC"),false,"a different club (Queen's Park, Scotland) must not match QPR");
   assert.equal(sameTeamIdentity("Charlton","Bermondsey Charlton"),false);
+});
+
+// Third targeted-recovery round (Shadow V3 Phase 1 identity forensic audit):
+// insertRow() stores canonicalTeamName(raw) without alias resolution, so a
+// club shows up under two different literal SQLite strings across import
+// batches/providers even though this table already recognizes them as one
+// team for query purposes. Confirmed via research/shadowV3/_identity_audit*.mjs
+// (read-only, full-corpus collision check, zero SQLite rows changed).
+test("round 3 (identity forensic audit): исторически известные клубы, разошедшиеся написанием между backfill и live-харвестом 2026/27",()=>{
+  const pairs=[
+    ["Angers","Angers SCO"],["Como","Como 1907"],["Ipswich","Ipswich Town FC"],
+    ["Real Betis","Real Betis Balompié"],["Real Sociedad","Real Sociedad de Fútbol"],
+    ["Newcastle","Newcastle United FC"],["Leeds","Leeds United FC"],
+    ["Fiorentina","ACF Fiorentina"],["Udinese","Udinese Calcio"],["Cagliari","Cagliari Calcio"],["Lazio","SS Lazio"],
+    ["Nice","OGC Nice"],["Strasbourg","RC Strasbourg Alsace"],["Auxerre","AJ Auxerre"],["Lille","Lille OSC"],
+    ["1899 Hoffenheim","TSG 1899 Hoffenheim"],["Bayer Leverkusen","Bayer 04 Leverkusen"],
+    ["Union Berlin","1. FC Union Berlin"],["Werder Bremen","SV Werder Bremen"],
+    ["Tottenham","Tottenham Hotspur FC"],["Lens","Racing Club de Lens"],
+    ["Brighton","Brighton & Hove Albion FC"],["Inter","FC Internazionale Milano"],["Lyon","Olympique Lyonnais"]
+  ];
+  for (const [a,b] of pairs) assert.equal(sameTeamIdentity(a,b),true,`${a} <-> ${b}`);
+});
+
+test("round 3: within-live-season spelling splits для только что повышенных клубов",()=>{
+  assert.equal(sameTeamIdentity("Racing Santander","Real Racing Club de Santander"),true);
+  assert.equal(sameTeamIdentity("Coventry","Coventry City FC"),true);
+  assert.equal(sameTeamIdentity("Coventry","Coventry City"),true);
+  assert.equal(sameTeamIdentity("Estac Troyes","ES Troyes AC"),true,"extends the existing Troyes group, not a new one");
+  assert.equal(sameTeamIdentity("Estac Troyes","Troyes"),true);
+  assert.equal(sameTeamIdentity("SV Elversberg","SV 07 Elversberg"),true,"extends the existing Elversberg group, not a new one");
+  assert.equal(sameTeamIdentity("SV Elversberg","Elversberg"),true);
+});
+
+test("round 3 aliases не расширяют совпадение на несвязанные/похожие команды",()=>{
+  assert.equal(sameTeamIdentity("Inter","Inter Miami"),false,"a different club on a different continent must not collapse into Inter Milan");
+  assert.equal(sameTeamIdentity("Inter","Internacional"),false,"Brazil's Internacional (sometimes shortened Inter) must not collapse into Inter Milan");
+  assert.equal(sameTeamIdentity("Union Berlin","Union Saint-Gilloise"),false);
+  assert.equal(sameTeamIdentity("Real Betis","Real Betis B"),false);
+  assert.equal(sameTeamIdentity("Leeds","Leeds United Women"),false);
+  assert.equal(sameTeamIdentity("Brighton","Brighton Deportivo"),false);
+  assert.equal(sameTeamIdentity("Newcastle","Newcastle Jets"),false,"a different club (A-League, Australia) sharing only the city name");
+  assert.equal(sameTeamIdentity("Coventry","Coventry Sphinx"),false);
+});
+
+test("canonicalTeamIdentity: резолвит уже нормализованную строку из SQLite (homeTeamNormalized/awayTeamNormalized) к единому ключу группы",()=>{
+  assert.equal(canonicalTeamIdentity(canonicalTeamName("Angers")),canonicalTeamIdentity(canonicalTeamName("Angers SCO")));
+  assert.equal(canonicalTeamIdentity(canonicalTeamName("Racing Santander")),canonicalTeamIdentity(canonicalTeamName("Real Racing Club de Santander")));
+  assert.equal(canonicalTeamIdentity(canonicalTeamName("Inter")),canonicalTeamIdentity(canonicalTeamName("FC Internazionale Milano")));
+});
+
+test("canonicalTeamIdentity: команда без alias-группы просто проходит через canonicalTeamName без изменений",()=>{
+  assert.equal(canonicalTeamIdentity("Malaga"),canonicalTeamName("Malaga"));
+  assert.equal(canonicalTeamIdentity(canonicalTeamName("Hull City")),canonicalTeamName("Hull City"));
+});
+
+// Safety-review requirement: canonicalTeamIdentity must not be a second,
+// independent identity semantics -- it is a pure repackaging of the SAME
+// group-membership logic sameTeamIdentity already uses (both call the same
+// internal groupFor()). This asserts that equivalence directly: for any
+// pair, the two functions must agree, in both directions, with zero drift.
+test("canonicalTeamIdentity и sameTeamIdentity согласованы: одна и та же группировка, два разных API",()=>{
+  const allPairs=[
+    ["Angers","Angers SCO"],["Como","Como 1907"],["Racing Santander","Real Racing Club de Santander"],
+    ["Inter","FC Internazionale Milano"],["Coventry","Coventry City FC"],["Estac Troyes","ES Troyes AC"],
+    ["SV Elversberg","SV 07 Elversberg"],["Tottenham","Tottenham Hotspur FC"],["Malaga","Malaga"]
+  ];
+  for (const [a,b] of allPairs)
+    assert.equal(canonicalTeamIdentity(a)===canonicalTeamIdentity(b),sameTeamIdentity(a,b),`${a} <-> ${b}`);
+  const negativePairs=[
+    ["Inter","Inter Miami"],["Union Berlin","Union Saint-Gilloise"],["Real Betis","Real Betis B"],
+    ["Osasuna","Osasuna B"],["Vitória","Vitória SC"]
+  ];
+  for (const [a,b] of negativePairs)
+    assert.equal(canonicalTeamIdentity(a)===canonicalTeamIdentity(b),sameTeamIdentity(a,b),`${a} <-> ${b} (must both be false)`);
 });
