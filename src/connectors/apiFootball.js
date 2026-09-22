@@ -230,15 +230,16 @@ export async function getUpcomingApiFootballMatches(key, horizonHours = 24) {
   }
   if(!all.length&&lastError)throw lastError;
 
-  return all
-    .filter(m => {
-      const t = new Date(m?.fixture?.date);
-      return (
-        t > now &&
-        t <= end &&
-        ["NS","TBD"].includes(m?.fixture?.status?.short)
-      );
-    })
+  const futureEvents = all.filter(m => {
+    const t = new Date(m?.fixture?.date);
+    return (
+      t > now &&
+      t <= end &&
+      ["NS","TBD"].includes(m?.fixture?.status?.short)
+    );
+  });
+
+  const result = futureEvents
     .map(m => ({
       id: String(m.fixture.id),
       apiFootballFixtureId: m.fixture.id,
@@ -255,6 +256,15 @@ export async function getUpcomingApiFootballMatches(key, horizonHours = 24) {
       awayId: m.teams?.away?.id
     }))
     .filter(m => m.competitionCode);
+
+  // Diagnostic-only counters, attached to the array (not a return-shape
+  // change: .length/.filter/spread/iteration all behave exactly as before)
+  // so discovery.js can tell apart "no raw events", "events but none
+  // upcoming/NS-TBD", and "upcoming events but none in a mapped
+  // competition" instead of one undifferentiated empty result. Business
+  // filtering logic above is unchanged.
+  result.diagnostics = { events: all.length, futureEvents: futureEvents.length, supportedFixtures: result.length };
+  return result;
 }
 
 export async function getFixtureOdds(key, fixtureId) {

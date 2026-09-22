@@ -42,6 +42,26 @@ function mergeFixtures(primary, secondary) {
   return [...merged.values()].sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate));
 }
 
+// Classifies an empty API-Football result using the staged counters the
+// connector attaches to its own return value (events -> futureEvents ->
+// supportedFixtures), so a genuinely empty provider response ("nothing
+// scheduled today") is no longer indistinguishable from "plenty of fixtures,
+// none in a competition we map" -- the latter is a mapping-coverage
+// question, the former is not. Falls back to the old undifferentiated
+// reason when diagnostics aren't present (e.g. a test double that returns a
+// plain array) so existing callers are unaffected. No filtering rule here
+// -- purely a description of counts discoverFixtures already computed.
+function emptyApiFootballReason(diagnostics) {
+  if (!diagnostics) return "API_FOOTBALL_EMPTY";
+  if (diagnostics.events === 0) return "API_FOOTBALL_NO_EVENTS";
+  if (diagnostics.futureEvents === 0) return "API_FOOTBALL_NO_FUTURE_EVENTS";
+  if (diagnostics.supportedFixtures === 0) return "API_FOOTBALL_NO_SUPPORTED_FIXTURES";
+  // supportedFixtures > 0 but discoverFixtures' own usableFixture filter
+  // (home/away present, still inside [now,end]) removed every one of
+  // them -- a real, distinct scenario from the three above.
+  return "API_FOOTBALL_NO_USABLE_FIXTURES";
+}
+
 export async function discoverFixtures({
   apiKey,
   footballDataToken,
@@ -56,10 +76,11 @@ export async function discoverFixtures({
   const health = { primary: "API_FOOTBALL", status: "OK", source: "API_FOOTBALL", reason: null, cached: cached.length, alternatives: [] };
 
   try {
-    const fixtures = (await apiFootball(apiKey, horizonHours)).filter(row => usableFixture(row, now, end));
+    const raw = await apiFootball(apiKey, horizonHours);
+    const fixtures = raw.filter(row => usableFixture(row, now, end));
     if (fixtures.length) return { fixtures, health };
     health.status = "DEGRADED";
-    health.reason = "API_FOOTBALL_EMPTY";
+    health.reason = emptyApiFootballReason(raw.diagnostics);
   } catch (error) {
     health.status = "DEGRADED";
     health.reason = error?.code || error?.message || "API_FOOTBALL_ERROR";

@@ -85,6 +85,64 @@ test("daily-limit response uses a safe stale finished-fixture cache",async()=>{
   assert.equal(getApiFootballTelemetry().dailyLimit,true);
 });
 
+// Diagnostic-only counters attached to getUpcomingApiFootballMatches's
+// return value (see the discovery.js reclassification fix): events (raw
+// API response rows) -> futureEvents (NS/TBD inside the horizon) ->
+// supportedFixtures (also has a mapped competitionCode). Never changes
+// which fixtures are returned -- only what's attached alongside them.
+// Node's test runner executes this file's tests with some concurrency, and
+// apiFootball.js keeps its request/cache state in module-level singletons
+// keyed by request path (date string) -- so, exactly like the pre-existing
+// "daily limit keeps a stale upcoming-fixture date cache" test below, each
+// of these needs its OWN distinct `now`/date literal (never reused across
+// tests in this file) to avoid a false cross-test collision on the same
+// "/fixtures?date=..." cache/in-flight key. Each mock also branches on the
+// requested date so the two horizon date-fetches are independently
+// controlled instead of both returning the same row (which would double-count).
+test("diagnostics: zero raw events",async()=>{
+  configureApiFootball({cacheDir:tempDir(),minGapMs:0,fetchImpl:async()=>response(validEmpty)});
+  beginApiFootballRefresh();
+  const result=await getUpcomingApiFootballMatches("secret",24);
+  assert.equal(result.length,0);
+  assert.deepEqual(result.diagnostics,{events:0,futureEvents:0,supportedFixtures:0});
+});
+
+test("diagnostics: events present but none are future NS/TBD inside the horizon",async()=>{
+  const now=Date.parse("2026-09-10T12:00:00Z");
+  const finishedToday={...validEmpty,results:1,response:[{fixture:{id:7,date:"2026-09-10T10:00:00Z",status:{short:"FT"}},league:{id:61,name:"Ligue 1",country:"France",season:2026},teams:{home:{id:1,name:"A"},away:{id:2,name:"B"}}}]};
+  configureApiFootball({cacheDir:tempDir(),minGapMs:0,now:()=>now,fetchImpl:async url=>response(new URL(url).searchParams.get("date")==="2026-09-10"?finishedToday:validEmpty)});
+  beginApiFootballRefresh();
+  const result=await getUpcomingApiFootballMatches("secret",24);
+  assert.equal(result.length,0);
+  assert.equal(result.diagnostics.events,1);
+  assert.equal(result.diagnostics.futureEvents,0);
+  assert.equal(result.diagnostics.supportedFixtures,0);
+});
+
+test("diagnostics: future NS events present but none map to a known competitionCode",async()=>{
+  const now=Date.parse("2026-09-11T12:00:00Z");
+  const unmapped={...validEmpty,results:1,response:[{fixture:{id:8,date:"2026-09-11T18:00:00Z",status:{short:"NS"}},league:{id:999,name:"Some Unmapped League",country:"Nowhere",season:2026},teams:{home:{id:1,name:"A"},away:{id:2,name:"B"}}}]};
+  configureApiFootball({cacheDir:tempDir(),minGapMs:0,now:()=>now,fetchImpl:async url=>response(new URL(url).searchParams.get("date")==="2026-09-11"?unmapped:validEmpty)});
+  beginApiFootballRefresh();
+  const result=await getUpcomingApiFootballMatches("secret",24);
+  assert.equal(result.length,0);
+  assert.equal(result.diagnostics.events,1);
+  assert.equal(result.diagnostics.futureEvents,1);
+  assert.equal(result.diagnostics.supportedFixtures,0);
+});
+
+test("diagnostics: supported fixtures present match the returned array length",async()=>{
+  const now=Date.parse("2026-09-12T12:00:00Z");
+  const supported={...validEmpty,results:1,response:[{fixture:{id:9,date:"2026-09-12T18:00:00Z",status:{short:"NS"}},league:{id:61,name:"Ligue 1",country:"France",season:2026},teams:{home:{id:1,name:"A"},away:{id:2,name:"B"}}}]};
+  configureApiFootball({cacheDir:tempDir(),minGapMs:0,now:()=>now,fetchImpl:async url=>response(new URL(url).searchParams.get("date")==="2026-09-12"?supported:validEmpty)});
+  beginApiFootballRefresh();
+  const result=await getUpcomingApiFootballMatches("secret",24);
+  assert.equal(result.length,1);
+  assert.equal(result.diagnostics.supportedFixtures,1);
+  assert.equal(result.diagnostics.events,1);
+  assert.equal(result.diagnostics.futureEvents,1);
+});
+
 test("daily limit keeps a stale upcoming-fixture date cache and does not discard a partial date",async()=>{
   let now=Date.parse("2026-08-27T12:00:00Z"),limited=false,calls=0;
   const fixture={...validEmpty,results:1,response:[{fixture:{id:7,date:"2026-08-27T18:00:00Z",status:{short:"NS"}},league:{id:3,name:"UEFA Europa League",country:"World",season:2026,round:"Play-offs"},teams:{home:{id:1,name:"A"},away:{id:2,name:"B"}}}]};
