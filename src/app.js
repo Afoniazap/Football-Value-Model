@@ -21,6 +21,7 @@ import { resolveTeamStrengthBaseline } from "./history/competitionBaseline.js";
 import { resolveContextProvenance, describeTeamStrengthSource } from "./history/contextProvenance.js";
 import { ensurePreviousSeasonHistory } from "./history/previousSeasonBackfill.js";
 import { buildDualShadow, loadDualShadowStatistics, updateDualShadowHistory } from "./shadow/dualShadow.js";
+import { updateV3ShadowHistory } from "./shadow/v3History.js";
 import { saveStateSnapshot } from "./history/stateSnapshots.js";
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
@@ -34,6 +35,7 @@ const LEGACY_HISTORY_FILE=path.join(DATA,"history.json");
 const PREDICTION_HISTORY_FILE=path.join(DATA,"statistics","predictions.jsonl");
 const MARKET_BET_HISTORY_FILE=path.join(DATA,"statistics","market-bets.jsonl");
 const DUAL_SHADOW_HISTORY_FILE=path.join(DATA,"statistics","dual-shadow.jsonl");
+const V3_SHADOW_HISTORY_FILE=path.join(DATA,"statistics","v3-shadow.jsonl");
 const MARKET_SNAPSHOT_FILE=path.join(DATA,"market-cache","snapshots.json");
 const HISTORY_DB_FILE=path.join(DATA,"history","football.sqlite");
 const STATE_SNAPSHOTS_DIR=path.join(DATA,"history","state-snapshots");
@@ -446,6 +448,18 @@ async function refresh(){
     updatePredictionSnapshots(PREDICTION_HISTORY_FILE,state.results,storedAt);
     updateSnapshotGrading(PREDICTION_HISTORY_FILE,completedHistory,storedAt);
     state.shadowStatistics=updateDualShadowHistory(DUAL_SHADOW_HISTORY_FILE,state.results,completedHistory,storedAt);
+    // Observer-only, diagnostic Shadow V3 (Dixon-Coles) log -- read-only
+    // against state.results (never mutated, never feeds back into
+    // VALUE/NEAR/WAIT/NO_BET/Confidence/FDS/Telegram). Explicit outer
+    // try/catch as defense-in-depth on top of updateV3ShadowHistory's own
+    // internal isolation (predictV3 never throws) -- a V3 failure must never
+    // abort the refresh that already computed and is about to save
+    // Production's real predictions.
+    try{
+      state.v3ShadowStatistics=updateV3ShadowHistory(V3_SHADOW_HISTORY_FILE,state.results,completedHistory,storedAt,HISTORY_DB_FILE);
+    }catch(e){
+      state.errors.push(`V3 shadow: ${e.message}`);
+    }
     state.providers.apiFootball=getApiFootballTelemetry(env.REFRESH_MINUTES||30);
     if(state.providers.history&&historyDatabase){
       state.providers.history.matches=databaseStats(historyDatabase,HISTORY_DB_FILE).matches;

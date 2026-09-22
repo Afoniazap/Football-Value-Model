@@ -9,7 +9,8 @@
     "check": "node --check src/app.js",
     "test": "node --test",
     "doctor": "node scripts/doctor.js",
-    "history:expand": "node scripts/expand-sqlite-history.js"
+    "history:expand": "node scripts/expand-sqlite-history.js",
+    "v3:stats": "node scripts/v3-shadow-stats.js"
   },
   "engines": {
     "node": ">=22.5"
