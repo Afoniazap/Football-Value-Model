@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { canonicalTeamName, sameTeamIdentity, teamIdentityEvidence } from "./teamAliases.js";
+import { MIN_GAMES_FOR_MATURE_STANDINGS } from "./competitionBaseline.js";
 
 const FINISHED_STATUSES = new Set(["FT", "AET", "PEN", "FINISHED"]);
 
@@ -196,10 +197,34 @@ export function buildLocalHistoryContext(history, fixture, limit = 20) {
   const homeTeam = { id: fixture.homeId, name: fixture.home };
   const awayTeam = { id: fixture.awayId, name: fixture.away };
   const total = rank([aggregateTeam(homeRows, homeTeam), aggregateTeam(awayRows, awayTeam)]);
-  const home = rank([aggregateTeam(homeRows, homeTeam, "HOME"), aggregateTeam(awayRows, awayTeam, "HOME")]);
-  const away = rank([aggregateTeam(homeRows, homeTeam, "AWAY"), aggregateTeam(awayRows, awayTeam, "AWAY")]);
+  // The two rows that actually feed teamStrengthModel's λ: the FIXTURE home
+  // team's own HOME-venue record, and the FIXTURE away team's own AWAY-venue
+  // record (models.js: `homeH = row(homeTable,homeId)`, `awayA =
+  // row(awayTable,awayId)`). Everything else in `home`/`away` below is the
+  // opposite team's record in that same table, included only for ranking.
+  const homeVenueRow = aggregateTeam(homeRows, homeTeam, "HOME");
+  const awayVenueRow = aggregateTeam(awayRows, awayTeam, "AWAY");
+  const home = rank([homeVenueRow, aggregateTeam(awayRows, awayTeam, "HOME")]);
+  const away = rank([aggregateTeam(homeRows, homeTeam, "AWAY"), awayVenueRow]);
   const groups = [{ type: "TOTAL", table: total }];
-  if (home.length === 2 && away.length === 2) groups.push({ type: "HOME", table: home }, { type: "AWAY", table: away });
+  // Forensic audit (Seattle Sounders vs Real Salt Lake, 2026-09-24): the old
+  // gate here only checked that EACH team had >=1 game at the relevant venue
+  // (home.length===2/away.length===2) and >=4 games OVERALL (any venue,
+  // below) -- neither actually bounds how few games the venue-SPECIFIC
+  // sample itself can be. A team can clear both and still have exactly one
+  // relevant home (or away) match, so teamStrengthModel's attack/defence
+  // ratio collapses to its λ clamp floor on an ordinary scoreline (a 0:0
+  // draw), reproducing exactly the failure mode competitionBaseline.js's
+  // hasMatureVenueSplits was already hardened against for the SQLite tier --
+  // just never mirrored here, in the fallback tier that activates precisely
+  // when that tier isn't mature enough. Reuses the SAME constant/principle,
+  // not a new threshold: the HOME/AWAY split is only trustworthy once each
+  // team's own venue-specific sample reaches MIN_GAMES_FOR_MATURE_STANDINGS,
+  // exactly as already required of the competition-baseline tier.
+  const matureVenueSplit = home.length === 2 && away.length === 2 &&
+    (homeVenueRow?.playedGames || 0) >= MIN_GAMES_FOR_MATURE_STANDINGS &&
+    (awayVenueRow?.playedGames || 0) >= MIN_GAMES_FOR_MATURE_STANDINGS;
+  if (matureVenueSplit) groups.push({ type: "HOME", table: home }, { type: "AWAY", table: away });
 
   return {
     source: "LOCAL_HISTORY",
@@ -238,7 +263,13 @@ export function buildLocalHistoryContext(history, fixture, limit = 20) {
       awayMatches: awayRows.length,
       homeSources: [...new Set(homeRows.map(row => row.provenance?.source).filter(Boolean))],
       awaySources: [...new Set(awayRows.map(row => row.provenance?.source).filter(Boolean))],
-      temporalSafe: true
+      temporalSafe: true,
+      // Diagnostic-only (audit/reporting), not read by any pricing formula:
+      // whether the HOME/AWAY split above was actually included, and the two
+      // venue-specific sample sizes the maturity check above was decided on.
+      venueSplitMature: matureVenueSplit,
+      homeVenueMatches: homeVenueRow?.playedGames || 0,
+      awayVenueMatches: awayVenueRow?.playedGames || 0
     }
   };
 }

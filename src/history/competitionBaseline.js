@@ -86,7 +86,7 @@ export function buildCompetitionBaseline(db, competitionCode, currentSeasonStart
 // two-team fallback it currently outranks unconditionally, and must not
 // block a genuinely wider competition/previous-season baseline just for
 // technically being present.
-const MIN_GAMES_FOR_MATURE_STANDINGS = 4;
+export const MIN_GAMES_FOR_MATURE_STANDINGS = 4;
 
 /**
  * True only if BOTH fixture teams appear in this (already

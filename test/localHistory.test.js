@@ -4,8 +4,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { appendLocalHistory, buildLocalHistoryContext, loadLocalHistory, mergeWithLocalHistory, normalizeHistoryMatch } from "../src/history/localHistory.js";
-import { formModel } from "../src/engine/models.js";
+import { formModel, teamStrengthModel } from "../src/engine/models.js";
 import { analyseFixture } from "../src/engine/analyse.js";
+import { MIN_GAMES_FOR_MATURE_STANDINGS } from "../src/history/competitionBaseline.js";
 
 function match(id, date, homeId, home, awayId, away, hg = 1, ag = 0) {
   return { id, utcDate: date, leagueId: 1, league: "Real League", season: 2026, homeTeam: { id: homeId, name: home }, awayTeam: { id: awayId, name: away }, score: { fullTime: { home: hg, away: ag } } };
@@ -186,4 +187,158 @@ test("TheSportsDB evidence excludes handball Ferencvarosi from football history"
   const handball=normalizeHistoryMatch(match("handball","2026-08-20T18:00:00Z","137581","Ferencvárosi TC","2","Szigetszentmiklos",2,1),"THESPORTSDB");
   const football=normalizeHistoryMatch(match("football","2026-08-21T18:00:00Z","134620","Ferencváros","3","Ujpest",1,0),"THESPORTSDB");
   assert.equal(buildLocalHistoryContext([handball,football],fixture).contextMeta.homeMatches,1);
+});
+
+// Forensic audit fix (Seattle Sounders vs Real Salt Lake, 2026-09-24): the
+// local-history fallback's HOME/AWAY split used to require only that each
+// team had >=4 games OVERALL (any venue) and >=1 game AT the relevant venue
+// -- neither actually bounds how thin the venue-SPECIFIC sample can be.
+// These tests reuse the exact same MIN_GAMES_FOR_MATURE_STANDINGS constant
+// and principle competitionBaseline.js's hasMatureVenueSplits already
+// enforces for the SQLite tier, now mirrored here.
+const SEATTLE = { homeId: 10, home: "Seattle Sounders", awayId: 20, away: "Real Salt Lake", utcDate: "2026-09-24T01:30:00Z" };
+
+function homeVenueRow(homeId, homeName, awayId, awayName, n, kickoffPrefix) {
+  const rows = [];
+  for (let i = 0; i < n; i++) rows.push(match(`h${kickoffPrefix}${i}`, `2026-08-${10 + i}T18:00:00Z`, homeId, homeName, 900 + i, `Opp${i}`, i === 0 ? 0 : 1, i === 0 ? 0 : 2));
+  return rows;
+}
+function awayVenueRow(homeId, homeName, awayId, awayName, n, kickoffPrefix) {
+  const rows = [];
+  for (let i = 0; i < n; i++) rows.push(match(`a${kickoffPrefix}${i}`, `2026-08-${10 + i}T20:00:00Z`, 900 + i, `Opp${i}`, awayId, awayName, 2, 1));
+  return rows;
+}
+
+test("Home имеет 1 HOME матч (0:0) но >=4 матчей overall -> venue split НЕ зрелый (Seattle-shaped)", () => {
+  // Seattle: 1 HOME match (0:0) + 3 AWAY matches = 4 overall (clears the old
+  // homeRows.length>=4 gate). Real Salt Lake: 2 HOME + 2 AWAY = 4 overall,
+  // giving RSL a HOME-venue row too so the OLD gate's home.length===2 check
+  // would ALSO have passed -- proving this is a genuine behavior change, not
+  // an accidental side effect of RSL lacking any home row.
+  const seattle = [
+    ...homeVenueRow(SEATTLE.homeId, SEATTLE.home, null, null, 1, "s"),
+    ...awayVenueRow(null, null, SEATTLE.homeId, SEATTLE.home, 3, "s")
+  ];
+  const rsl = [
+    ...homeVenueRow(SEATTLE.awayId, SEATTLE.away, null, null, 2, "r"),
+    ...awayVenueRow(null, null, SEATTLE.awayId, SEATTLE.away, 2, "r")
+  ];
+  const rows = [...seattle, ...rsl].map(m => normalizeHistoryMatch(m, "API_FOOTBALL"));
+  const context = buildLocalHistoryContext(rows, SEATTLE);
+
+  assert.equal(context.contextMeta.homeMatches, 4);
+  assert.equal(context.contextMeta.homeVenueMatches, 1, "Seattle's own HOME-venue sample is exactly the one 0:0 game");
+  assert.equal(context.contextMeta.venueSplitMature, false);
+  assert.equal(context.standings.standings.some(g => g.type === "HOME"), false, "an immature venue split must not be published at all");
+  assert.equal(context.standings.standings.some(g => g.type === "AWAY"), false);
+  assert.equal(context.standings.standings.find(g => g.type === "TOTAL").table.length, 2, "TOTAL (the safe fallback teamStrengthModel already knows how to use) must still be present");
+});
+
+test("Away имеет 1 AWAY матч но >=4 матчей overall -> venue split НЕ зрелый (симметрично)", () => {
+  const seattle = [
+    ...homeVenueRow(SEATTLE.homeId, SEATTLE.home, null, null, 2, "s"),
+    ...awayVenueRow(null, null, SEATTLE.homeId, SEATTLE.home, 2, "s")
+  ];
+  const rsl = [
+    ...homeVenueRow(SEATTLE.awayId, SEATTLE.away, null, null, 3, "r"),
+    ...awayVenueRow(null, null, SEATTLE.awayId, SEATTLE.away, 1, "r")
+  ];
+  const rows = [...seattle, ...rsl].map(m => normalizeHistoryMatch(m, "API_FOOTBALL"));
+  const context = buildLocalHistoryContext(rows, SEATTLE);
+
+  assert.equal(context.contextMeta.awayVenueMatches, 1);
+  assert.equal(context.contextMeta.venueSplitMature, false);
+  assert.equal(context.standings.standings.some(g => g.type === "HOME" || g.type === "AWAY"), false);
+});
+
+test(`ровно ${MIN_GAMES_FOR_MATURE_STANDINGS} HOME + ${MIN_GAMES_FOR_MATURE_STANDINGS} AWAY -> зрелый, split публикуется (та же константа что и competition baseline)`, () => {
+  // Each team also gets exactly one appearance at the OTHER venue, purely so
+  // the pre-existing home.length===2/away.length===2 presence check (which
+  // this fix does not touch) has a row to rank for the opponent side too --
+  // the maturity bar under test is the *depth* at each team's OWN relevant
+  // venue: Seattle's HOME games and RSL's AWAY games, exactly at the
+  // MIN_GAMES_FOR_MATURE_STANDINGS boundary.
+  const seattle = [
+    ...homeVenueRow(SEATTLE.homeId, SEATTLE.home, null, null, MIN_GAMES_FOR_MATURE_STANDINGS, "s"),
+    ...awayVenueRow(null, null, SEATTLE.homeId, SEATTLE.home, 1, "s2")
+  ];
+  const rsl = [
+    ...awayVenueRow(null, null, SEATTLE.awayId, SEATTLE.away, MIN_GAMES_FOR_MATURE_STANDINGS, "r"),
+    ...homeVenueRow(SEATTLE.awayId, SEATTLE.away, null, null, 1, "r2")
+  ];
+  const rows = [...seattle, ...rsl].map(m => normalizeHistoryMatch(m, "API_FOOTBALL"));
+  const context = buildLocalHistoryContext(rows, SEATTLE);
+
+  assert.equal(context.contextMeta.homeVenueMatches, MIN_GAMES_FOR_MATURE_STANDINGS);
+  assert.equal(context.contextMeta.awayVenueMatches, MIN_GAMES_FOR_MATURE_STANDINGS);
+  assert.equal(context.contextMeta.venueSplitMature, true);
+  assert.equal(context.standings.standings.some(g => g.type === "HOME"), true);
+  assert.equal(context.standings.standings.some(g => g.type === "AWAY"), true);
+});
+
+test("достаточно overall (6 каждый), но venue-специфично недостаточно (3 каждый) -> split НЕ допускается", () => {
+  const seattle = [
+    ...homeVenueRow(SEATTLE.homeId, SEATTLE.home, null, null, 3, "s"),
+    ...awayVenueRow(null, null, SEATTLE.homeId, SEATTLE.home, 3, "s2")
+  ];
+  const rsl = [
+    ...homeVenueRow(SEATTLE.awayId, SEATTLE.away, null, null, 3, "r"),
+    ...awayVenueRow(null, null, SEATTLE.awayId, SEATTLE.away, 3, "r2")
+  ];
+  const rows = [...seattle, ...rsl].map(m => normalizeHistoryMatch(m, "API_FOOTBALL"));
+  const context = buildLocalHistoryContext(rows, SEATTLE);
+
+  assert.equal(context.contextMeta.homeMatches, 6);
+  assert.equal(context.contextMeta.awayMatches, 6);
+  assert.equal(context.contextMeta.homeVenueMatches, 3);
+  assert.equal(context.contextMeta.awayVenueMatches, 3);
+  assert.equal(context.contextMeta.venueSplitMature, false, "3 < MIN_GAMES_FOR_MATURE_STANDINGS(4) even though overall counts look generous");
+});
+
+test("существующий mature local-history сценарий не ломается: genuine split still feeds teamStrengthModel with real venue-specific λ", () => {
+  const seattle = homeVenueRow(SEATTLE.homeId, SEATTLE.home, null, null, MIN_GAMES_FOR_MATURE_STANDINGS, "s");
+  const rsl = awayVenueRow(null, null, SEATTLE.awayId, SEATTLE.away, MIN_GAMES_FOR_MATURE_STANDINGS, "r");
+  const rows = [...seattle, ...rsl].map(m => normalizeHistoryMatch(m, "API_FOOTBALL"));
+  const context = buildLocalHistoryContext(rows, SEATTLE);
+  const strength = teamStrengthModel(SEATTLE, context);
+  assert.ok(strength, "a genuinely mature venue split must still produce a Team Strength estimate");
+  assert.ok(Number.isFinite(strength.lambdas.home) && Number.isFinite(strength.lambdas.away));
+});
+
+test("Seattle/RSL-подобный кейс больше не может получить λ из одной домашней игры: teamStrengthModel falls back to TOTAL instead of collapsing to the floor", () => {
+  // Same shape as the real forensic case: Seattle's ONLY home game is 0:0,
+  // but Seattle has a healthy overall scoring record (6 GF/5 GA across 4
+  // games) once the venue split is correctly excluded and TOTAL is used
+  // instead (models.js's own existing `homeH = row(homeTable,...) ||
+  // totalH` fallback -- unmodified).
+  const seattleHome0_0 = match("s-home", "2026-09-06T00:30:00Z", SEATTLE.homeId, SEATTLE.home, 901, "NYRB", 0, 0);
+  const seattleAway1 = match("s-away1", "2026-09-10T18:00:00Z", 902, "OppA", SEATTLE.homeId, SEATTLE.home, 2, 1);
+  const seattleAway2 = match("s-away2", "2026-09-14T18:00:00Z", 903, "OppB", SEATTLE.homeId, SEATTLE.home, 1, 3);
+  const seattleAway3 = match("s-away3", "2026-09-18T18:00:00Z", 904, "OppC", SEATTLE.homeId, SEATTLE.home, 2, 2);
+  const rslHome = match("r-home", "2026-09-06T01:30:00Z", SEATTLE.awayId, SEATTLE.away, 905, "OppD", 1, 1);
+  const rslAway1 = match("r-away1", "2026-09-01T18:00:00Z", 906, "OppE", SEATTLE.awayId, SEATTLE.away, 1, 2);
+  const rslAway2 = match("r-away2", "2026-08-30T01:30:00Z", 907, "OppF", SEATTLE.awayId, SEATTLE.away, 0, 1);
+  const rslAway3 = match("r-away3", "2026-08-26T02:30:00Z", 908, "OppG", SEATTLE.awayId, SEATTLE.away, 2, 2);
+  const rslAway4 = match("r-away4", "2026-08-22T02:30:00Z", 909, "OppH", SEATTLE.awayId, SEATTLE.away, 1, 0);
+  const rows = [seattleHome0_0, seattleAway1, seattleAway2, seattleAway3, rslHome, rslAway1, rslAway2, rslAway3, rslAway4].map(m => normalizeHistoryMatch(m, "API_FOOTBALL"));
+
+  const context = buildLocalHistoryContext(rows, SEATTLE);
+  assert.equal(context.contextMeta.homeVenueMatches, 1);
+  assert.equal(context.contextMeta.venueSplitMature, false);
+  assert.equal(context.standings.standings.some(g => g.type === "HOME"), false);
+
+  const strength = teamStrengthModel(SEATTLE, context);
+  assert.ok(strength, "TOTAL-based fallback still has enough overall data to produce an estimate");
+  assert.ok(strength.lambdas.home > 0.5, `lambdaHome must reflect Seattle's real overall scoring record (6 GF/4 games), not collapse to the 0.25 floor from one 0:0 home game -- got ${strength.lambdas.home}`);
+});
+
+test("temporal-safe сохраняется: матч на/после kickoff не учитывается ни в overall, ни в venue-зрелости", () => {
+  const seattle = homeVenueRow(SEATTLE.homeId, SEATTLE.home, null, null, MIN_GAMES_FOR_MATURE_STANDINGS, "s");
+  const rsl = awayVenueRow(null, null, SEATTLE.awayId, SEATTLE.away, MIN_GAMES_FOR_MATURE_STANDINGS, "r");
+  const futureHome = match("future-home", "2026-09-25T18:00:00Z", SEATTLE.homeId, SEATTLE.home, 999, "Future", 5, 0);
+  const rows = [...seattle, ...rsl, futureHome].map(m => normalizeHistoryMatch(m, "API_FOOTBALL"));
+  const context = buildLocalHistoryContext(rows, SEATTLE);
+
+  assert.equal(context.contextMeta.homeVenueMatches, MIN_GAMES_FOR_MATURE_STANDINGS, "a match at/after kickoff must not inflate the venue-maturity count");
+  assert.equal(context.contextMeta.temporalSafe, true);
 });
