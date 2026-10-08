@@ -1,3 +1,5 @@
+import { clubNameSimilarity } from "./clubMatching.js";
+
 export function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -57,21 +59,11 @@ export function normalizeName(value = "") {
     .replace(/[^a-z0-9а-яё]/gi, "");
 }
 
+// Strict club-name similarity (see engine/clubMatching.js): 1 = same club or confirmed
+// alias, 0.85 = short form differing only by generic suffix words, otherwise < 0.7.
+// No bigram/substring fuzziness: partial name inclusion is not identity.
 export function similarity(a, b) {
-  const x = normalizeName(a);
-  const y = normalizeName(b);
-  if (!x || !y) return 0;
-  if (x === y) return 1;
-  if (x.includes(y) || y.includes(x)) return 0.88;
-  const bigrams = s => {
-    const set = new Set();
-    for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
-    return set;
-  };
-  const ax = bigrams(x), by = bigrams(y);
-  let common = 0;
-  for (const item of ax) if (by.has(item)) common++;
-  return (2 * common) / Math.max(1, ax.size + by.size);
+  return clubNameSimilarity(a, b);
 }
 
 export function localDate(iso) {

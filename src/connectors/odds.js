@@ -1,4 +1,4 @@
-import { similarity } from "../engine/utils.js";
+import { matchEventToFixture } from "../engine/clubMatching.js";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -60,11 +60,18 @@ export async function getOddsForCompetition(apiKey, region, competitionCode) {
   return getJson(url);
 }
 
+export function matchOddsEventDetailed(fixture, events) {
+  return matchEventToFixture(fixture, events, {
+    teamsOf: event => ({ home: event.home_team, away: event.away_team }),
+    kickoffOf: event => event.commence_time,
+    competitionOf: event => event.sport_key,
+    expectedCompetition: SPORT_KEYS[fixture.competitionCode] || null,
+    countryOf: event => event.country
+  });
+}
+
 export function matchOddsEvent(fixture, events) {
-  return events.find(e =>
-    similarity(fixture.home, e.home_team) >= 0.62 &&
-    similarity(fixture.away, e.away_team) >= 0.62
-  ) || null;
+  return matchOddsEventDetailed(fixture, events)?.event || null;
 }
 
 function outcomeMap(market) {

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { similarity } from "../engine/utils.js";
+import { matchEventToFixture } from "../engine/clubMatching.js";
 
 const BASE="https://api.odds-api.io/v3";
 const SLUGS={PL:"england-premier-league",PD:"spain-laliga",BL1:"germany-bundesliga",SA:"italy-serie-a",FL1:"france-ligue-1",CL:"uefa-champions-league",EL:"uefa-europa-league",CLI:"international-clubs-conmebol-libertadores-knockout-stage",ELC:"england-championship",DED:"netherlands-eredivisie",PPL:"portugal-liga-portugal",BSA:"brazil-brasileiro-serie-a",BSB:"brazil-brasileiro-serie-b",MLS:"usa-mls"};
@@ -19,13 +19,15 @@ async function cachedJson(url,cacheDir,ttlMs,request){
 function rows(value){return Array.isArray(value)?value:Array.isArray(value?.data)?value.data:Array.isArray(value?.events)?value.events:[];}
 function eventTeams(event){return {home:event.home||event.home_team||event.homeTeam?.name||"",away:event.away||event.away_team||event.awayTeam?.name||""};}
 function eventDate(event){return event.date||event.commence_time||event.start_time||event.startAt||null;}
+const KNOWN_SLUGS=new Set(Object.values(SLUGS));
 function match(fixture,events){
-  return (events||[]).map(event=>{
-    const teams=eventTeams(event),home=similarity(fixture.home,teams.home),away=similarity(fixture.away,teams.away);
-    const delta=Math.abs(new Date(fixture.utcDate)-new Date(eventDate(event)))/60_000;
-    const time=Number.isFinite(delta)&&delta<=180?1-delta/180:0;
-    return {event,score:home*.4+away*.4+time*.2,home,away,time};
-  }).filter(x=>x.home>=.62&&x.away>=.62&&x.time>0).sort((a,b)=>b.score-a.score)[0]||null;
+  const found=matchEventToFixture(fixture,events,{
+    teamsOf:eventTeams,kickoffOf:eventDate,
+    competitionOf:event=>event.league?.slug||event.league_slug||null,
+    expectedCompetition:SLUGS[fixture.competitionCode]||null,knownCompetitions:KNOWN_SLUGS,
+    countryOf:event=>event.league?.country||event.country||null
+  });
+  return found?{event:found.event,score:found.confidence}:null;
 }
 function marketKey(name=""){const n=String(name).toLowerCase();if(["ml","moneyline","moneyline_3way","match winner","1x2","h2h"].includes(n))return"h2h";if(n.includes("handicap")||n==="spread")return"spreads";if(n.includes("total")||n.includes("over/under"))return"totals";return null;}
 function marketPoint(row){
