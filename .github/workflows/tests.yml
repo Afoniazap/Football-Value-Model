@@ -1,0 +1,45 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [termux-v0.5]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-suite:
+    # package.json engines: node >=22.5 (src/history/sqliteHistory.js uses node:sqlite)
+    name: full suite (Node 22)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # No secrets/API keys are provided; tests use fixtures and do not start the Telegram bot.
+      # data/ is gitignored and absent in CI.
+      - run: npm test
+
+  matcher-node20:
+    # node:sqlite is unavailable on Node 20, so the full suite cannot run there (it fails
+    # identically on the unmodified branch). Run the sqlite-independent matching tests.
+    name: matcher tests (Node 20)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: node --test test/clubMatching.test.js test/oddsApiIo.test.js test/contextIds.test.js test/teamAliases.test.js

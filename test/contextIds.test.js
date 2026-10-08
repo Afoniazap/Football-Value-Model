@@ -45,14 +45,12 @@ test("the Utd/United expansion does not create false collisions with unrelated c
   assert.deepEqual(ids,[1,2],"neither Sheffield Wednesday nor a different United club should have been reassigned to the fixture's ids");
 });
 
-// Pre-existing, out-of-scope-to-fix caveat: similarity()'s substring-inclusion
-// shortcut (any two names where one contains the other score >=0.88) already
-// treats "Queens Park Rangers" as a match for the real, unrelated Scottish
-// club "Queens Park" — true before this change for the full name, and
-// equally true after it for the "QPR" abbreviation, since both canonicalize
-// to the same string. Not introduced or widened here; documented, not fixed.
-test("QPR still shares the generic substring-inclusion behaviour \"Queens Park Rangers\" always had against the unrelated club \"Queens Park\"",()=>{
+// Previously documented as a known flaw: similarity()'s substring-inclusion shortcut
+// treated "Queens Park Rangers" and the unrelated Scottish club "Queens Park" as one
+// club. The strict matcher no longer accepts partial-name inclusion, so the provider ID
+// of the unrelated club is retained.
+test("QPR is no longer matched to the unrelated club \"Queens Park\" by partial name inclusion",()=>{
   const context={standings:{standings:[{type:"TOTAL",table:[{team:{id:3,name:"Queens Park FC"}}]}]},finished:[]};
   const aligned=alignContextTeamIds(context,{home:"QPR",away:"Middlesbrough",homeId:72,awayId:70});
-  assert.equal(aligned.standings.standings[0].table[0].team.id,72,"documents existing similarity() behaviour — same as spelling out \"Queens Park Rangers FC\" would already produce");
+  assert.equal(aligned.standings.standings[0].table[0].team.id,3);
 });
