@@ -7,7 +7,7 @@ function stripMarks(value) {
 // Words that carry no club identity (legal/sporting prefixes, articles, ordinals, numbers).
 const NOISE_TOKENS = new Set([
   "ec", "sc", "cd", "rcd", "sv", "fk", "sk", "ssc", "ca", "se", "sport", "clube", "club",
-  "de", "da", "do", "del", "e", "the", "1", "04", "05", "96", "1899"
+  "de", "da", "do", "del", "e", "the", "1", "04", "05", "96", "1899", "1909", "1913"
 ]);
 // Spelling variants of the same club word used by different providers.
 const TOKEN_SYNONYMS = new Map([
@@ -18,8 +18,29 @@ const SQUAD_QUALIFIERS = new Set([
   "women", "w", "ladies", "fem", "feminino", "femenino", "b", "ii", "iii", "u17", "u18", "u19", "u20", "u21", "u23", "res", "reserves", "youth"
 ]);
 
+// Confirmed long-form/short-form aliases (normalized form -> canonical form).
+const CLUB_ALIASES = new Map([
+  ["wolves", "wolverhampton wanderers"],
+  ["spurs", "tottenham hotspur"],
+  ["brighton", "brighton and hove albion"],
+  ["brighton hove albion", "brighton and hove albion"],
+  ["athletic bilbao", "athletic"],
+  ["gladbach", "borussia monchengladbach"],
+  ["sport lisboa e benfica", "benfica"],
+  ["sporting clube de portugal", "sporting cp"],
+  ["real betis balompie", "real betis"],
+  ["real sociedad de futbol", "real sociedad"],
+  ["rcd espanyol de barcelona", "espanyol"],
+  ["espanyol de barcelona", "espanyol"]
+]);
+// Extra words that may follow a club's short name without changing the club identity.
+const GENERIC_SUFFIX_TOKENS = new Set(["united", "city", "town", "county", "albion", "rovers", "wanderers", "hotspur",
+  // Brazilian state suffixes ("Vitoria BA", "Cruzeiro MG")
+  "ba", "mg", "sp", "rj", "rs", "pr", "go", "pe", "ce", "pa", "mt", "ms"]);
+
 function tokens(value) {
-  const shared = normalizeClubName(stripMarks(value));
+  const normalized = normalizeClubName(stripMarks(value));
+  const shared = CLUB_ALIASES.get(normalized) || normalized;
   const all = String(shared || "").replace(/&/g, " and ").split(/\s+/).filter(Boolean)
     .map(token => TOKEN_SYNONYMS.get(token) || token);
   const meaningful = all.filter(token => !NOISE_TOKENS.has(token) && token !== "&");
@@ -66,7 +87,12 @@ function similarity(a, b) {
     if (qualifiers(tx) !== qualifiers(ty)) return 0;
   }
   const common = short.filter(t => long.some(u => sameToken(t, u))).length;
-  if (common === short.length) return 0.85;
+  if (common === short.length) {
+    // Containment alone is not identity ("Santos" vs "Santos Laguna", "Newcastle" vs
+    // "Newcastle Jets"): the extra words must be generic suffixes, otherwise reject.
+    const extras = long.filter(u => !short.some(t => sameToken(t, u)));
+    return extras.every(u => GENERIC_SUFFIX_TOKENS.has(u)) ? 0.85 : 0;
+  }
   return Number(((common / long.length) * 0.6).toFixed(4));
 }
 
@@ -93,9 +119,13 @@ function eventConfidence(fixture, event) {
   const away = similarity(fixture.away, event.away_team);
   if (home < 0.4 || away < 0.4) return 0;
   const kickoff = kickoffConfidence(fixture.utcDate, event.commence_time);
+  if (event.sport_key && fixture.sportKey && event.sport_key !== fixture.sportKey) return 0;
+  if (event.country && fixture.country && normalize(event.country) !== normalize(fixture.country)) return 0;
   const competition = !event.sport_key || !fixture.sportKey || event.sport_key === fixture.sportKey ? 1 : 0.65;
   return Number(((home * 0.35) + (away * 0.35) + (kickoff * 0.2) + (competition * 0.1)).toFixed(4));
 }
+
+export { similarity as clubNameSimilarity };
 
 export function matchOddsEvent(fixture, events, minConfidence = 0.7) {
   const candidates = (events || [])

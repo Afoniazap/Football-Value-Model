@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { matchOddsApiIoEvent } from "../src/providers/market/oddsApiIo.js";
 import { matchOddsEvent } from "../src/market/oddsMatching.js";
 
 const t = "2026-05-01T20:00:00Z";
@@ -63,5 +64,55 @@ assert.equal(matchOddsEvent(fixture, [timed(3.1)]).event, null);
 assert.equal(matchOddsEvent(fixture, [timed(24)]).event, null);
 const near = timed(0);
 assert.equal(matchOddsEvent(fixture, [timed(2), near]).event, near);
+
+// Partial-name containment is never identity: short names must not match different clubs.
+const ambiguous = [
+  ["Santos", "Vasco da Gama", "Santos Laguna", "Vasco da Gama"],
+  ["Newcastle United", "Everton", "Newcastle Jets", "Everton"],
+  ["Atlético", "Palmeiras", "Atletico Mineiro", "Palmeiras"],
+  ["Real Madrid", "Valencia", "Real Madrid Castilla", "Valencia"],
+  ["Independiente", "Boca Juniors", "Independiente del Valle", "Boca Juniors"],
+  ["Nacional", "Peñarol", "Atlético Nacional", "Peñarol"],
+  ["Dynamo Kyiv", "Shakhtar Donetsk", "Dynamo Moscow", "Shakhtar Donetsk"],
+  ["Spartak Moscow", "Zenit", "Spartak Trnava", "Zenit"],
+  ["River Plate", "Boca Juniors", "River Plate Montevideo", "Boca Juniors"],
+  ["Sporting CP", "Braga", "Sporting Gijon", "Braga"],
+  ["Lyon", "Lille", "Lyon La Duchere", "Lille"],
+  ["Real", "Valencia", "Real Madrid", "Valencia"]
+];
+for (const [h, a, eh, ea] of ambiguous) {
+  assert.equal(matchOddsEvent(fx(h, a), [ev(eh, ea)]).event, null, `${h}-${a} must not match ${eh}-${ea}`);
+}
+
+// Confirmed aliases and generic-suffix long forms still match.
+const confirmed = [
+  ["Newcastle", "Everton", "Newcastle United", "Everton"],
+  ["Leeds", "West Ham", "Leeds United", "West Ham United"],
+  ["Wolves", "Brighton", "Wolverhampton Wanderers", "Brighton and Hove Albion"],
+  ["Real Betis Balompié", "RCD Espanyol de Barcelona", "Real Betis", "Espanyol"],
+  ["Athletic Club", "Real Sociedad de Fútbol", "Athletic Bilbao", "Real Sociedad"],
+  ["Sport Lisboa e Benfica", "Gil Vicente", "Benfica", "Gil Vicente FC"],
+  ["Vitória", "Cruzeiro", "Vitoria BA", "Cruzeiro MG"]
+];
+for (const [h, a, eh, ea] of confirmed) {
+  const event = ev(eh, ea);
+  assert.equal(matchOddsEvent(fx(h, a), [event]).event, event, `${h}-${a} should match ${eh}-${ea}`);
+}
+
+// League/country context: a different competition or country is never the same fixture.
+const withSport = (sport_key) => ({ ...ev("Arsenal", "Chelsea"), sport_key });
+assert.ok(matchOddsEvent({ ...fx("Arsenal", "Chelsea"), sportKey: "soccer_epl" }, [withSport("soccer_epl")]).event);
+assert.equal(matchOddsEvent({ ...fx("Arsenal", "Chelsea"), sportKey: "soccer_epl" }, [withSport("soccer_fa_cup")]).event, null);
+assert.equal(matchOddsEvent({ ...fx("Santos", "Vasco"), country: "Brazil" }, [{ ...ev("Santos", "Vasco"), country: "Mexico" }]).event, null);
+assert.ok(matchOddsEvent({ ...fx("Santos", "Vasco"), country: "Brazil" }, [{ ...ev("Santos", "Vasco"), country: "Brazil" }]).event);
+
+// odds-api.io matcher shares the same strict identity rules and rejects other leagues.
+const io = (home, away, slug = "england-premier-league") => ({ home, away, date: t, league: { slug } });
+const ioFixture = (home, away) => ({ home, away, utcDate: t, competitionCode: "PL" });
+const ioOk = io("Newcastle United", "Everton");
+assert.equal(matchOddsApiIoEvent(ioFixture("Newcastle", "Everton"), [ioOk]).event, ioOk);
+assert.equal(matchOddsApiIoEvent(ioFixture("Newcastle United", "Everton"), [io("Newcastle Jets", "Everton")]).event, null);
+assert.equal(matchOddsApiIoEvent(ioFixture("Real Madrid", "Valencia"), [io("Real Sociedad", "Villarreal")]).event, null);
+assert.equal(matchOddsApiIoEvent(ioFixture("Newcastle United", "Everton"), [io("Newcastle United", "Everton", "england-fa-cup")]).event, null);
 
 console.log("Stage 18 tests OK: token-based odds event matching rejects false positives.");
