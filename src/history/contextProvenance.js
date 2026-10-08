@@ -75,3 +75,40 @@ export function describeTeamStrengthSource({
 
   return { contextDiagnosticBase, baselineDiagnostic, hasLocalModelContext, localMeta };
 }
+
+/**
+ * Diagnostic-only: WHY a fixture ended up with no Team Strength context. Returns null when
+ * a baseline (live mature table, competition baseline or mature two-team local history)
+ * exists. Reasons are ordered from "history was there but not usable/attached" to "history
+ * really is missing", so a matching problem is never reported as a data shortage:
+ *   LIVE_STANDINGS_TEAM_NOT_ALIGNED  a standings table exists but a fixture team could not be
+ *                                    identified in it by id/name (matching problem)
+ *   BASELINE_DOES_NOT_COVER_FIXTURE  SQLite competition rows exist but do not give both teams a
+ *                                    mature HOME/AWAY record
+ *   LOCAL_HISTORY_THIN               fewer than `min` finished matches for a team
+ *   VENUE_SPLIT_IMMATURE             enough matches overall, venue-specific sample below `min`
+ *   NO_MODEL_CONTEXT                 nothing above explains it
+ */
+export function explainModelShortfall({
+  fixture, rawContext, alignedRawContext = null, competitionBaseline, rawBaseline, baseContext, localMeta, hasLocalModelContext, min = 4
+}) {
+  if (competitionBaseline || hasLocalModelContext || baseContext?.standings) return null;
+  const table = alignedRawContext?.standings?.standings?.find(s => s.type === "TOTAL")?.table || [];
+  if (rawContext?.standings && table.length) {
+    const missing = [];
+    if (!table.some(row => row.team?.id === fixture.homeId)) missing.push("home");
+    if (!table.some(row => row.team?.id === fixture.awayId)) missing.push("away");
+    if (missing.length) return { code: "LIVE_STANDINGS_TEAM_NOT_ALIGNED", detail: `не найдены в таблице: ${missing.join("+")}` };
+  }
+  const sample = (rawBaseline?.sampleCurrentSeason || 0) + (rawBaseline?.samplePreviousSeason || 0);
+  const home = localMeta?.homeMatches ?? 0, away = localMeta?.awayMatches ?? 0;
+  if (home < min || away < min) {
+    return { code: "LOCAL_HISTORY_THIN", detail: `матчей home ${home}, away ${away}, нужно ≥${min}${sample ? ` · SQLite лига ${sample}` : ""}` };
+  }
+  const homeVenue = localMeta?.homeVenueMatches ?? 0, awayVenue = localMeta?.awayVenueMatches ?? 0;
+  if (homeVenue < min || awayVenue < min) {
+    return { code: "VENUE_SPLIT_IMMATURE", detail: `дома ${homeVenue}, в гостях ${awayVenue}, нужно ≥${min}` };
+  }
+  if (sample) return { code: "BASELINE_DOES_NOT_COVER_FIXTURE", detail: `SQLite лига ${sample} матчей, обе команды не покрыты` };
+  return { code: "NO_MODEL_CONTEXT", detail: "нет таблицы и истории" };
+}

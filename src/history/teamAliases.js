@@ -18,7 +18,7 @@ export const TEAM_ALIAS_GROUPS = [
   ,{ name: "AZ Alkmaar", aliases: ["AZ"], evidence: { source: "THESPORTSDB", teamId: "133767" } }
   ,{ name: "Maritimo", aliases: ["Marítimo", "CS Marítimo"], evidence: { source: "THESPORTSDB", teamId: "134023" } }
   ,{ name: "Troyes", aliases: ["ES Troyes AC", "Estac Troyes"], evidence: { source: "THESPORTSDB", teamId: "134789", historicalLeagues:[{id:"4401",season:"2025-2026",name:"French Ligue 2"}] } }
-  ,{ name: "Atletico Mineiro", aliases: ["Atlético Mineiro", "CA Mineiro"], evidence: { source: "THESPORTSDB", teamId: "134299" } }
+  ,{ name: "Atletico Mineiro", aliases: ["Atlético Mineiro", "CA Mineiro", "Clube Atlético Mineiro", "Atlético-MG", "Atletico-MG", "Atletico MG"], evidence: { source: "THESPORTSDB", teamId: "134299" } }
   ,{ name: "Sao Paulo", aliases: ["São Paulo", "São Paulo FC"], evidence: { source: "THESPORTSDB", teamId: "134291" } }
   ,{ name: "Bragantino", aliases: ["Red Bull Bragantino", "RB Bragantino"], evidence: { source: "THESPORTSDB", teamId: "134736" } }
   ,{ name: "NEC Nijmegen", aliases: ["NEC"], evidence: { source: "THESPORTSDB", teamId: "133760" } }
@@ -75,7 +75,7 @@ export const TEAM_ALIAS_GROUPS = [
   ,{ name: "Remo", aliases: ["Clube do Remo"] }
   ,{ name: "Coritiba", aliases: ["Coritiba FBC"] }
   ,{ name: "Cruzeiro", aliases: ["Cruzeiro EC"] }
-  ,{ name: "Atletico Paranaense", aliases: ["CA Paranaense"] }
+  ,{ name: "Atletico Paranaense", aliases: ["CA Paranaense", "Athletico Paranaense", "Club Athletico Paranaense", "Athletico-PR", "Athletico PR"] }
   ,{ name: "Flamengo", aliases: ["CR Flamengo"] }
   ,{ name: "Botafogo", aliases: ["Botafogo FR"] }
   ,{ name: "Palmeiras", aliases: ["SE Palmeiras"] }
@@ -123,6 +123,16 @@ export const TEAM_ALIAS_GROUPS = [
   // the club looks like two different opponents in its own debut season.
   ,{ name: "Racing Santander", aliases: ["Real Racing Club de Santander"] }
   ,{ name: "Coventry", aliases: ["Coventry City FC", "Coventry City"] }
+  // Audit of WAIT fixtures (PSV-Heerenveen, Ceará-Criciúma, Náutico-Novorizontino,
+  // Athletico-PR - Atlético-MG, 09.10.2026): every pair below is one club spelled differently
+  // by different providers, and none of them unified under canonicalTeamName/sameTeamIdentity
+  // (no generic suffix rule covers "EC", "Eindhoven", "Recife", "Grêmio"; widening the generic
+  // rule is what the comment above rules out). Curated exact pairs only; the exact spellings
+  // stored in a given SQLite file must be confirmed with `npm run history:diagnose`.
+  ,{ name: "PSV Eindhoven", aliases: ["PSV"] }
+  ,{ name: "Criciuma", aliases: ["Criciúma", "Criciúma EC", "Criciuma EC"] }
+  ,{ name: "Nautico", aliases: ["Náutico", "Náutico Recife", "Nautico Recife", "Clube Náutico Capibaribe"] }
+  ,{ name: "Novorizontino", aliases: ["Grêmio Novorizontino", "Gremio Novorizontino"] }
 ];
 
 // Confirmed collision (forensic audit): the generic suffix-strip below would
