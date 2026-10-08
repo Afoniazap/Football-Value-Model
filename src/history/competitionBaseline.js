@@ -1,14 +1,22 @@
 import { getCompetitionSeasonMatches } from "./sqliteHistory.js";
+import { canonicalTeamIdentity } from "./teamAliases.js";
 
 // Aggregates already-imported SQLite rows for a whole competition/season into
 // the same {team,playedGames,won,draw,lost,points,goalsFor,goalsAgainst,position}
 // shape teamStrengthModel already reads via totalTable/homeTable/awayTable — so
 // no change to the model formula is needed to consume a genuine, all-teams table
 // instead of the two-team local-history fallback.
+// Rows are keyed by club IDENTITY (alias-aware name), not by the provider's raw team id: the
+// same club carries different ids in Football-Data, API-Football and TheSportsDB rows, and an
+// id key splits it into several partial table rows. After alignContextTeamIds every fragment
+// gets the fixture's id and teamStrengthModel's `find` reads only the FIRST one, silently
+// using a fraction of the club's real record (and inflating baselineTeams).
+const teamKey = team => canonicalTeamIdentity(team?.name) || String(team?.id);
+
 function buildTable(rows, mode = "TOTAL") {
   const teams = new Map();
   const get = (id, name) => {
-    const key = String(id);
+    const key = teamKey({ id, name });
     if (!teams.has(key)) teams.set(key, { team: { id, name }, playedGames: 0, won: 0, draw: 0, lost: 0, points: 0, goalsFor: 0, goalsAgainst: 0 });
     return teams.get(key);
   };
@@ -41,7 +49,7 @@ function standingsFrom(rows) {
 const MIN_TEAMS_FOR_GENUINE_BASELINE = 3;
 
 function tier(rows, label) {
-  const teams = new Set(rows.flatMap(r => [r.homeTeam?.id, r.awayTeam?.id]).filter(id => id != null));
+  const teams = new Set(rows.flatMap(r => [r.homeTeam, r.awayTeam]).filter(team => team?.id != null).map(teamKey));
   if (teams.size < MIN_TEAMS_FOR_GENUINE_BASELINE) return null;
   return { baselineSource: label, standings: standingsFrom(rows), baselineSample: rows.length, baselineTeams: teams.size };
 }

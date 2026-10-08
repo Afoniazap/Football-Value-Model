@@ -449,22 +449,22 @@ export function metricText(code,x){
 
   const pct = v => Number.isFinite(v) ? (v*100).toFixed(1) : "N/A";
   const n1 = v => Number.isFinite(v) ? Number(v).toFixed(1) : "N/A";
-  const dqValue = value => Number.isFinite(value) ? `+${value}` : "N/A";
+  const dqValue = (value,max=null) => Number.isFinite(value) ? `+${value}${max===null?"":` из ${max}`}` : "N/A";
 
   const texts = {
     DQ:
       `<b>DQ — Data Quality: ${x.dataQuality}/100</b>
 Качество данных, на которых построен прогноз.
 
-Выборка матчей: ${dqValue(dq.sampleScore)}
-Свежесть данных: ${dqValue(dq.freshnessScore)}
-Дом/выезд: ${dqValue(dq.homeAwayScore)}
-Форма: ${dqValue(dq.formScore)}
-Рынок/букмекеры: ${dqValue(dq.marketScore)}
-xG: ${dq.xgAvailable===false ? "N/A" : dqValue(dq.xgScore)}
-Составы: ${dqValue(dq.squadScore)}
+Выборка матчей: ${dqValue(dq.sampleScore,20)}
+Свежесть данных: ${dqValue(dq.freshnessScore,10)}
+Дом/выезд: ${dqValue(dq.homeAwayScore,15)}
+Форма: ${dqValue(dq.formScore,15)}
+Рынок/букмекеры: ${dqValue(dq.marketScore,15)}
+xG: ${dq.xgAvailable===false ? "N/A (не учитывается)" : dqValue(dq.xgScore)}
+Составы: ${dqValue(dq.squadScore,10)}
 
-<b>Итого: ${x.dataQuality}/100</b>`,
+<b>Итого: ${x.dataQuality}/100</b> · максимум по текущей формуле 85 (xG не учитывается)`,
 
     Stab:
       `<b>Stability: ${stabilityText(x)}</b>
