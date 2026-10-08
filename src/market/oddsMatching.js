@@ -38,6 +38,12 @@ const GENERIC_SUFFIX_TOKENS = new Set(["united", "city", "town", "county", "albi
   // Brazilian state suffixes ("Vitoria BA", "Cruzeiro MG")
   "ba", "mg", "sp", "rj", "rs", "pr", "go", "pe", "ce", "pa", "mt", "ms"]);
 
+// Bare city names shared by several clubs: never enough to identify one ("Manchester" is
+// United or City, "Sheffield" is United or Wednesday).
+const AMBIGUOUS_BARE_TOKENS = new Set([
+  "manchester", "sheffield", "madrid", "milan", "nottingham", "bristol", "birmingham", "london", "munich", "lisbon", "belgrade", "bucharest", "istanbul"
+]);
+
 function tokens(value) {
   const normalized = normalizeClubName(stripMarks(value));
   const shared = CLUB_ALIASES.get(normalized) || normalized;
@@ -91,6 +97,7 @@ function similarity(a, b) {
     // Containment alone is not identity ("Santos" vs "Santos Laguna", "Newcastle" vs
     // "Newcastle Jets"): the extra words must be generic suffixes, otherwise reject.
     const extras = long.filter(u => !short.some(t => sameToken(t, u)));
+    if (short.length === 1 && AMBIGUOUS_BARE_TOKENS.has(short[0])) return 0;
     return extras.every(u => GENERIC_SUFFIX_TOKENS.has(u)) ? 0.85 : 0;
   }
   return Number(((common / long.length) * 0.6).toFixed(4));

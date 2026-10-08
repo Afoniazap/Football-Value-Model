@@ -78,7 +78,11 @@ const ambiguous = [
   ["River Plate", "Boca Juniors", "River Plate Montevideo", "Boca Juniors"],
   ["Sporting CP", "Braga", "Sporting Gijon", "Braga"],
   ["Lyon", "Lille", "Lyon La Duchere", "Lille"],
-  ["Real", "Valencia", "Real Madrid", "Valencia"]
+  ["Real", "Valencia", "Real Madrid", "Valencia"],
+  ["Manchester", "Arsenal", "Manchester United", "Arsenal"],
+  ["Manchester", "Arsenal", "Manchester City", "Arsenal"],
+  ["Sheffield", "Leeds United", "Sheffield United", "Leeds United"],
+  ["Nottingham", "Leeds United", "Nottingham Forest", "Leeds United"]
 ];
 for (const [h, a, eh, ea] of ambiguous) {
   assert.equal(matchOddsEvent(fx(h, a), [ev(eh, ea)]).event, null, `${h}-${a} must not match ${eh}-${ea}`);
