@@ -283,6 +283,10 @@ export function cardText(x) {
     const history=x.contextDiagnostic.localHistory;
     lines.push(`Local history: <b>${history.homeMatches}/${history.awayMatches}</b> · команды home/away · temporal-safe`);
   }
+  if(x.contextDiagnostic?.modelShortfall){
+    const shortfall=x.contextDiagnostic.modelShortfall;
+    lines.push(`Причина отсутствия модели: <b>${esc(shortfall.code)}</b>${shortfall.detail?` · ${esc(shortfall.detail)}`:""}`);
+  }
 
   if (b) {
     const thresholds=x.valueThresholds||{};

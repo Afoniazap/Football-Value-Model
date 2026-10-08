@@ -1,4 +1,5 @@
 import { similarity } from "./utils.js";
+import { sameTeamIdentity } from "../history/teamAliases.js";
 
 // Literal, known English-football abbreviation expansions only — not a
 // fuzzier matching algorithm and not a lower threshold. Without these,
@@ -7,7 +8,9 @@ import { similarity } from "./utils.js";
 // United FC" (just under the 0.82 bar), so both fail identity alignment
 // even though they are genuinely the same club.
 function canonical(value){return String(value||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\bqpr\b/g,"queens park rangers").replace(/\butd\b/g,"united").replace(/\b(fc|cf|afc|sc|ac|cd|fk|rc|ca|ud|de)\b/g," ").replace(/[^a-z0-9а-яё]+/gi," ").trim().replace(/\s+/g," ");}
-function teamSimilarity(a,b){const x=canonical(a),y=canonical(b);if(x&&x===y)return 1;return similarity(x,y);}
+// Curated aliases (history/teamAliases.js) are the single source of confirmed club identity;
+// the generic similarity() is strict and never accepts partial-name inclusion.
+function teamSimilarity(a,b){if(sameTeamIdentity(a,b))return 1;const x=canonical(a),y=canonical(b);if(x&&x===y)return 1;return similarity(x,y);}
 
 function fixtureIdForTeam(team,fixture){
   const name=team?.name||"";

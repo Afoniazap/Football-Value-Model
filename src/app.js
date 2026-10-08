@@ -18,7 +18,7 @@ import { auditMarketSnapshots, enforceMarketFreshness, resolveMarketSnapshots } 
 import { databaseStats, getTeamLastMatches, hasSourceDate, importHistoryMatches, loadAllHistory, openHistoryDatabase } from "./history/sqliteHistory.js";
 import { completedUtcDates, recentRefetchDates } from "./history/harvestDates.js";
 import { resolveTeamStrengthBaseline } from "./history/competitionBaseline.js";
-import { resolveContextProvenance, describeTeamStrengthSource } from "./history/contextProvenance.js";
+import { resolveContextProvenance, describeTeamStrengthSource, explainModelShortfall } from "./history/contextProvenance.js";
 import { ensurePreviousSeasonHistory } from "./history/previousSeasonBackfill.js";
 import { buildDualShadow, loadDualShadowStatistics, updateDualShadowHistory } from "./shadow/dualShadow.js";
 import { updateV3ShadowHistory } from "./shadow/v3History.js";
@@ -393,16 +393,21 @@ async function refresh(){
 
       const mergedContext=mergeWithLocalHistory(baseContext,fixtureHistory(f),f);
       const rawContextSource=contextDiagnostics[`${f.apiFootballLeagueId}|${f.seasonStart}`]?.source||null;
-      const {contextDiagnosticBase,baselineDiagnostic,localMeta}=describeTeamStrengthSource({
+      const {contextDiagnosticBase,baselineDiagnostic,localMeta,hasLocalModelContext}=describeTeamStrengthSource({
         competitionBaseline,rawBaseline,baseContext,mergedContext,rawContext,rawContextSource,
         fallbackContextDiagnostic:contextDiagnostics[`${f.apiFootballLeagueId}|${f.seasonStart}`]
       });
       const fixtureContextDiagnostic={...contextDiagnosticBase,baseline:baselineDiagnostic,localHistory:{
         homeMatches:localMeta?.homeMatches||0,
         awayMatches:localMeta?.awayMatches||0,
+        homeVenueMatches:localMeta?.homeVenueMatches||0,
+        awayVenueMatches:localMeta?.awayVenueMatches||0,
+        venueSplitMature:Boolean(localMeta?.venueSplitMature),
         provenance:localMeta?.provenance||[],
         temporalSafe:true
-      }};
+      },modelShortfall:explainModelShortfall({
+        fixture:f,rawContext,alignedRawContext:alignContextTeamIds(rawContext,f),competitionBaseline,rawBaseline,baseContext,localMeta,hasLocalModelContext
+      })};
 
       const fixtureWithMarketDiagnostic={...f,contextDiagnostic:fixtureContextDiagnostic,marketDiagnostic:{
         primary:event?"MATCHED":primaryHealth.status,
