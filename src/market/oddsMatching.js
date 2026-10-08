@@ -4,9 +4,26 @@ function stripMarks(value) {
   return String(value || "").normalize("NFKD").replace(/\p{M}+/gu, "");
 }
 
+// Words that carry no club identity (legal/sporting prefixes, articles, ordinals, numbers).
+const NOISE_TOKENS = new Set([
+  "ec", "sc", "cd", "rcd", "sv", "fk", "sk", "ssc", "ca", "se", "sport", "clube", "club",
+  "de", "da", "do", "del", "e", "the", "1", "04", "05", "96", "1899"
+]);
+// Spelling variants of the same club word used by different providers.
+const TOKEN_SYNONYMS = new Map([
+  ["munchen", "munich"], ["koln", "cologne"], ["cp", "portugal"], ["and", "&"]
+]);
+// Qualifiers that make a club a different team (women's / reserve / youth sides).
+const SQUAD_QUALIFIERS = new Set([
+  "women", "w", "ladies", "fem", "feminino", "femenino", "b", "ii", "iii", "u17", "u18", "u19", "u20", "u21", "u23", "res", "reserves", "youth"
+]);
+
 function tokens(value) {
   const shared = normalizeClubName(stripMarks(value));
-  return String(shared || "").split(" ").filter(Boolean);
+  const all = String(shared || "").replace(/&/g, " and ").split(/\s+/).filter(Boolean)
+    .map(token => TOKEN_SYNONYMS.get(token) || token);
+  const meaningful = all.filter(token => !NOISE_TOKENS.has(token) && token !== "&");
+  return meaningful.length ? meaningful : all;
 }
 
 function normalize(value) {
@@ -43,6 +60,11 @@ function similarity(a, b) {
   const tx = tokens(a);
   const ty = tokens(b);
   const [short, long] = tx.length <= ty.length ? [tx, ty] : [ty, tx];
+  const hasQualifier = list => list.some(t => SQUAD_QUALIFIERS.has(t));
+  const qualifiers = list => list.filter(t => SQUAD_QUALIFIERS.has(t)).sort().join(",");
+  if (hasQualifier(tx) || hasQualifier(ty)) {
+    if (qualifiers(tx) !== qualifiers(ty)) return 0;
+  }
   const common = short.filter(t => long.some(u => sameToken(t, u))).length;
   if (common === short.length) return 0.85;
   return Number(((common / long.length) * 0.6).toFixed(4));
