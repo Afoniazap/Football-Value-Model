@@ -3,7 +3,7 @@ import path from "node:path";
 import { providerResult, SourceStatus } from "../providerResult.js";
 import { ODDS_API_IO_LEAGUE_SLUGS } from "../../config/competitions.js";
 import { resolveRuntimeRoot } from "../../storage/runtime.js";
-import { normalizeClubName } from "../../context/fixtureMatching.js";
+import { clubNameSimilarity } from "../../market/oddsMatching.js";
 
 export const ODDS_API_IO_SOURCE = "ODDS_API_IO";
 
@@ -24,26 +24,7 @@ function cacheFresh(payload, now, cacheMinutes) {
   return Number.isFinite(ageMinutes) && ageMinutes <= cacheMinutes;
 }
 
-function normalizeName(value) {
-  const shared = normalizeClubName(value);
-  if (shared) return shared.replaceAll(" ", "");
-  return String(value || "")
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9а-яё]/gi, "")
-    .replace(/fc|cf|afc|club|calcio|football/g, "");
-}
-
-function similarity(a, b) {
-  const x = normalizeName(a);
-  const y = normalizeName(b);
-  if (!x || !y) return 0;
-  if (x === y) return 1;
-  if (x.includes(y) || y.includes(x)) return 0.9;
-  const chars = new Set(x);
-  let common = 0;
-  for (const c of y) if (chars.has(c)) common++;
-  return common / Math.max(x.length, y.length, 1);
-}
+const similarity = clubNameSimilarity;
 
 function kickoffScore(fixtureUtcDate, eventDate, toleranceMinutes) {
   const fixtureTime = new Date(fixtureUtcDate).getTime();
@@ -58,7 +39,7 @@ function leagueScore(fixture, event) {
   const expected = ODDS_API_IO_LEAGUE_SLUGS[fixture.competitionCode];
   const actual = event.league?.slug || event.league_slug || "";
   if (!expected || !actual) return 0.7;
-  return expected === actual ? 1 : 0.4;
+  return expected === actual ? 1 : 0;
 }
 
 export function matchOddsApiIoEvent(fixture, events, {
@@ -74,7 +55,7 @@ export function matchOddsApiIoEvent(fixture, events, {
       const confidence = Number(((home * 0.35) + (away * 0.35) + (kickoff * 0.2) + (league * 0.1)).toFixed(4));
       return { event, confidence, components: { home, away, kickoff, league } };
     })
-    .filter(candidate => candidate.components.home >= 0.6 && candidate.components.away >= 0.6 && candidate.components.kickoff > 0)
+    .filter(candidate => candidate.components.home >= 0.6 && candidate.components.away >= 0.6 && candidate.components.kickoff > 0 && candidate.components.league > 0)
     .sort((a, b) => b.confidence - a.confidence);
 
   const best = candidates[0] || null;
