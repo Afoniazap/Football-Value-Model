@@ -1,23 +1,51 @@
 import { normalizeClubName } from "../context/fixtureMatching.js";
 
-function normalize(value) {
-  const shared = normalizeClubName(value);
-  if (shared) return shared.replaceAll(" ", "");
-  return String(value || "")
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9а-яё]/gi, "")
-    .replace(/fc|cf|afc|club|calcio|football/g, "");
+function stripMarks(value) {
+  return String(value || "").normalize("NFKD").replace(/\p{M}+/gu, "");
 }
 
+function tokens(value) {
+  const shared = normalizeClubName(stripMarks(value));
+  return String(shared || "").split(" ").filter(Boolean);
+}
+
+function normalize(value) {
+  return tokens(value).join("");
+}
+
+function editRatio(a, b) {
+  if (a === b) return 1;
+  const prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i += 1) {
+    let diag = prev[0];
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const tmp = prev[j];
+      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diag = tmp;
+    }
+  }
+  return 1 - prev[b.length] / Math.max(a.length, b.length, 1);
+}
+
+function sameToken(a, b) {
+  return a === b || (Math.min(a.length, b.length) >= 5 && editRatio(a, b) >= 0.8);
+}
+
+// Token-based club-name similarity. Character-set overlap (previous implementation)
+// scored unrelated clubs such as "Real Madrid" / "Real Sociedad" or "Inter" /
+// "Internacional" high enough to match the wrong event and attach foreign odds.
 function similarity(a, b) {
   const x = normalize(a);
   const y = normalize(b);
+  if (!x || !y) return 0;
   if (x === y) return 1;
-  if (x.includes(y) || y.includes(x)) return 0.85;
-  const chars = new Set(x);
-  let common = 0;
-  for (const c of y) if (chars.has(c)) common++;
-  return common / Math.max(x.length, y.length, 1);
+  const tx = tokens(a);
+  const ty = tokens(b);
+  const [short, long] = tx.length <= ty.length ? [tx, ty] : [ty, tx];
+  const common = short.filter(t => long.some(u => sameToken(t, u))).length;
+  if (common === short.length) return 0.85;
+  return Number(((common / long.length) * 0.6).toFixed(4));
 }
 
 function kickoffCloseEnough(fixtureUtcDate, eventCommenceTime) {
@@ -41,6 +69,7 @@ function kickoffConfidence(fixtureUtcDate, eventCommenceTime) {
 function eventConfidence(fixture, event) {
   const home = similarity(fixture.home, event.home_team);
   const away = similarity(fixture.away, event.away_team);
+  if (home < 0.4 || away < 0.4) return 0;
   const kickoff = kickoffConfidence(fixture.utcDate, event.commence_time);
   const competition = !event.sport_key || !fixture.sportKey || event.sport_key === fixture.sportKey ? 1 : 0.65;
   return Number(((home * 0.35) + (away * 0.35) + (kickoff * 0.2) + (competition * 0.1)).toFixed(4));
