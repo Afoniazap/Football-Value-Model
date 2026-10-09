@@ -13,14 +13,14 @@ function row(table, teamId) {
   return table.find(x => x.team?.id === teamId) || null;
 }
 
-function recentMatches(context, teamId, limit = 8) {
+export function recentMatches(context, teamId, limit = 8) {
   return (context?.finished || [])
     .filter(m => m.homeTeam?.id === teamId || m.awayTeam?.id === teamId)
     .sort((a,b) => new Date(b.utcDate) - new Date(a.utcDate))
     .slice(0, limit);
 }
 
-function formStats(matches, teamId) {
+export function formStats(matches, teamId) {
   let points = 0, gf = 0, ga = 0;
   for (const m of matches) {
     const home = m.homeTeam.id === teamId;

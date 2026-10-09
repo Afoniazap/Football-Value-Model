@@ -133,6 +133,9 @@ export const TEAM_ALIAS_GROUPS = [
   ,{ name: "Criciuma", aliases: ["Criciúma", "Criciúma EC", "Criciuma EC"] }
   ,{ name: "Nautico", aliases: ["Náutico", "Náutico Recife", "Nautico Recife", "Clube Náutico Capibaribe"] }
   ,{ name: "Novorizontino", aliases: ["Grêmio Novorizontino", "Gremio Novorizontino"] }
+  // Real-SQLite audit (PSV-Heerenveen, 30.08.2026 Willem II 2:2 Heerenveen stored by API-Football and
+  // Football-Data under two spellings): canonical keys "willem ii" and "willem ii tilburg" never met.
+  ,{ name: "Willem II", aliases: ["Willem II Tilburg"] }
 ];
 
 // Confirmed collision (forensic audit): the generic suffix-strip below would
