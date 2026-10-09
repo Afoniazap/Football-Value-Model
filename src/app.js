@@ -15,7 +15,7 @@ import { discoverFixtures } from "./fixtures/discovery.js";
 import { loadPredictionStatistics, updatePredictionHistory, updatePredictionSnapshots, updateSnapshotGrading, loadHistoryEvents, listHistoryDates, listHistoryMatches } from "./statistics/predictionHistory.js";
 import { loadMarketBetStatistics, updateMarketBetHistory } from "./statistics/marketBetHistory.js";
 import { auditMarketSnapshots, enforceMarketFreshness, resolveMarketSnapshots } from "./markets/marketSnapshots.js";
-import { databaseStats, getTeamLastMatches, hasSourceDate, importHistoryMatches, loadAllHistory, openHistoryDatabase } from "./history/sqliteHistory.js";
+import { databaseStats, dedupeLogicalMatches, getTeamLastMatches, hasSourceDate, importHistoryMatches, loadAllHistory, openHistoryDatabase } from "./history/sqliteHistory.js";
 import { completedUtcDates, recentRefetchDates } from "./history/harvestDates.js";
 import { resolveTeamStrengthBaseline } from "./history/competitionBaseline.js";
 import { resolveContextProvenance, describeTeamStrengthSource, explainModelShortfall } from "./history/contextProvenance.js";
@@ -56,7 +56,7 @@ function fixtureHistory(fixture,limit=20){
     ...getTeamLastMatches(historyDatabase,{name:fixture.home},fixture.utcDate,limit),
     ...getTeamLastMatches(historyDatabase,{name:fixture.away},fixture.utcDate,limit)
   ];
-  return [...new Map(rows.map(row=>[row.recordKey,row])).values()];
+  return dedupeLogicalMatches([...new Map(rows.map(row=>[row.recordKey,row])).values()]);
 }
 
 function appendHistory(matches,source,fetchedAt=new Date().toISOString()){

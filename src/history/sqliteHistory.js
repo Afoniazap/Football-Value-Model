@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { canonicalTeamName, sameTeamIdentity, teamIdentityEvidence, teamSearchAliases } from "./teamAliases.js";
+import { canonicalTeamIdentity, canonicalTeamName, sameTeamIdentity, teamIdentityEvidence, teamSearchAliases } from "./teamAliases.js";
 
 const FINISHED=new Set(["FT","AET","PEN","FINISHED"]);
 const OFFICIAL_MATCH="lower(COALESCE(competition,'')) NOT LIKE '%friendl%'";
@@ -180,18 +180,51 @@ function teamWhere(team){
   return {name,normalized,placeholders,homeSql,awaySql,homeArgs:sideArgs,awayArgs:sideArgs,sql:`(${homeSql} OR ${awaySql})`,args:[...sideArgs,...sideArgs]};
 }
 
+// Same real match, stored twice: insertRow's identityKey uses canonicalTeamName (NOT alias
+// resolved), so providers that spell a club differently ("PSV" / "PSV Eindhoven") and/or differ
+// by a few minutes on kickoff produce two rows. Alias-aware queries (sameTeamIdentity) now see
+// both, which would count one match twice in form, sample size and competition tables. A
+// logical match is the ordered (home, away) club-identity pair within DUPLICATE_WINDOW_MS; the
+// reversed pairing is a different match and is never merged.
+export const DUPLICATE_WINDOW_MS=24*3600_000;
+function pairKey(row){return `${canonicalTeamIdentity(row.homeTeam?.name)}|${canonicalTeamIdentity(row.awayTeam?.name)}`;}
+export function dedupeLogicalMatches(rows){
+  const kept=[],byPair=new Map();
+  const ordered=[...rows].sort((a,b)=>String(b.playedAt).localeCompare(String(a.playedAt))||String(a.recordKey).localeCompare(String(b.recordKey)));
+  for(const row of ordered){
+    const key=pairKey(row),time=new Date(row.playedAt).getTime(),seen=byPair.get(key)||[];
+    if(Number.isFinite(time)&&seen.some(other=>Math.abs(other-time)<DUPLICATE_WINDOW_MS))continue;
+    seen.push(time);byPair.set(key,seen);kept.push(row);
+  }
+  return kept;
+}
+// Groups of rows that dedupeLogicalMatches would collapse (diagnostic; returns names/sources only).
+export function findLogicalDuplicates(rows){
+  const groups=[],byPair=new Map();
+  for(const row of [...rows].sort((a,b)=>String(a.playedAt).localeCompare(String(b.playedAt)))){
+    const key=pairKey(row),time=new Date(row.playedAt).getTime(),clusters=byPair.get(key)||[];
+    const cluster=clusters.find(c=>Math.abs(c.time-time)<DUPLICATE_WINDOW_MS);
+    if(cluster){cluster.rows.push(row);continue;}
+    const created={time,rows:[row]};clusters.push(created);byPair.set(key,clusters);groups.push(created);
+  }
+  return groups.filter(g=>g.rows.length>1).map(g=>({playedAt:g.rows[0].playedAt,rows:g.rows.map(r=>({home:r.homeTeam.name,away:r.awayTeam.name,source:r.provenance?.source||null}))}));
+}
+// Over-fetch so that collapsing duplicates cannot shorten a `limit`-sized window.
+const OVERFETCH=4;
+const distinct=(rows,limit)=>dedupeLogicalMatches(rows).slice(0,limit);
+
 export function getTeamLastMatches(db,team,before,limit=20){
   const where=teamWhere(team);
-  return db.prepare(`SELECT * FROM matches WHERE ${where.sql} AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...where.args,new Date(before).toISOString(),limit).map(decode);
+  return distinct(db.prepare(`SELECT * FROM matches WHERE ${where.sql} AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...where.args,new Date(before).toISOString(),limit*OVERFETCH).map(decode),limit);
 }
-export function getTeamHomeMatches(db,team,before,limit=20){const w=teamWhere(team);return db.prepare(`SELECT * FROM matches WHERE ${w.homeSql} AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...w.homeArgs,new Date(before).toISOString(),limit).map(decode);}
-export function getTeamAwayMatches(db,team,before,limit=20){const w=teamWhere(team);return db.prepare(`SELECT * FROM matches WHERE ${w.awaySql} AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...w.awayArgs,new Date(before).toISOString(),limit).map(decode);}
+export function getTeamHomeMatches(db,team,before,limit=20){const w=teamWhere(team);return distinct(db.prepare(`SELECT * FROM matches WHERE ${w.homeSql} AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...w.homeArgs,new Date(before).toISOString(),limit*OVERFETCH).map(decode),limit);}
+export function getTeamAwayMatches(db,team,before,limit=20){const w=teamWhere(team);return distinct(db.prepare(`SELECT * FROM matches WHERE ${w.awaySql} AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...w.awayArgs,new Date(before).toISOString(),limit*OVERFETCH).map(decode),limit);}
 // season is stored verbatim from whichever provider supplied the match:
 // API-Football gives a bare year ("2026"), football-data.org's own
 // season.startDate gives a full date ("2026-08-28"). Match on the leading
 // year so a caller asking for season "2026" finds both representations.
-export function getCompetitionSeasonMatches(db,competition,season,before="9999-12-31T23:59:59.999Z",limit=1000){return db.prepare("SELECT * FROM matches WHERE (competitionCode=? OR competition=?) AND substr(season,1,4)=? AND kickoff < ? ORDER BY kickoff DESC LIMIT ?").all(competition,competition,String(season).slice(0,4),new Date(before).toISOString(),limit).map(decode);}
-export function getHeadToHead(db,home,away,before,limit=20){const h=teamWhere(home),a=teamWhere(away);return db.prepare(`SELECT * FROM matches WHERE ((${h.homeSql} AND ${a.awaySql}) OR (${a.homeSql} AND ${h.awaySql})) AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...h.homeArgs,...a.awayArgs,...a.homeArgs,...h.awayArgs,new Date(before).toISOString(),limit).map(decode);}
+export function getCompetitionSeasonMatches(db,competition,season,before="9999-12-31T23:59:59.999Z",limit=1000){return distinct(db.prepare("SELECT * FROM matches WHERE (competitionCode=? OR competition=?) AND substr(season,1,4)=? AND kickoff < ? ORDER BY kickoff DESC").all(competition,competition,String(season).slice(0,4),new Date(before).toISOString()).map(decode),limit);}
+export function getHeadToHead(db,home,away,before,limit=20){const h=teamWhere(home),a=teamWhere(away);return distinct(db.prepare(`SELECT * FROM matches WHERE ((${h.homeSql} AND ${a.awaySql}) OR (${a.homeSql} AND ${h.awaySql})) AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...h.homeArgs,...a.awayArgs,...a.homeArgs,...h.awayArgs,new Date(before).toISOString(),limit*OVERFETCH).map(decode),limit);}
 
 export function getTeamForm(db,team,before,limit=5){
   const name=teamWhere(team).name,matches=getTeamLastMatches(db,team,before,limit);
