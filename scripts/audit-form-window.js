@@ -18,15 +18,12 @@ import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { getTeamLastMatches, getTeamLastMatchesUndeduped } from "../src/history/sqliteHistory.js";
 import { mergeWithLocalHistory } from "../src/history/localHistory.js";
-import { canonicalTeamIdentity } from "../src/history/teamAliases.js";
+import { isSameLogicalMatch, matchSignature } from "../src/history/logicalMatch.js";
 import { formModel, formStats, recentMatches } from "../src/engine/models.js";
 
-const DUPLICATE_WINDOW_MS = 24 * 3600_000;
-const pairKey = row => `${canonicalTeamIdentity(row.homeTeam?.name)}|${canonicalTeamIdentity(row.awayTeam?.name)}`;
-
 function duplicateInfo(finished, row) {
-  const time = new Date(row.utcDate).getTime();
-  const twins = finished.filter(other => pairKey(other) === pairKey(row) && Math.abs(new Date(other.utcDate).getTime() - time) < DUPLICATE_WINDOW_MS);
+  const signature = matchSignature(row);
+  const twins = finished.filter(other => other === row || isSameLogicalMatch(matchSignature(other), signature));
   const scores = new Set(twins.map(other => `${other.score?.fullTime?.home}:${other.score?.fullTime?.away}`));
   return { groupSize: twins.length, scoreConflict: scores.size > 1, sources: [...new Set(twins.map(other => other.provenance?.source).filter(Boolean))] };
 }

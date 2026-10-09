@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { canonicalTeamIdentity, canonicalTeamName, sameTeamIdentity, teamIdentityEvidence, teamSearchAliases } from "./teamAliases.js";
+import { groupLogicalDuplicates, keepFirstOfEachLogicalMatch } from "./logicalMatch.js";
+import { canonicalTeamName, sameTeamIdentity, teamIdentityEvidence, teamSearchAliases } from "./teamAliases.js";
 
 const FINISHED=new Set(["FT","AET","PEN","FINISHED"]);
 const OFFICIAL_MATCH="lower(COALESCE(competition,'')) NOT LIKE '%friendl%'";
@@ -186,28 +187,14 @@ function teamWhere(team){
 // both, which would count one match twice in form, sample size and competition tables. A
 // logical match is the ordered (home, away) club-identity pair within DUPLICATE_WINDOW_MS; the
 // reversed pairing is a different match and is never merged.
-export const DUPLICATE_WINDOW_MS=24*3600_000;
-function pairKey(row){return `${canonicalTeamIdentity(row.homeTeam?.name)}|${canonicalTeamIdentity(row.awayTeam?.name)}`;}
 export function dedupeLogicalMatches(rows){
-  const kept=[],byPair=new Map();
   const ordered=[...rows].sort((a,b)=>String(b.playedAt).localeCompare(String(a.playedAt))||String(a.recordKey).localeCompare(String(b.recordKey)));
-  for(const row of ordered){
-    const key=pairKey(row),time=new Date(row.playedAt).getTime(),seen=byPair.get(key)||[];
-    if(Number.isFinite(time)&&seen.some(other=>Math.abs(other-time)<DUPLICATE_WINDOW_MS))continue;
-    seen.push(time);byPair.set(key,seen);kept.push(row);
-  }
-  return kept;
+  return keepFirstOfEachLogicalMatch(ordered);
 }
 // Groups of rows that dedupeLogicalMatches would collapse (diagnostic; returns names/sources only).
 export function findLogicalDuplicates(rows){
-  const groups=[],byPair=new Map();
-  for(const row of [...rows].sort((a,b)=>String(a.playedAt).localeCompare(String(b.playedAt)))){
-    const key=pairKey(row),time=new Date(row.playedAt).getTime(),clusters=byPair.get(key)||[];
-    const cluster=clusters.find(c=>Math.abs(c.time-time)<DUPLICATE_WINDOW_MS);
-    if(cluster){cluster.rows.push(row);continue;}
-    const created={time,rows:[row]};clusters.push(created);byPair.set(key,clusters);groups.push(created);
-  }
-  return groups.filter(g=>g.rows.length>1).map(g=>({playedAt:g.rows[0].playedAt,rows:g.rows.map(r=>({home:r.homeTeam.name,away:r.awayTeam.name,source:r.provenance?.source||null}))}));
+  const ordered=[...rows].sort((a,b)=>String(a.playedAt).localeCompare(String(b.playedAt)));
+  return groupLogicalDuplicates(ordered).map(group=>({playedAt:group[0].playedAt,rows:group.map(r=>({home:r.homeTeam.name,away:r.awayTeam.name,source:r.provenance?.source||null,score:`${r.score?.fullTime?.home}:${r.score?.fullTime?.away}`}))}));
 }
 // Over-fetch so that collapsing duplicates cannot shorten a `limit`-sized window.
 const OVERFETCH=4;
