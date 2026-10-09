@@ -217,6 +217,12 @@ export function getTeamLastMatches(db,team,before,limit=20){
   const where=teamWhere(team);
   return distinct(db.prepare(`SELECT * FROM matches WHERE ${where.sql} AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...where.args,new Date(before).toISOString(),limit*OVERFETCH).map(decode),limit);
 }
+// Diagnostic only: the same query as getTeamLastMatches WITHOUT logical de-duplication
+// (what the pipeline returned before PR #5), to audit how many duplicate rows exist.
+export function getTeamLastMatchesUndeduped(db,team,before,limit=20){
+  const where=teamWhere(team);
+  return db.prepare(`SELECT * FROM matches WHERE ${where.sql} AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...where.args,new Date(before).toISOString(),limit).map(decode);
+}
 export function getTeamHomeMatches(db,team,before,limit=20){const w=teamWhere(team);return distinct(db.prepare(`SELECT * FROM matches WHERE ${w.homeSql} AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...w.homeArgs,new Date(before).toISOString(),limit*OVERFETCH).map(decode),limit);}
 export function getTeamAwayMatches(db,team,before,limit=20){const w=teamWhere(team);return distinct(db.prepare(`SELECT * FROM matches WHERE ${w.awaySql} AND ${OFFICIAL_MATCH} AND kickoff < ? ORDER BY kickoff DESC LIMIT ?`).all(...w.awayArgs,new Date(before).toISOString(),limit*OVERFETCH).map(decode),limit);}
 // season is stored verbatim from whichever provider supplied the match:

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { canonicalTeamName, sameTeamIdentity, teamIdentityEvidence } from "./teamAliases.js";
+import { canonicalTeamIdentity, canonicalTeamName, sameTeamIdentity, teamIdentityEvidence } from "./teamAliases.js";
 import { MIN_GAMES_FOR_MATURE_STANDINGS } from "./competitionBaseline.js";
 
 const FINISHED_STATUSES = new Set(["FT", "AET", "PEN", "FINISHED"]);
@@ -274,14 +274,39 @@ export function buildLocalHistoryContext(history, fixture, limit = 20) {
   };
 }
 
-export function mergeWithLocalHistory(context, history, fixture) {
+// The same real match can reach the merged context twice: once as a local-history row
+// ("PSV", Football-Data) and once as the live provider's row ("PSV Eindhoven", API-Football).
+// matchKey below is spelling-sensitive, so both survive and Form/SCI/sample size count the
+// match twice (and WHICH copies survive depends on which spelling the SQLite de-duplication
+// happened to keep). Collapse them by club identity: same ordered (home, away) pair within
+// 24h. On a clash the live provider's row wins (it already overwrote local rows on equal keys).
+const CONTEXT_DUPLICATE_WINDOW_MS = 24 * 3600_000;
+export function dedupeContextMatches(rows, priority = () => 0) {
+  const identityPair = row => `${canonicalTeamIdentity(row.homeTeam?.name)}|${canonicalTeamIdentity(row.awayTeam?.name)}`;
+  const order = [...rows.keys()].sort((a, b) =>
+    priority(rows[a]) - priority(rows[b]) ||
+    String(rows[b].utcDate || rows[b].playedAt).localeCompare(String(rows[a].utcDate || rows[a].playedAt)) ||
+    String(rows[a].id ?? "").localeCompare(String(rows[b].id ?? "")) || a - b);
+  const byPair = new Map(), keep = new Set();
+  for (const index of order) {
+    const row = rows[index], key = identityPair(row), time = new Date(row.utcDate || row.playedAt).getTime();
+    const seen = byPair.get(key) || [];
+    if (Number.isFinite(time) && seen.some(other => Math.abs(other - time) < CONTEXT_DUPLICATE_WINDOW_MS)) continue;
+    seen.push(time); byPair.set(key, seen); keep.add(index);
+  }
+  return rows.filter((_, index) => keep.has(index));
+}
+
+export function mergeWithLocalHistory(context, history, fixture, { logicalDedupe = true } = {}) {
   const local = buildLocalHistoryContext(history, fixture);
   const externalFinished = context?.finished || [];
   const matchKey = row => {
     const date = String(row.utcDate || row.playedAt || "").slice(0, 10);
     return `${date}|${canonical(row.homeTeam?.name)}|${canonical(row.awayTeam?.name)}`;
   };
-  const finished = [...new Map([...(local.finished || []), ...externalFinished].map(row => [matchKey(row), row])).values()];
+  const external = new Set(externalFinished);
+  const merged = [...new Map([...(local.finished || []), ...externalFinished].map(row => [matchKey(row), row])).values()];
+  const finished = logicalDedupe ? dedupeContextMatches(merged, row => (external.has(row) ? 0 : 1)) : merged;
   return {
     ...(context || {}),
     standings: context?.standings || local.standings,
