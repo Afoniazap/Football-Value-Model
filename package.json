@@ -10,6 +10,7 @@
     "test": "node --test",
     "doctor": "node scripts/doctor.js",
     "history:diagnose": "node scripts/diagnose-team-history.js",
+    "audit:forecast": "node scripts/audit-fixture-forecast.js",
     "history:expand": "node scripts/expand-sqlite-history.js",
     "v3:stats": "node scripts/v3-shadow-stats.js"
   },
