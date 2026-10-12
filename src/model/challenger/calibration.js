@@ -24,6 +24,8 @@ function average(values) {
 }
 
 export function fitTemperature(predictions) {
+  // No evidence -> identity calibration (never sharpen/flatten without data).
+  if (!predictions?.length) return { temperature: 1, logLoss: null };
   const candidates = [];
   for (let value = 0.75; value <= 1.8 + 1e-12; value += 0.025) {
     candidates.push(Number(value.toFixed(3)));
