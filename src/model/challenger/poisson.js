@@ -4,7 +4,14 @@ function factorial(n) {
   return result;
 }
 
+function assertLambda(lambda) {
+  if (!Number.isFinite(lambda) || lambda < 0) {
+    throw new RangeError(`Invalid Poisson lambda: ${lambda}`);
+  }
+}
+
 export function poissonProbability(lambda, goals) {
+  assertLambda(lambda);
   return (Math.exp(-lambda) * (lambda ** goals)) / factorial(goals);
 }
 

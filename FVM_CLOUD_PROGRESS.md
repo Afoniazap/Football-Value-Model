@@ -17,6 +17,26 @@ Baseline: `npm test` green (stages parity..17) before changes.
 - `bestH2H` picks the single bookmaker row with highest odds sum (not best price per outcome); marked TODO in code. Protected logic (edge/EV inputs) — needs owner decision.
 - Not yet audited: Poisson/Asian totals/BTTS, DQ/SCI/MAI/FDS, calibration/ROI on history, Telegram market display, Mirassol–Vitória anomaly in stored signals (no runtime `data/` in cloud checkout).
 
+## Run 2026-10-12
+Baseline: `npm test` green (after `npm ci`).
+
+### Fixed (confirmed)
+- `poisson.js`: negative/NaN/Infinity lambda silently produced negative or NaN probabilities (e.g. lambda=-1 -> home=-0.32). Now throws RangeError. Production path unaffected (lambdas clamped 0.25..3.2/0.2..2.8, form factor ±8%).
+- `calibration.js`: `fitTemperature([])` returned T=0.75 (sharpening with zero evidence, logLoss null). Now identity (T=1).
+- Tests: `tests/stage19.test.js` (sum=1, symmetry, monotonicity, truncation tail <1% at max clamp, invalid lambda, empty calibration). No production math/thresholds touched.
+
+### Audited, no defect
+- Temporal safety in `featureSnapshot.js` (strict `<` kickoff, leakage assert, covered by stage3). Live context uses FINISHED matches only.
+- Challenger Poisson: score matrix truncation at 8 goals renormalized; bias ≤0.6% mass at the clamp maximum (documented, left as is).
+
+### Open
+- Same as previous run (legacy `src/bot.js` duplicates; `bestH2H` single-bookmaker row = owner decision).
+- Not yet audited: production `buildModel` softmax calibration (protected), DQ/SCI/MAI/FDS, Asian totals/BTTS, ROI/calibration on history (no `data/` in cloud), Telegram market display.
+
 ### Next
+1. Audit `src/quality/*` and `src/risk/*` scoring ranges/monotonicity; decision classification boundaries (VALUE/NEAR/WAIT/NO_BET) with boundary tests.
+2. Verify `src/bot.js` is dead code.
+
+### Next (previous run)
 1. Audit `src/model/challenger/*` (Poisson, calibration) with property tests (probabilities sum to 1, monotonicity, truncation at maxGoals=8).
 2. Audit risk/quality scores and temporal safety in `historical/featureSnapshot.js`.
