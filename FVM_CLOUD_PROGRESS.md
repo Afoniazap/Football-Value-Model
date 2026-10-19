@@ -17,6 +17,28 @@ Baseline: `npm test` green (stages parity..17) before changes.
 - `bestH2H` picks the single bookmaker row with highest odds sum (not best price per outcome); marked TODO in code. Protected logic (edge/EV inputs) — needs owner decision.
 - Not yet audited: Poisson/Asian totals/BTTS, DQ/SCI/MAI/FDS, calibration/ROI on history, Telegram market display, Mirassol–Vitória anomaly in stored signals (no runtime `data/` in cloud checkout).
 
+## Run 2026-10-19
+Baseline: `npm ci && npm test` green (stages parity..18).
+
+### Verified correct (no change needed) — tests in `tests/stage19.test.js`
+- Challenger Poisson (`src/model/challenger/poisson.js`): 1X2 sums to 1, score matrix mass 1, monotone in lambdas, draw > 5% across clamp range, maxGoals=8 truncation loss <0.1% at lambda 1.4.
+- Settlement quarter-line grading (Over/Under, Asian handicap, HALF_WIN/HALF_LOSS) and half-win/loss accounting are correct.
+- Temporal safety in `createPreMatchContext` (strict `< kickoff`) is correct.
+
+### CONFIRMED ANOMALY — APPROVAL REQUIRED (protected production logic, NOT changed)
+`src/model/probability.js` (`buildModel`, production 1X2) is overconfident. Softmax over `strength = 0.65*dPPG + 0.22*dGD + 0.75*dForm` with draw logit `0.05 - 0.28*|strength|`:
+- ppg 2.6/gd +1.8/form 100% vs ppg 0.6/gd -1.2/form 0%: H 0.973 / D 0.024 / A 0.003.
+- ppg 2.8 vs 0.4: H 0.986 / D 0.013 / A 0.001.
+- ppg 2.0 vs 1.0: H 0.800 / D 0.142 / A 0.058.
+Real football draw rate rarely falls below ~10%; probabilities >0.95 inflate edge/EV and can fabricate VALUE (likely source of the Mirassol–Vitória style anomalies). Reproduction script: sweep over `buildModel` with synthetic standings.
+Recommendation: owner-approved shadow evaluation of a bounded model (draw floor / probability cap, or shrinkage toward the challenger Poisson) with calibration + log-loss comparison on real history before any production change. Thresholds untouched.
+
+### Open / not yet addressed
+- `src/bot.js` legacy duplicate matcher (see 2026-10-08) — verify dead code.
+- `bestH2H` picks single bookmaker row with highest odds sum (protected edge/EV input; needs owner decision).
+- `leagueGoalRates`/`recentForm` coerce missing scores to 0 (`|| 0`); safe only while contexts contain FINISHED matches (football-data provider filters FINISHED) — add guard test.
+- Not auditable without runtime `data/`: stored-signal calibration/ROI, Mirassol–Vitória stored signal, Telegram display, DQ/SCI/MAI/FDS scoring (not yet read).
+
 ### Next
-1. Audit `src/model/challenger/*` (Poisson, calibration) with property tests (probabilities sum to 1, monotonicity, truncation at maxGoals=8).
-2. Audit risk/quality scores and temporal safety in `historical/featureSnapshot.js`.
+1. Audit `src/quality/dataQuality.js`, `src/risk/*`, `src/decision/classify.js` for score ranges and classification consistency.
+2. Prepare shadow-comparison script (production vs challenger calibration) on backtest fixtures for the owner decision above.
