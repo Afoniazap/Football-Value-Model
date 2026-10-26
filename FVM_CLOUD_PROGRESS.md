@@ -20,3 +20,22 @@ Baseline: `npm test` green (stages parity..17) before changes.
 ### Next
 1. Audit `src/model/challenger/*` (Poisson, calibration) with property tests (probabilities sum to 1, monotonicity, truncation at maxGoals=8).
 2. Audit risk/quality scores and temporal safety in `historical/featureSnapshot.js`.
+
+## Run 2026-10-26
+Baseline: PR #1 merged; branch restarted from `main`. `npm ci` required first (fresh checkout lacked `dotenv`); then `npm test` green.
+
+### Verified (no defect found)
+- Challenger Poisson (`poisson.js`): outcome probs sum to 1 across the full clamp range (λh 0.25–3.2, λa 0.2–2.8), symmetric, monotone. Truncation at 8 goals drops 0.57% single-side mass at λ=3.2 (renormalised; ~1% worst case joint) — minor, left unchanged (math change).
+- `removeMargin` (proportional), `applyTemperature` (T=1 identity, T>1 flattens), `expectedGoalsFromContext` (attack/defence ratios consistent; empty context gives bounded finite λ).
+- `classify` edge = p − no-vig p, EV = p·odds − 1, fair odds = 1/p: formulas correct.
+- Test added: `tests/stage19.test.js` (in `npm test`). No production math/thresholds changed.
+
+### Open (carried over + new)
+- `src/bot.js` is dead (not referenced by `src/app.js`, scripts, tests) and keeps the old char-overlap matcher. Deletion left for owner decision.
+- `bestH2H` still picks a single bookmaker by odds sum (protected edge/EV input; owner decision).
+- `buildModel`/`recentForm` use `Number(x) || 0`: a null score would count as 0–0. Currently safe because football-data fetch is `status=FINISHED`; consider an explicit guard.
+- Still unaudited: DQ/SCI/MAI/FDS (`quality/`, `risk/riskScore.js`), asian totals/BTTS (no implementation found in `src/model`), settlement, temporal safety in `historical/featureSnapshot.js`, Telegram display, calibration/ROI on real history (no `data/` in cloud).
+
+### Next
+1. Audit `risk/riskScore.js` + `quality/dataQuality.js` and `historical/featureSnapshot.js` temporal safety.
+2. Audit `audit/settlement.js` totals/BTTS grading.
