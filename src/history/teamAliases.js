@@ -129,6 +129,7 @@ export const TEAM_ALIAS_GROUPS = [
   // (no generic suffix rule covers "EC", "Eindhoven", "Recife", "Grêmio"; widening the generic
   // rule is what the comment above rules out). Curated exact pairs only; the exact spellings
   // stored in a given SQLite file must be confirmed with `npm run history:diagnose`.
+  ,{ name: "Willem II", aliases: ["Willem II Tilburg"] }
   ,{ name: "PSV Eindhoven", aliases: ["PSV"] }
   ,{ name: "Criciuma", aliases: ["Criciúma", "Criciúma EC", "Criciuma EC"] }
   ,{ name: "Nautico", aliases: ["Náutico", "Náutico Recife", "Nautico Recife", "Clube Náutico Capibaribe"] }
@@ -142,6 +143,14 @@ export const TEAM_ALIAS_GROUPS = [
 // explicit exception for this one confirmed string, not a change to the
 // general rule (which stays correct for every other "X SC" club).
 const KEEP_FULL_FORM = new Set(["vitoria sc"]);
+
+// Names that must never be reduced by looser (relaxed) matching: stripping their
+// suffix would collide with a different club (see KEEP_FULL_FORM above).
+export function isProtectedFullForm(value = "") {
+  const cleaned=String(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9а-яё]+/gi, " ").trim().replace(/\s+/g, " ");
+  return KEEP_FULL_FORM.has(cleaned);
+}
 
 export function canonicalTeamName(value = "") {
   const cleaned=String(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")

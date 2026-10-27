@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { asianSettlementOutcome, totalsSettlementOutcome } from "../engine/markets.js";
 import { canonicalTeamName } from "../history/teamAliases.js";
-import { matchHistoryRow } from "../history/resultMatching.js";
+import { resolveHistoryMatch } from "../history/resultMatching.js";
 
 export const MARKET_BET_MODEL_VERSION="production-market-v1";
 
@@ -14,7 +14,6 @@ function marketKey(row){
   const best=row.best||{},kickoff=String(row.utcDate||row.kickoff||"").slice(0,16);
   return [kickoff,canonicalTeamName(row.home),canonicalTeamName(row.away),row.category,best.market,best.label||best.selection||"",normalizedLine(best.line)??"",MARKET_BET_MODEL_VERSION].join("|");
 }
-const historyMatch = matchHistoryRow;
 function sideFromSelection(selection){return /^(П1|Ф1|home)/i.test(selection)?"home":/^(П2|Ф2|away)/i.test(selection)?"away":null;}
 function settle(prediction,match){
   const status=String(match.status||"").toUpperCase();
@@ -50,7 +49,7 @@ export function buildMarketBetStatistics(events){
 }
 export function loadMarketBetStatistics(filePath){return buildMarketBetStatistics(readEvents(filePath));}
 export function updateMarketBetHistory(filePath,results,history,now=new Date().toISOString()){
-  const events=readEvents(filePath),predicted=new Set(events.filter(row=>row.type==="MARKET_BET_PREDICTION").map(row=>row.snapshotKey)),graded=new Set(events.filter(row=>row.type==="MARKET_BET_RESULT").map(row=>row.snapshotKey)),additions=[];
+  const events=readEvents(filePath),predicted=new Set(events.filter(row=>row.type==="MARKET_BET_PREDICTION").map(row=>row.snapshotKey)),graded=new Set(events.filter(row=>row.type==="MARKET_BET_RESULT").map(row=>row.snapshotKey)),holds=new Set(events.filter(row=>row.type==="MARKET_BET_GRADING_HOLD").map(row=>row.holdId)),additions=[];
   for(const row of results||[]){
     const best=row.best||{},snapshotKey=marketKey(row),selection=best.label||best.selection;
     if(!["VALUE","NEAR"].includes(row.category)||predicted.has(snapshotKey)||new Date(row.utcDate)<=new Date(now)||!selection||!finite(best.odds)||!finite(best.probability)||!finite(best.marketFair))continue;
@@ -60,9 +59,18 @@ export function updateMarketBetHistory(filePath,results,history,now=new Date().t
   }
   for(const prediction of [...events,...additions].filter(row=>row.type==="MARKET_BET_PREDICTION"&&row.schemaVersion===2)){
     if(graded.has(prediction.snapshotKey)||new Date(prediction.kickoff)>=new Date(now))continue;
-    const match=historyMatch(prediction,history);if(!match)continue;
+    const resolution=resolveHistoryMatch(prediction,history,{allowRelaxed:true}),match=resolution.row;
+    if(!match){
+      // Ambiguous or conflicting history is never graded automatically; keep an
+      // idempotent audit record of WHY the bet is still pending.
+      if(resolution.reason==="AMBIGUOUS_CANDIDATES"||resolution.reason==="CONFLICTING_SCORES"){
+        const holdId=[prediction.snapshotKey,resolution.reason,...resolution.candidates.map(c=>`${c.recordKey}@${c.playedAt}:${c.score?.home}-${c.score?.away}`)].join("|");
+        if(!holds.has(holdId)){holds.add(holdId);additions.push({schemaVersion:2,type:"MARKET_BET_GRADING_HOLD",recordType:"HOLD",snapshotKey:prediction.snapshotKey,fixtureId:prediction.fixtureId,holdId,reason:resolution.reason,candidates:resolution.candidates,at:now});}
+      }
+      continue;
+    }
     const settlement=settle(prediction,match);if(!settlement)continue;
-    additions.push({schemaVersion:2,type:"MARKET_BET_RESULT",recordType:"RESULT",snapshotKey:prediction.snapshotKey,fixtureId:prediction.fixtureId,gradedAt:now,settlement,unitStake:settlement==="VOID"?0:1,unitProfit:profit(settlement,prediction.odds),score:match.score?.fullTime||null,resultSource:match.provenance?.source||match.provenance?.sources?.[0]||"LOCAL_HISTORY"});
+    additions.push({schemaVersion:2,type:"MARKET_BET_RESULT",recordType:"RESULT",snapshotKey:prediction.snapshotKey,fixtureId:prediction.fixtureId,gradedAt:now,settlement,unitStake:settlement==="VOID"?0:1,unitProfit:profit(settlement,prediction.odds),score:match.score?.fullTime||null,resultSource:match.provenance?.source||match.provenance?.sources?.[0]||"LOCAL_HISTORY",matchType:resolution.matchType,matchedRecord:resolution.matched});
     graded.add(prediction.snapshotKey);
   }
   appendEvents(filePath,additions);return buildMarketBetStatistics([...events,...additions]);
