@@ -1,0 +1,183 @@
+{
+ "n": 207,
+ "edge>=15": {
+  "n": 60,
+  "meanEdge": 25.0,
+  "meanMarket": 0.319,
+  "meanProduction": 0.569,
+  "meanTeamStrength": 0.629,
+  "meanForm": 0.506,
+  "edge_from_TeamStrength_pp": 15.9,
+  "edge_from_Form_pp": 9.1,
+  "TS_above_Form_share": 0.77,
+  "lambda_at_clamp_share": 0.07,
+  "prev_season_baseline_share": 0.2,
+  "meanDQ": 58.6,
+  "meanStability": 45.7,
+  "meanAgreement": 47.1,
+  "selection": {
+   "П1": 36,
+   "П2": 24
+  },
+  "hit": 0.233,
+  "excess_vs_fair": -0.357,
+  "excessCI": [
+   -0.642,
+   -0.048
+  ]
+ },
+ "edge4-15": {
+  "n": 107,
+  "meanEdge": 9.0,
+  "meanMarket": 0.353,
+  "meanProduction": 0.443,
+  "meanTeamStrength": 0.476,
+  "meanForm": 0.407,
+  "edge_from_TeamStrength_pp": 6.5,
+  "edge_from_Form_pp": 2.5,
+  "TS_above_Form_share": 0.61,
+  "lambda_at_clamp_share": 0.09,
+  "prev_season_baseline_share": 0.38,
+  "meanDQ": 62.8,
+  "meanStability": 50.9,
+  "meanAgreement": 52.6,
+  "selection": {
+   "П1": 63,
+   "П2": 28,
+   "X": 16
+  },
+  "hit": 0.308,
+  "excess_vs_fair": -0.084,
+  "excessCI": [
+   -0.383,
+   0.266
+  ]
+ },
+ "edge<4": {
+  "n": 40,
+  "meanEdge": 2.5,
+  "meanMarket": 0.324,
+  "meanProduction": 0.349,
+  "meanTeamStrength": 0.349,
+  "meanForm": 0.349,
+  "edge_from_TeamStrength_pp": 1.3,
+  "edge_from_Form_pp": 1.2,
+  "TS_above_Form_share": 0.4,
+  "lambda_at_clamp_share": 0.03,
+  "prev_season_baseline_share": 0.33,
+  "meanDQ": 62.9,
+  "meanStability": 64.8,
+  "meanAgreement": 66.7,
+  "selection": {
+   "X": 19,
+   "П2": 8,
+   "П1": 13
+  },
+  "hit": 0.275,
+  "excess_vs_fair": -0.249,
+  "excessCI": [
+   -0.637,
+   0.219
+  ]
+ },
+ "edge>=15_red_flags": {
+  "API-Football: lineups N/A": 59,
+  "Data Quality ниже порога": 55,
+  "Низкий Consensus": 41
+ },
+ "n_with_all_models": 207,
+ "models_seeing_edge>=4pp(of 3: Production,Challenger,V2H)": {
+  "0": {
+   "n": 22,
+   "meanProductionEdge": 2.4,
+   "meanChallengerEdge": -5.5,
+   "meanV2HEdge": -5.0,
+   "hit": 0.364,
+   "market": 0.412,
+   "excess_vs_fair": -0.264,
+   "excessCI": [
+    -0.641,
+    0.168
+   ]
+  },
+  "1": {
+   "n": 56,
+   "meanProductionEdge": 8.6,
+   "meanChallengerEdge": -3.2,
+   "meanV2HEdge": -1.9,
+   "hit": 0.393,
+   "market": 0.44,
+   "excess_vs_fair": -0.18,
+   "excessCI": [
+    -0.469,
+    0.15
+   ]
+  },
+  "2": {
+   "n": 45,
+   "meanProductionEdge": 12.4,
+   "meanChallengerEdge": 5.5,
+   "meanV2HEdge": 4.0,
+   "hit": 0.133,
+   "market": 0.337,
+   "excess_vs_fair": -0.565,
+   "excessCI": [
+    -0.874,
+    -0.18
+   ]
+  },
+  "3": {
+   "n": 84,
+   "meanProductionEdge": 17.5,
+   "meanChallengerEdge": 14.6,
+   "meanV2HEdge": 13.3,
+   "hit": 0.262,
+   "market": 0.251,
+   "excess_vs_fair": 0.011,
+   "excessCI": [
+    -0.384,
+    0.413
+   ]
+  }
+ },
+ "edge>=15_other_models": {
+  "n": 60,
+  "meanProductionEdge": 25.0,
+  "meanChallengerEdge": 12.0,
+  "meanV2HEdge": 12.0,
+  "share_challenger_edge_below_4": 0.27,
+  "share_v2h_edge_below_4": 0.22
+ },
+ "selected_outcome_calibration": {
+  "market": {
+   "meanPred": 0.338,
+   "freq": 0.28,
+   "logloss(selected outcome)": 0.5411
+  },
+  "team_strength": {
+   "meanPred": 0.496,
+   "freq": 0.28,
+   "logloss(selected outcome)": 0.7057
+  },
+  "form": {
+   "meanPred": 0.424,
+   "freq": 0.28,
+   "logloss(selected outcome)": 0.6016
+  },
+  "production": {
+   "meanPred": 0.462,
+   "freq": 0.28,
+   "logloss(selected outcome)": 0.6292
+  }
+ },
+ "corr(edge, TS component)": 0.821,
+ "corr(edge, Form component)": 0.661,
+ "big_edge_gate_pass": {
+  "stab>=70": 0.23,
+  "dq>=70": 0.08,
+  "category": {
+   "NO_BET": 51,
+   "NEAR": 9
+  }
+ }
+}

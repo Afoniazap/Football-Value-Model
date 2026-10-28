@@ -1,0 +1,253 @@
+{
+ "fixtures": 533,
+ "median_bookmakers": 9,
+ "all_outcomes_best_price": {
+  "n": 1599,
+  "meanExpectedEV": 0.0018,
+  "realisedROI": -0.0267,
+  "roiCI": [
+   -0.105,
+   0.054
+  ],
+  "excess_realised_minus_expected": -0.0285,
+  "excessCI": [
+   -0.108,
+   0.051
+  ],
+  "hit": 0.333,
+  "consensusP": 0.334,
+  "avgOdds": 3.97
+ },
+ "expected_EV>=0.0": {
+  "n": 590,
+  "meanExpectedEV": 0.0357,
+  "realisedROI": -0.0073,
+  "roiCI": [
+   -0.17,
+   0.158
+  ],
+  "excess_realised_minus_expected": -0.043,
+  "excessCI": [
+   -0.209,
+   0.122
+  ],
+  "hit": 0.227,
+  "consensusP": 0.225,
+  "avgOdds": 5.9
+ },
+ "expected_EV>=0.02": {
+  "n": 280,
+  "meanExpectedEV": 0.0657,
+  "realisedROI": -0.0939,
+  "roiCI": [
+   -0.33,
+   0.174
+  ],
+  "excess_realised_minus_expected": -0.1596,
+  "excessCI": [
+   -0.405,
+   0.093
+  ],
+  "hit": 0.175,
+  "consensusP": 0.185,
+  "avgOdds": 7.72
+ },
+ "expected_EV>=0.04": {
+  "n": 154,
+  "meanExpectedEV": 0.0962,
+  "realisedROI": 0.01,
+  "roiCI": [
+   -0.37,
+   0.434
+  ],
+  "excess_realised_minus_expected": -0.0862,
+  "excessCI": [
+   -0.485,
+   0.343
+  ],
+  "hit": 0.156,
+  "consensusP": 0.155,
+  "avgOdds": 9.88
+ },
+ "expected_EV>=0.06": {
+  "n": 91,
+  "meanExpectedEV": 0.1287,
+  "realisedROI": -0.0745,
+  "roiCI": [
+   -0.532,
+   0.467
+  ],
+  "excess_realised_minus_expected": -0.2032,
+  "excessCI": [
+   -0.678,
+   0.348
+  ],
+  "hit": 0.143,
+  "consensusP": 0.133,
+  "avgOdds": 12.29
+ },
+ "expected_EV>=0.1": {
+  "n": 45,
+  "meanExpectedEV": 0.182,
+  "realisedROI": -0.4091,
+  "roiCI": [
+   -0.902,
+   0.21
+  ],
+  "excess_realised_minus_expected": -0.5911,
+  "excessCI": [
+   -1.082,
+   0.04
+  ],
+  "hit": 0.089,
+  "consensusP": 0.098,
+  "avgOdds": 16.19
+ },
+ "pinnacle_present_fixtures_outcomes": 1296,
+ "vs_Pinnacle_EV>=0.0": {
+  "n": 453,
+  "meanExpectedEV": 0.0318,
+  "realisedROI": -0.0871,
+  "roiCI": [
+   -0.247,
+   0.088
+  ],
+  "excess_realised_minus_expected": -0.1189,
+  "excessCI": [
+   -0.284,
+   0.051
+  ],
+  "hit": 0.256,
+  "consensusP": 0.275,
+  "avgOdds": 5.39
+ },
+ "vs_Pinnacle_EV>=0.02": {
+  "n": 200,
+  "meanExpectedEV": 0.0622,
+  "realisedROI": -0.0907,
+  "roiCI": [
+   -0.367,
+   0.225
+  ],
+  "excess_realised_minus_expected": -0.1529,
+  "excessCI": [
+   -0.436,
+   0.157
+  ],
+  "hit": 0.19,
+  "consensusP": 0.209,
+  "avgOdds": 7.47
+ },
+ "vs_Pinnacle_EV>=0.04": {
+  "n": 106,
+  "meanExpectedEV": 0.0916,
+  "realisedROI": -0.0023,
+  "roiCI": [
+   -0.433,
+   0.513
+  ],
+  "excess_realised_minus_expected": -0.0939,
+  "excessCI": [
+   -0.552,
+   0.416
+  ],
+  "hit": 0.17,
+  "consensusP": 0.176,
+  "avgOdds": 9.61
+ },
+ "EV>=0.04_first_half": {
+  "n": 90,
+  "meanExpectedEV": 0.1113,
+  "realisedROI": -0.0759,
+  "roiCI": [
+   -0.548,
+   0.457
+  ],
+  "excess_realised_minus_expected": -0.1872,
+  "excessCI": [
+   -0.653,
+   0.336
+  ],
+  "hit": 0.144,
+  "consensusP": 0.134,
+  "avgOdds": 11.54
+ },
+ "EV>=0.04_second_half": {
+  "n": 64,
+  "meanExpectedEV": 0.075,
+  "realisedROI": 0.1308,
+  "roiCI": [
+   -0.476,
+   0.85
+  ],
+  "excess_realised_minus_expected": 0.0557,
+  "excessCI": [
+   -0.556,
+   0.765
+  ],
+  "hit": 0.172,
+  "consensusP": 0.184,
+  "avgOdds": 7.55
+ },
+ "EV>=0.04_home": {
+  "n": 30,
+  "meanExpectedEV": 0.0899,
+  "realisedROI": -0.2,
+  "roiCI": [
+   -0.885,
+   0.668
+  ],
+  "excess_realised_minus_expected": -0.2899,
+  "excessCI": [
+   -0.976,
+   0.614
+  ],
+  "hit": 0.133,
+  "consensusP": 0.192,
+  "avgOdds": 8.2
+ },
+ "EV>=0.04_draw": {
+  "n": 35,
+  "meanExpectedEV": 0.0912,
+  "realisedROI": 0.0646,
+  "roiCI": [
+   -0.757,
+   1.024
+  ],
+  "excess_realised_minus_expected": -0.0267,
+  "excessCI": [
+   -0.86,
+   0.918
+  ],
+  "hit": 0.143,
+  "consensusP": 0.138,
+  "avgOdds": 8.88
+ },
+ "EV>=0.04_away": {
+  "n": 89,
+  "meanExpectedEV": 0.1003,
+  "realisedROI": 0.0593,
+  "roiCI": [
+   -0.445,
+   0.628
+  ],
+  "excess_realised_minus_expected": -0.041,
+  "excessCI": [
+   -0.557,
+   0.567
+  ],
+  "hit": 0.169,
+  "consensusP": 0.149,
+  "avgOdds": 10.85
+ },
+ "books_offering_EV>=0.04": {
+  "1xBet": 32,
+  "Betfair": 31,
+  "Bet365": 20,
+  "Betano": 14,
+  "Pinnacle": 13,
+  "Dafabet": 9,
+  "Matchbook": 8,
+  "BetVictor": 7
+ }
+}

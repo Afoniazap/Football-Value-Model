@@ -1,0 +1,74 @@
+{
+ "A": {
+  "train_n": 1406,
+  "test_n": 1673,
+  "form_params(home,draw,drawSlope)": [
+   0.5,
+   0.1,
+   0.1
+  ],
+  "form_original_LL": 1.0531,
+  "form_refit_LL": 1.0493,
+  "form_original_meanProb": {
+   "home": 0.395,
+   "draw": 0.277,
+   "away": 0.328
+  },
+  "form_refit_meanProb": {
+   "home": 0.441,
+   "draw": 0.262,
+   "away": 0.297
+  },
+  "actual": {
+   "home": 0.43,
+   "draw": 0.265,
+   "away": 0.305
+  },
+  "TS_original+form_original(orig weights)": 1.0391,
+  "TS_original+form_refit(orig weights)": 1.0448,
+  "TS_fixed(split,shrink8)+form_original(orig weights)": 1.0265,
+  "TS_fixed(split,shrink8)+form_refit(orig weights)": 1.0264,
+  "TS_weight_chosen_on_train(vs form weight 66)": 66,
+  "TS_fixed+form_refit+train_weight": 1.0272,
+  "form_alone_vs_TSfixed_alone": {
+   "form_refit": 1.0493,
+   "TS_fixed": 1.0319
+  }
+ },
+ "B": {
+  "train_n": 3107,
+  "test_n": 486,
+  "form_params(home,draw,drawSlope)": [
+   0.5,
+   0.1,
+   0.1
+  ],
+  "form_original_LL": 1.0524,
+  "form_refit_LL": 1.0429,
+  "form_original_meanProb": {
+   "home": 0.389,
+   "draw": 0.281,
+   "away": 0.331
+  },
+  "form_refit_meanProb": {
+   "home": 0.436,
+   "draw": 0.265,
+   "away": 0.299
+  },
+  "actual": {
+   "home": 0.455,
+   "draw": 0.247,
+   "away": 0.298
+  },
+  "TS_original+form_original(orig weights)": 1.0547,
+  "TS_original+form_refit(orig weights)": 1.0558,
+  "TS_fixed(split,shrink8)+form_original(orig weights)": 1.0304,
+  "TS_fixed(split,shrink8)+form_refit(orig weights)": 1.0281,
+  "TS_weight_chosen_on_train(vs form weight 66)": 100,
+  "TS_fixed+form_refit+train_weight": 1.0292,
+  "form_alone_vs_TSfixed_alone": {
+   "form_refit": 1.0429,
+   "TS_fixed": 1.0457
+  }
+ }
+}

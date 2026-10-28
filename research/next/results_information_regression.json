@@ -1,0 +1,235 @@
+{
+ "n_matches": 427,
+ "production": {
+  "market+model": {
+   "intercept": {
+    "est": -0.017,
+    "ci95": [
+     -0.163,
+     0.138
+    ]
+   },
+   "b_market": {
+    "est": 1.094,
+    "ci95": [
+     0.844,
+     1.388
+    ]
+   },
+   "b_model": {
+    "est": -0.108,
+    "ci95": [
+     -0.329,
+     0.101
+    ]
+   }
+  },
+  "model_alone(calibration slope)": {
+   "intercept": {
+    "est": -0.353,
+    "ci95": [
+     -0.459,
+     -0.234
+    ]
+   },
+   "b_model": {
+    "est": 0.459,
+    "ci95": [
+     0.309,
+     0.634
+    ]
+   }
+  },
+  "by_period": [
+   {
+    "n": 142,
+    "b_market": 0.977,
+    "b_model": 0.031
+   },
+   {
+    "n": 142,
+    "b_market": 1.139,
+    "b_model": -0.013
+   },
+   {
+    "n": 143,
+    "b_market": 1.295,
+    "b_model": -0.474
+   }
+  ]
+ },
+ "challenger": {
+  "market+model": {
+   "intercept": {
+    "est": -0.012,
+    "ci95": [
+     -0.191,
+     0.209
+    ]
+   },
+   "b_market": {
+    "est": 1.036,
+    "ci95": [
+     0.769,
+     1.369
+    ]
+   },
+   "b_model": {
+    "est": -0.052,
+    "ci95": [
+     -0.465,
+     0.309
+    ]
+   }
+  },
+  "model_alone(calibration slope)": {
+   "intercept": {
+    "est": -0.071,
+    "ci95": [
+     -0.247,
+     0.082
+    ]
+   },
+   "b_model": {
+    "est": 0.893,
+    "ci95": [
+     0.633,
+     1.124
+    ]
+   }
+  },
+  "by_period": [
+   {
+    "n": 142,
+    "b_market": 1.066,
+    "b_model": -0.185
+   },
+   {
+    "n": 142,
+    "b_market": 1.058,
+    "b_model": 0.127
+   },
+   {
+    "n": 143,
+    "b_market": 0.977,
+    "b_model": -0.128
+   }
+  ]
+ },
+ "v2h": {
+  "market+model": {
+   "intercept": {
+    "est": 0.03,
+    "ci95": [
+     -0.199,
+     0.223
+    ]
+   },
+   "b_market": {
+    "est": 0.981,
+    "ci95": [
+     0.711,
+     1.256
+    ]
+   },
+   "b_model": {
+    "est": 0.063,
+    "ci95": [
+     -0.405,
+     0.441
+    ]
+   }
+  },
+  "model_alone(calibration slope)": {
+   "intercept": {
+    "est": 0.071,
+    "ci95": [
+     -0.131,
+     0.261
+    ]
+   },
+   "b_model": {
+    "est": 1.108,
+    "ci95": [
+     0.804,
+     1.399
+    ]
+   }
+  },
+  "by_period": [
+   {
+    "n": 142,
+    "b_market": 0.924,
+    "b_model": 0.19
+   },
+   {
+    "n": 142,
+    "b_market": 0.884,
+    "b_model": 0.443
+   },
+   {
+    "n": 143,
+    "b_market": 1.105,
+    "b_model": -0.399
+   }
+  ]
+ },
+ "ensemble": {
+  "market+model": {
+   "intercept": {
+    "est": -0.032,
+    "ci95": [
+     -0.245,
+     0.16
+    ]
+   },
+   "b_market": {
+    "est": 1.081,
+    "ci95": [
+     0.751,
+     1.453
+    ]
+   },
+   "b_model": {
+    "est": -0.125,
+    "ci95": [
+     -0.539,
+     0.252
+    ]
+   }
+  },
+  "model_alone(calibration slope)": {
+   "intercept": {
+    "est": -0.079,
+    "ci95": [
+     -0.222,
+     0.102
+    ]
+   },
+   "b_model": {
+    "est": 0.881,
+    "ci95": [
+     0.666,
+     1.156
+    ]
+   }
+  },
+  "by_period": [
+   {
+    "n": 142,
+    "b_market": 1.001,
+    "b_model": -0.006
+   },
+   {
+    "n": 142,
+    "b_market": 1.035,
+    "b_model": 0.148
+   },
+   {
+    "n": 143,
+    "b_market": 1.226,
+    "b_model": -0.529
+   }
+  ]
+ }
+}

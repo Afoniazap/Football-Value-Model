@@ -1,0 +1,965 @@
+{
+ "n": 3593,
+ "segments": {
+  "burn:2025H2": 1434,
+  "A:2026H1": 1673,
+  "B:2026-27": 486
+ },
+ "all": {
+  "actual_rates": {
+   "home": 0.443,
+   "draw": 0.261,
+   "away": 0.297
+  },
+  "actual_goals": {
+   "home": 1.541,
+   "away": 1.22
+  },
+  "team_strength_lambda": {
+   "home": 1.758,
+   "away": 0.987
+  },
+  "ts": {
+   "n": 3593,
+   "meanProb": {
+    "home": 0.535,
+    "draw": 0.224,
+    "away": 0.241
+   },
+   "actual": {
+    "home": 0.443,
+    "draw": 0.261,
+    "away": 0.297
+   },
+   "logloss": 1.1245,
+   "brier": 0.2223,
+   "meanTop": 0.615,
+   "acc": 0.475
+  },
+  "form": {
+   "n": 3593,
+   "meanProb": {
+    "home": 0.391,
+    "draw": 0.278,
+    "away": 0.331
+   },
+   "actual": {
+    "home": 0.443,
+    "draw": 0.261,
+    "away": 0.297
+   },
+   "logloss": 1.0517,
+   "brier": 0.2107,
+   "meanTop": 0.505,
+   "acc": 0.47
+  },
+  "cons": {
+   "n": 3593,
+   "meanProb": {
+    "home": 0.468,
+    "draw": 0.249,
+    "away": 0.283
+   },
+   "actual": {
+    "home": 0.443,
+    "draw": 0.261,
+    "away": 0.297
+   },
+   "logloss": 1.0411,
+   "brier": 0.2085,
+   "meanTop": 0.543,
+   "acc": 0.483
+  },
+  "ch": {
+   "n": 3593,
+   "meanProb": {
+    "home": 0.443,
+    "draw": 0.254,
+    "away": 0.304
+   },
+   "actual": {
+    "home": 0.443,
+    "draw": 0.261,
+    "away": 0.297
+   },
+   "logloss": 1.029,
+   "brier": 0.2059,
+   "meanTop": 0.487,
+   "acc": 0.482
+  },
+  "v2h": {
+   "n": 3593,
+   "meanProb": {
+    "home": 0.404,
+    "draw": 0.275,
+    "away": 0.321
+   },
+   "actual": {
+    "home": 0.443,
+    "draw": 0.261,
+    "away": 0.297
+   },
+   "logloss": 1.0267,
+   "brier": 0.2055,
+   "meanTop": 0.476,
+   "acc": 0.483
+  },
+  "naive": {
+   "n": 3593,
+   "meanProb": {
+    "home": 0.437,
+    "draw": 0.27,
+    "away": 0.293
+   },
+   "actual": {
+    "home": 0.443,
+    "draw": 0.261,
+    "away": 0.297
+   },
+   "logloss": 1.0814,
+   "brier": 0.218,
+   "meanTop": 0.444,
+   "acc": 0.435
+  }
+ },
+ "burn:2025H2": {
+  "actual_rates": {
+   "home": 0.453,
+   "draw": 0.261,
+   "away": 0.287
+  },
+  "actual_goals": {
+   "home": 1.509,
+   "away": 1.174
+  },
+  "team_strength_lambda": {
+   "home": 1.716,
+   "away": 0.938
+  },
+  "ts": {
+   "n": 1434,
+   "meanProb": {
+    "home": 0.533,
+    "draw": 0.229,
+    "away": 0.238
+   },
+   "actual": {
+    "home": 0.453,
+    "draw": 0.261,
+    "away": 0.287
+   },
+   "logloss": 1.1367,
+   "brier": 0.2238,
+   "meanTop": 0.625,
+   "acc": 0.478
+  },
+  "form": {
+   "n": 1434,
+   "meanProb": {
+    "home": 0.387,
+    "draw": 0.278,
+    "away": 0.335
+   },
+   "actual": {
+    "home": 0.453,
+    "draw": 0.261,
+    "away": 0.287
+   },
+   "logloss": 1.0499,
+   "brier": 0.2103,
+   "meanTop": 0.505,
+   "acc": 0.467
+  },
+  "cons": {
+   "n": 1434,
+   "meanProb": {
+    "home": 0.463,
+    "draw": 0.253,
+    "away": 0.285
+   },
+   "actual": {
+    "home": 0.453,
+    "draw": 0.261,
+    "away": 0.287
+   },
+   "logloss": 1.0387,
+   "brier": 0.2082,
+   "meanTop": 0.545,
+   "acc": 0.49
+  },
+  "ch": {
+   "n": 1434,
+   "meanProb": {
+    "home": 0.443,
+    "draw": 0.259,
+    "away": 0.298
+   },
+   "actual": {
+    "home": 0.453,
+    "draw": 0.261,
+    "away": 0.287
+   },
+   "logloss": 1.0309,
+   "brier": 0.2064,
+   "meanTop": 0.479,
+   "acc": 0.483
+  },
+  "v2h": {
+   "n": 1434,
+   "meanProb": {
+    "home": 0.397,
+    "draw": 0.282,
+    "away": 0.321
+   },
+   "actual": {
+    "home": 0.453,
+    "draw": 0.261,
+    "away": 0.287
+   },
+   "logloss": 1.0266,
+   "brier": 0.2057,
+   "meanTop": 0.461,
+   "acc": 0.485
+  },
+  "naive": {
+   "n": 1434,
+   "meanProb": {
+    "home": 0.433,
+    "draw": 0.281,
+    "away": 0.286
+   },
+   "actual": {
+    "home": 0.453,
+    "draw": 0.261,
+    "away": 0.287
+   },
+   "logloss": 1.0903,
+   "brier": 0.2197,
+   "meanTop": 0.45,
+   "acc": 0.434
+  }
+ },
+ "A:2026H1": {
+  "actual_rates": {
+   "home": 0.43,
+   "draw": 0.265,
+   "away": 0.305
+  },
+  "actual_goals": {
+   "home": 1.537,
+   "away": 1.225
+  },
+  "team_strength_lambda": {
+   "home": 1.802,
+   "away": 0.99
+  },
+  "ts": {
+   "n": 1673,
+   "meanProb": {
+    "home": 0.546,
+    "draw": 0.219,
+    "away": 0.235
+   },
+   "actual": {
+    "home": 0.43,
+    "draw": 0.265,
+    "away": 0.305
+   },
+   "logloss": 1.0942,
+   "brier": 0.2184,
+   "meanTop": 0.601,
+   "acc": 0.476
+  },
+  "form": {
+   "n": 1673,
+   "meanProb": {
+    "home": 0.395,
+    "draw": 0.277,
+    "away": 0.328
+   },
+   "actual": {
+    "home": 0.43,
+    "draw": 0.265,
+    "away": 0.305
+   },
+   "logloss": 1.0531,
+   "brier": 0.2111,
+   "meanTop": 0.508,
+   "acc": 0.472
+  },
+  "cons": {
+   "n": 1673,
+   "meanProb": {
+    "home": 0.479,
+    "draw": 0.245,
+    "away": 0.276
+   },
+   "actual": {
+    "home": 0.43,
+    "draw": 0.265,
+    "away": 0.305
+   },
+   "logloss": 1.0391,
+   "brier": 0.2081,
+   "meanTop": 0.541,
+   "acc": 0.482
+  },
+  "ch": {
+   "n": 1673,
+   "meanProb": {
+    "home": 0.444,
+    "draw": 0.25,
+    "away": 0.306
+   },
+   "actual": {
+    "home": 0.43,
+    "draw": 0.265,
+    "away": 0.305
+   },
+   "logloss": 1.0272,
+   "brier": 0.2055,
+   "meanTop": 0.496,
+   "acc": 0.484
+  },
+  "v2h": {
+   "n": 1673,
+   "meanProb": {
+    "home": 0.409,
+    "draw": 0.269,
+    "away": 0.322
+   },
+   "actual": {
+    "home": 0.43,
+    "draw": 0.265,
+    "away": 0.305
+   },
+   "logloss": 1.0252,
+   "brier": 0.2051,
+   "meanTop": 0.494,
+   "acc": 0.481
+  },
+  "naive": {
+   "n": 1673,
+   "meanProb": {
+    "home": 0.438,
+    "draw": 0.262,
+    "away": 0.299
+   },
+   "actual": {
+    "home": 0.43,
+    "draw": 0.265,
+    "away": 0.305
+   },
+   "logloss": 1.0792,
+   "brier": 0.2177,
+   "meanTop": 0.438,
+   "acc": 0.43
+  }
+ },
+ "B:2026-27": {
+  "actual_rates": {
+   "home": 0.455,
+   "draw": 0.247,
+   "away": 0.298
+  },
+  "actual_goals": {
+   "home": 1.646,
+   "away": 1.337
+  },
+  "team_strength_lambda": {
+   "home": 1.735,
+   "away": 1.124
+  },
+  "ts": {
+   "n": 486,
+   "meanProb": {
+    "home": 0.503,
+    "draw": 0.222,
+    "away": 0.275
+   },
+   "actual": {
+    "home": 0.455,
+    "draw": 0.247,
+    "away": 0.298
+   },
+   "logloss": 1.1932,
+   "brier": 0.2311,
+   "meanTop": 0.636,
+   "acc": 0.463
+  },
+  "form": {
+   "n": 486,
+   "meanProb": {
+    "home": 0.389,
+    "draw": 0.281,
+    "away": 0.331
+   },
+   "actual": {
+    "home": 0.455,
+    "draw": 0.247,
+    "away": 0.298
+   },
+   "logloss": 1.0524,
+   "brier": 0.2102,
+   "meanTop": 0.496,
+   "acc": 0.471
+  },
+  "cons": {
+   "n": 486,
+   "meanProb": {
+    "home": 0.448,
+    "draw": 0.251,
+    "away": 0.301
+   },
+   "actual": {
+    "home": 0.455,
+    "draw": 0.247,
+    "away": 0.298
+   },
+   "logloss": 1.0547,
+   "brier": 0.2107,
+   "meanTop": 0.543,
+   "acc": 0.465
+  },
+  "ch": {
+   "n": 486,
+   "meanProb": {
+    "home": 0.437,
+    "draw": 0.249,
+    "away": 0.314
+   },
+   "actual": {
+    "home": 0.455,
+    "draw": 0.247,
+    "away": 0.298
+   },
+   "logloss": 1.0297,
+   "brier": 0.206,
+   "meanTop": 0.475,
+   "acc": 0.477
+  },
+  "v2h": {
+   "n": 486,
+   "meanProb": {
+    "home": 0.405,
+    "draw": 0.276,
+    "away": 0.32
+   },
+   "actual": {
+    "home": 0.455,
+    "draw": 0.247,
+    "away": 0.298
+   },
+   "logloss": 1.032,
+   "brier": 0.2067,
+   "meanTop": 0.458,
+   "acc": 0.479
+  },
+  "naive": {
+   "n": 486,
+   "meanProb": {
+    "home": 0.446,
+    "draw": 0.263,
+    "away": 0.292
+   },
+   "actual": {
+    "home": 0.455,
+    "draw": 0.247,
+    "away": 0.298
+   },
+   "logloss": 1.0631,
+   "brier": 0.2141,
+   "meanTop": 0.446,
+   "acc": 0.455
+  }
+ },
+ "by_games_played": {
+  "4-8": {
+   "n": 685,
+   "ts": 1.236,
+   "cons": 1.0788,
+   "ch": 1.0422,
+   "v2h": 1.0487,
+   "naive": 1.0855,
+   "ts_lambda_clamped_share": 0.358,
+   "ts_mean_top": 0.649,
+   "ts_actual_hit_top": 0.441
+  },
+  "8-15": {
+   "n": 772,
+   "ts": 1.1479,
+   "cons": 1.0409,
+   "ch": 1.0336,
+   "v2h": 1.0227,
+   "naive": 1.0962,
+   "ts_lambda_clamped_share": 0.163,
+   "ts_mean_top": 0.627,
+   "ts_actual_hit_top": 0.477
+  },
+  "15-25": {
+   "n": 981,
+   "ts": 1.0994,
+   "cons": 1.0341,
+   "ch": 1.0285,
+   "v2h": 1.0133,
+   "naive": 1.081,
+   "ts_lambda_clamped_share": 0.084,
+   "ts_mean_top": 0.605,
+   "ts_actual_hit_top": 0.477
+  },
+  "25-60": {
+   "n": 1155,
+   "ts": 1.0641,
+   "cons": 1.0247,
+   "ch": 1.0185,
+   "v2h": 1.0277,
+   "naive": 1.0695,
+   "ts_lambda_clamped_share": 0.042,
+   "ts_mean_top": 0.597,
+   "ts_actual_hit_top": 0.494
+  }
+ },
+ "calibration_pooled_outcomes": {
+  "ts": {
+   "0-0.1": {
+    "n": 1427,
+    "pred": 0.058,
+    "freq": 0.184,
+    "draw_share": 0.23
+   },
+   "0.1-0.2": {
+    "n": 2209,
+    "pred": 0.152,
+    "freq": 0.268,
+    "draw_share": 0.48
+   },
+   "0.2-0.3": {
+    "n": 2562,
+    "pred": 0.246,
+    "freq": 0.286,
+    "draw_share": 0.64
+   },
+   "0.3-0.4": {
+    "n": 1256,
+    "pred": 0.345,
+    "freq": 0.319,
+    "draw_share": 0.33
+   },
+   "0.4-0.5": {
+    "n": 810,
+    "pred": 0.449,
+    "freq": 0.393,
+    "draw_share": 0.12
+   },
+   "0.5-0.6": {
+    "n": 718,
+    "pred": 0.551,
+    "freq": 0.43,
+    "draw_share": 0.04
+   },
+   "0.6-0.75": {
+    "n": 940,
+    "pred": 0.671,
+    "freq": 0.482,
+    "draw_share": 0.02
+   },
+   "0.75-1.01": {
+    "n": 857,
+    "pred": 0.842,
+    "freq": 0.611,
+    "draw_share": 0.0
+   }
+  },
+  "form": {
+   "0-0.1": {
+    "n": 307,
+    "pred": 0.073,
+    "freq": 0.111,
+    "draw_share": 0.0
+   },
+   "0.1-0.2": {
+    "n": 1410,
+    "pred": 0.158,
+    "freq": 0.222,
+    "draw_share": 0.2
+   },
+   "0.2-0.3": {
+    "n": 3358,
+    "pred": 0.258,
+    "freq": 0.279,
+    "draw_share": 0.53
+   },
+   "0.3-0.4": {
+    "n": 2937,
+    "pred": 0.331,
+    "freq": 0.32,
+    "draw_share": 0.52
+   },
+   "0.4-0.5": {
+    "n": 1156,
+    "pred": 0.448,
+    "freq": 0.433,
+    "draw_share": 0.0
+   },
+   "0.5-0.6": {
+    "n": 832,
+    "pred": 0.549,
+    "freq": 0.486,
+    "draw_share": 0.0
+   },
+   "0.6-0.75": {
+    "n": 634,
+    "pred": 0.664,
+    "freq": 0.573,
+    "draw_share": 0.0
+   },
+   "0.75-1.01": {
+    "n": 145,
+    "pred": 0.794,
+    "freq": 0.717,
+    "draw_share": 0.0
+   }
+  },
+  "cons": {
+   "0-0.1": {
+    "n": 492,
+    "pred": 0.071,
+    "freq": 0.11,
+    "draw_share": 0.05
+   },
+   "0.1-0.2": {
+    "n": 1804,
+    "pred": 0.158,
+    "freq": 0.217,
+    "draw_share": 0.37
+   },
+   "0.2-0.3": {
+    "n": 3712,
+    "pred": 0.252,
+    "freq": 0.282,
+    "draw_share": 0.64
+   },
+   "0.3-0.4": {
+    "n": 1644,
+    "pred": 0.343,
+    "freq": 0.33,
+    "draw_share": 0.29
+   },
+   "0.4-0.5": {
+    "n": 1121,
+    "pred": 0.448,
+    "freq": 0.42,
+    "draw_share": 0.04
+   },
+   "0.5-0.6": {
+    "n": 873,
+    "pred": 0.546,
+    "freq": 0.449,
+    "draw_share": 0.0
+   },
+   "0.6-0.75": {
+    "n": 844,
+    "pred": 0.669,
+    "freq": 0.583,
+    "draw_share": 0.0
+   },
+   "0.75-1.01": {
+    "n": 289,
+    "pred": 0.803,
+    "freq": 0.706,
+    "draw_share": 0.0
+   }
+  },
+  "ch": {
+   "0-0.1": {
+    "n": 67,
+    "pred": 0.081,
+    "freq": 0.045,
+    "draw_share": 0.0
+   },
+   "0.1-0.2": {
+    "n": 898,
+    "pred": 0.165,
+    "freq": 0.147,
+    "draw_share": 0.24
+   },
+   "0.2-0.3": {
+    "n": 4792,
+    "pred": 0.255,
+    "freq": 0.266,
+    "draw_share": 0.66
+   },
+   "0.3-0.4": {
+    "n": 2093,
+    "pred": 0.345,
+    "freq": 0.331,
+    "draw_share": 0.11
+   },
+   "0.4-0.5": {
+    "n": 1585,
+    "pred": 0.448,
+    "freq": 0.443,
+    "draw_share": 0.0
+   },
+   "0.5-0.6": {
+    "n": 878,
+    "pred": 0.543,
+    "freq": 0.543,
+    "draw_share": 0.0
+   },
+   "0.6-0.75": {
+    "n": 428,
+    "pred": 0.654,
+    "freq": 0.659,
+    "draw_share": 0.0
+   },
+   "0.75-1.01": {
+    "n": 38,
+    "pred": 0.793,
+    "freq": 0.789,
+    "draw_share": 0.0
+   }
+  },
+  "v2h": {
+   "0-0.1": {
+    "n": 112,
+    "pred": 0.078,
+    "freq": 0.054,
+    "draw_share": 0.01
+   },
+   "0.1-0.2": {
+    "n": 907,
+    "pred": 0.162,
+    "freq": 0.146,
+    "draw_share": 0.17
+   },
+   "0.2-0.3": {
+    "n": 4313,
+    "pred": 0.264,
+    "freq": 0.264,
+    "draw_share": 0.6
+   },
+   "0.3-0.4": {
+    "n": 2820,
+    "pred": 0.337,
+    "freq": 0.34,
+    "draw_share": 0.3
+   },
+   "0.4-0.5": {
+    "n": 1406,
+    "pred": 0.446,
+    "freq": 0.45,
+    "draw_share": 0.0
+   },
+   "0.5-0.6": {
+    "n": 773,
+    "pred": 0.544,
+    "freq": 0.527,
+    "draw_share": 0.0
+   },
+   "0.6-0.75": {
+    "n": 396,
+    "pred": 0.658,
+    "freq": 0.715,
+    "draw_share": 0.0
+   },
+   "0.75-1.01": {
+    "n": 52,
+    "pred": 0.791,
+    "freq": 0.712,
+    "draw_share": 0.0
+   }
+  }
+ },
+ "draw_quintiles": {
+  "ts": {
+   "q1": {
+    "pred": 0.101,
+    "freq": 0.23
+   },
+   "q2": {
+    "pred": 0.177,
+    "freq": 0.268
+   },
+   "q3": {
+    "pred": 0.222,
+    "freq": 0.247
+   },
+   "q4": {
+    "pred": 0.26,
+    "freq": 0.28
+   },
+   "q5": {
+    "pred": 0.358,
+    "freq": 0.28
+   }
+  },
+  "cons": {
+   "q1": {
+    "pred": 0.166,
+    "freq": 0.216
+   },
+   "q2": {
+    "pred": 0.223,
+    "freq": 0.246
+   },
+   "q3": {
+    "pred": 0.253,
+    "freq": 0.286
+   },
+   "q4": {
+    "pred": 0.276,
+    "freq": 0.274
+   },
+   "q5": {
+    "pred": 0.327,
+    "freq": 0.282
+   }
+  },
+  "ch": {
+   "q1": {
+    "pred": 0.204,
+    "freq": 0.242
+   },
+   "q2": {
+    "pred": 0.24,
+    "freq": 0.264
+   },
+   "q3": {
+    "pred": 0.257,
+    "freq": 0.237
+   },
+   "q4": {
+    "pred": 0.271,
+    "freq": 0.284
+   },
+   "q5": {
+    "pred": 0.296,
+    "freq": 0.277
+   }
+  },
+  "v2h": {
+   "q1": {
+    "pred": 0.22,
+    "freq": 0.216
+   },
+   "q2": {
+    "pred": 0.265,
+    "freq": 0.293
+   },
+   "q3": {
+    "pred": 0.284,
+    "freq": 0.269
+   },
+   "q4": {
+    "pred": 0.296,
+    "freq": 0.259
+   },
+   "q5": {
+    "pred": 0.311,
+    "freq": 0.267
+   }
+  }
+ },
+ "favourite_underdog": {
+  "ts": {
+   "fav_pred": 0.615,
+   "fav_hit": 0.475,
+   "underdog_side_pred": 0.168,
+   "underdog_side_freq": 0.266
+  },
+  "cons": {
+   "fav_pred": 0.543,
+   "fav_hit": 0.483,
+   "underdog_side_pred": 0.21,
+   "underdog_side_freq": 0.257
+  },
+  "ch": {
+   "fav_pred": 0.487,
+   "fav_hit": 0.482,
+   "underdog_side_pred": 0.26,
+   "underdog_side_freq": 0.257
+  },
+  "v2h": {
+   "fav_pred": 0.476,
+   "fav_hit": 0.483,
+   "underdog_side_pred": 0.248,
+   "underdog_side_freq": 0.257
+  }
+ },
+ "lambda_vs_goals_by_league": {
+  "BL1": {
+   "n": 297,
+   "lam_home": 1.996,
+   "goals_home": 1.781,
+   "lam_away": 1.213,
+   "goals_away": 1.411
+  },
+  "BSA": {
+   "n": 615,
+   "lam_home": 1.868,
+   "goals_home": 1.515,
+   "lam_away": 0.746,
+   "goals_away": 1.065
+  },
+  "DED": {
+   "n": 318,
+   "lam_home": 1.966,
+   "goals_home": 1.792,
+   "lam_away": 1.291,
+   "goals_away": 1.437
+  },
+  "ELC": {
+   "n": 611,
+   "lam_home": 1.564,
+   "goals_home": 1.432,
+   "lam_away": 1.051,
+   "goals_away": 1.193
+  },
+  "FL1": {
+   "n": 304,
+   "lam_home": 2.025,
+   "goals_home": 1.592,
+   "lam_away": 0.898,
+   "goals_away": 1.273
+  },
+  "PD": {
+   "n": 389,
+   "lam_home": 1.837,
+   "goals_home": 1.602,
+   "lam_away": 0.874,
+   "goals_away": 1.147
+  },
+  "PL": {
+   "n": 376,
+   "lam_home": 1.784,
+   "goals_home": 1.537,
+   "lam_away": 0.971,
+   "goals_away": 1.234
+  },
+  "PPL": {
+   "n": 305,
+   "lam_home": 1.535,
+   "goals_home": 1.459,
+   "lam_away": 1.069,
+   "goals_away": 1.239
+  },
+  "SA": {
+   "n": 378,
+   "lam_home": 1.393,
+   "goals_home": 1.323,
+   "lam_away": 0.983,
+   "goals_away": 1.183
+  }
+ },
+ "consensus_models": {
+  "1": {
+   "n": 0
+  },
+  "2": {
+   "n": 3593,
+   "logloss": 1.0411,
+   "meanTop": 0.543
+  }
+ }
+}
