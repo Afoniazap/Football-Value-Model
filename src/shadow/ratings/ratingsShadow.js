@@ -29,18 +29,26 @@ export function historyRowsToMatches(history) {
   return [...byKey.values()].map(({ preferred, ...match }) => match);
 }
 
-/** One shadow record for an upcoming fixture. `now` = the information time (prediction moment); results not yet available at `now` are ignored. */
-export function buildRatingsPrediction({ fixture, matches, now, params = RATINGS_V1_PARAMS }) {
+/** Shadow record from an already built state (the live observer builds the state ONCE per cycle). Returns null at/after kickoff. */
+export function buildRatingsRecord({ fixture, state, now }) {
   const league = fixture.competitionCode, kickoff = new Date(fixture.utcDate || fixture.kickoff).toISOString();
   if (!league || new Date(kickoff) <= new Date(now)) return null;
-  const state = buildStateAsOf(matches.filter(m => m.kickoff < kickoff), new Date(now).toISOString(), params);
   const homeId = canonicalTeamIdentity(fixture.home), awayId = canonicalTeamIdentity(fixture.away);
   const result = predict(state, { league, season: seasonLabel(league, kickoff), homeId, awayId });
   return {
     schemaVersion: 1, type: RATINGS_SHADOW_TYPE, snapshotKey: snapshotKey({ kickoff, home: fixture.home, away: fixture.away }),
-    createdAt: new Date(now).toISOString(), kickoff, fixtureId: String(fixture.id ?? ""), home: fixture.home, away: fixture.away,
+    createdAt: new Date(now).toISOString(), kickoff, leadHours: +((new Date(kickoff) - new Date(now)) / 3_600_000).toFixed(2),
+    fixtureId: String(fixture.id ?? ""), home: fixture.home, away: fixture.away,
     competition: fixture.competition ?? null, competitionCode: league, model: "ratings-v1", ...result
   };
+}
+
+/** One shadow record for an upcoming fixture. `now` = the information time (prediction moment); results not yet available at `now` are ignored. */
+export function buildRatingsPrediction({ fixture, matches, now, params = RATINGS_V1_PARAMS }) {
+  const kickoff = new Date(fixture.utcDate || fixture.kickoff).toISOString();
+  if (!fixture.competitionCode || new Date(kickoff) <= new Date(now)) return null;
+  const state = buildStateAsOf(matches.filter(m => m.kickoff < kickoff), new Date(now).toISOString(), params);
+  return buildRatingsRecord({ fixture, state, now });
 }
 
 /** Append-only and idempotent by snapshotKey. Never rewrites an existing line. */

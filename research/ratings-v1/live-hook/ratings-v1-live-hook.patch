@@ -1,0 +1,30 @@
+diff --git a/src/app.js b/src/app.js
+index 99b83e7..4de9aec
+--- a/src/app.js
++++ b/src/app.js
+@@ -22,6 +22,7 @@ import { resolveContextProvenance, describeTeamStrengthSource, explainModelShort
+ import { ensurePreviousSeasonHistory } from "./history/previousSeasonBackfill.js";
+ import { buildDualShadow, loadDualShadowStatistics, updateDualShadowHistory } from "./shadow/dualShadow.js";
+ import { updateV3ShadowHistory } from "./shadow/v3History.js";
++import { observeRatingsShadow } from "./shadow/ratings/ratingsObserver.js"; // ratings-v1 observer
+ import { saveStateSnapshot } from "./history/stateSnapshots.js";
+ 
+ const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
+@@ -36,6 +37,7 @@ const PREDICTION_HISTORY_FILE=path.join(DATA,"statistics","predictions.jsonl");
+ const MARKET_BET_HISTORY_FILE=path.join(DATA,"statistics","market-bets.jsonl");
+ const DUAL_SHADOW_HISTORY_FILE=path.join(DATA,"statistics","dual-shadow.jsonl");
+ const V3_SHADOW_HISTORY_FILE=path.join(DATA,"statistics","v3-shadow.jsonl");
++const RATINGS_V1_SHADOW_FILE=path.join(DATA,"statistics","ratings-v1-shadow.jsonl"); // ratings-v1 observer
+ const MARKET_SNAPSHOT_FILE=path.join(DATA,"market-cache","snapshots.json");
+ const HISTORY_DB_FILE=path.join(DATA,"history","football.sqlite");
+ const STATE_SNAPSHOTS_DIR=path.join(DATA,"history","state-snapshots");
+@@ -465,6 +467,9 @@ async function refresh(){
+     }catch(e){
+       state.errors.push(`V3 shadow: ${e.message}`);
+     }
++    // ratings-v1 observer: Shadow-only, flag RATINGS_V1_SHADOW=1, kill file data/statistics/ratings-v1.DISABLED.
++    // (cont.) ratings-v1 observer: reads state.results/history, writes only its own JSONL, never assigns to state, never throws -> cannot change Production output or stop the refresh.
++    try{observeRatingsShadow({file:RATINGS_V1_SHADOW_FILE,results:state.results,history:completedHistory,now:storedAt,enabled:/^(1|true|yes)$/i.test(env.RATINGS_V1_SHADOW||"")});}catch{} // ratings-v1 observer
+     state.providers.apiFootball=getApiFootballTelemetry(env.REFRESH_MINUTES||30);
+     if(state.providers.history&&historyDatabase){
+       state.providers.history.matches=databaseStats(historyDatabase,HISTORY_DB_FILE).matches;
