@@ -1,0 +1,48 @@
+{
+ "trainWindow": [
+  "2025-08-01",
+  "2026-08-01"
+ ],
+ "scoredFrom": "2025-10-01",
+ "lagHours": 12,
+ "carryFixedAPriori": 0.8,
+ "poissonHead": {
+  "ll": 1.0107939413176021,
+  "n": 2756,
+  "eta": 0.035,
+  "reg": 0.004,
+  "warm": 2,
+  "rho": -0.1
+ },
+ "eloHead": {
+  "ll": 1.0196987976100103,
+  "n": 2756,
+  "K": 30,
+  "homeAdvantage": 90,
+  "drawWidth": 0.55,
+  "scale": 250
+ },
+ "mixtureTrainingLogLoss": 1.012,
+ "scoredMatches": 2756,
+ "params": {
+  "poisson": {
+   "eta": 0.035,
+   "warm": 2,
+   "reg": 0.004,
+   "carry": 0.8,
+   "rho": -0.1,
+   "etaLeague": 0.01,
+   "initialMu": 0.26236426446749106,
+   "initialHomeAdvantage": 0.2
+  },
+  "elo": {
+   "K": 30,
+   "homeAdvantage": 90,
+   "drawWidth": 0.55,
+   "scale": 250,
+   "carry": 0.8,
+   "initial": 1500
+  }
+ }
+}
+
