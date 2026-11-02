@@ -6,6 +6,7 @@ function teamRow(context, teamId) {
 function recentForm(context, teamId, limit = 5) {
   const games = (context?.matches || [])
     .filter(m => m.homeTeam?.id === teamId || m.awayTeam?.id === teamId)
+    .filter(m => m.score?.fullTime?.home != null && m.score?.fullTime?.away != null)
     .sort((a, b) => new Date(b.utcDate) - new Date(a.utcDate))
     .slice(0, limit);
 

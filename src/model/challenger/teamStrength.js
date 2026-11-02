@@ -11,8 +11,14 @@ function safeRate(goals, games, fallback) {
   return games > 0 ? goals / games : fallback;
 }
 
+export function hasFinalScore(match) {
+  const ft = match?.score?.fullTime;
+  return ft?.home != null && ft?.away != null
+    && Number.isFinite(Number(ft.home)) && Number.isFinite(Number(ft.away));
+}
+
 export function leagueGoalRates(context) {
-  const matches = context?.matches || [];
+  const matches = (context?.matches || []).filter(hasFinalScore);
   const totals = matches.reduce((acc, match) => {
     acc.homeGoals += Number(match.score?.fullTime?.home) || 0;
     acc.awayGoals += Number(match.score?.fullTime?.away) || 0;
