@@ -1,5 +1,8 @@
+import { hasFinalScore } from "./teamStrength.js";
+
 function teamGames(context, teamId, limit = 6) {
   return [...(context?.matches || [])]
+    .filter(hasFinalScore)
     .filter(match => match.homeTeam?.id === teamId || match.awayTeam?.id === teamId)
     .sort((a, b) => {
       const timeDiff = new Date(b.utcDate) - new Date(a.utcDate);

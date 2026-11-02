@@ -20,3 +20,17 @@ Baseline: `npm test` green (stages parity..17) before changes.
 ### Next
 1. Audit `src/model/challenger/*` (Poisson, calibration) with property tests (probabilities sum to 1, monotonicity, truncation at maxGoals=8).
 2. Audit risk/quality scores and temporal safety in `historical/featureSnapshot.js`.
+
+## Run 2026-11-02
+Baseline: `npm test` green. Audited `src/model/challenger/*` (Poisson normalisation, temperature calibration, Elo, form): math correct (matrix renormalised, softmax stable, lambda clamps).
+
+### Fixed (confirmed)
+- **Score-less matches counted as 0:0** (`Number(null) || 0`). `leagueGoalRates`, challenger form/Elo and production `recentForm` could treat unplayed/in-play matches (null score) as goalless draws, deflating league averages and form, and satisfying the ≥3-games gate with phantom games. Repro: league rates 1.0/0.5 vs correct 2.0/1.0 when two null-score matches were present. Now only matches with a final score are used (`hasFinalScore`). Live context is FINISHED-only, so normal output is unchanged (full `npm test` identical); this is a guard against dirty/partial data. Test: `tests/stage19.test.js`. No thresholds/model formulas changed.
+
+### Open
+- Same as previous run (bot.js legacy matcher, `bestH2H` single-row pick — owner decision).
+- Not yet audited: production `buildModel` uses current standings (not as-of fixture) — fine live, check backtest path; totals/BTTS/Asian lines, DQ/SCI/MAI/FDS, risk score, classify thresholds, calibration/ROI (no runtime `data/` in cloud checkout).
+
+### Next
+1. Audit `src/decision/classify.js`, `risk/riskScore.js`, `quality/dataQuality.js` and edge/EV math with property tests.
+2. Audit totals/BTTS derivation from scoreMatrix.

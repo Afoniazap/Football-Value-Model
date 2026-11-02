@@ -29,6 +29,7 @@ export function buildEloSnapshot(context, options = {}) {
   for (const match of matches) {
     const homeId = match.homeTeam?.id;
     const awayId = match.awayTeam?.id;
+    if (match.score?.fullTime?.home == null || match.score?.fullTime?.away == null) continue;
     const homeGoals = Number(match.score?.fullTime?.home);
     const awayGoals = Number(match.score?.fullTime?.away);
     if (!homeId || !awayId || !Number.isFinite(homeGoals) || !Number.isFinite(awayGoals)) continue;
