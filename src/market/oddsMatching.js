@@ -174,7 +174,7 @@ export function bestH2H(event) {
       away: values[event.away_team]
     };
 
-    if (!row.home || !row.draw || !row.away) continue;
+    if (![row.home, row.draw, row.away].every(price => Number.isFinite(Number(price)) && Number(price) > 1)) continue;
     const score = row.home + row.draw + row.away;
     const bestScore = best ? best.home + best.draw + best.away : 0;
     // TODO: bestH2H later -> market consensus.
