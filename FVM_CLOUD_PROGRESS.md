@@ -20,3 +20,21 @@ Baseline: `npm test` green (stages parity..17) before changes.
 ### Next
 1. Audit `src/model/challenger/*` (Poisson, calibration) with property tests (probabilities sum to 1, monotonicity, truncation at maxGoals=8).
 2. Audit risk/quality scores and temporal safety in `historical/featureSnapshot.js`.
+
+## Run 2026-11-09
+Baseline: `npm test` green (needs `npm ci` in fresh cloud checkout).
+
+### Audited (no defect found)
+- `challenger/poisson.js`: matrix/outcomes sum to 1 (renormalised truncation at 8 goals; tail ≤0.4% at λ=3.2). `removeMargin` proportional, correct. `classify.js` edge/EV/fairOdds formulas consistent. `teamStrength.js` attack/defence ratios use correct league baselines. Match feed is `status=FINISHED` only, so null scores are not counted as 0-0.
+- No totals / Asian / BTTS model exists in `src` (1X2 only) — those items cannot be audited.
+
+### Fixed
+- `bestH2H` accepted any truthy price, so a malformed price (≤1, NaN, string) from a provider could be chosen (highest odds sum) and feed removeMargin/EV. Now rows with any non-numeric or ≤1 price are skipped (data validation only; no thresholds/math touched). Test: `tests/stage19.test.js` (+ Poisson invariants).
+
+### Open
+- Same as previous run (legacy `src/bot.js` matcher; `bestH2H` single-row selection is protected logic → owner decision).
+- Football-data previous-season fallback mixes old-season match rates with current standings (`providers/footballData.js:78-90`) — evaluate impact on early-season λ.
+- Not auditable without runtime `data/`: Mirassol–Vitória stored signal, ROI/calibration on history.
+
+### Next
+Audit `historical/featureSnapshot.js` temporal safety, `risk/riskScore.js`, `quality/dataQuality.js`; Telegram market labels.
