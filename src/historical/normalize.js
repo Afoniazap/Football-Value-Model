@@ -1,3 +1,5 @@
+import { regulationScore } from "../providers/footballDataScore.js";
+
 export function resultFromScore(homeGoals, awayGoals) {
   if (homeGoals > awayGoals) return "H";
   if (homeGoals < awayGoals) return "A";
@@ -5,9 +7,9 @@ export function resultFromScore(homeGoals, awayGoals) {
 }
 
 export function normalizeFinishedMatch(match, { season = null } = {}) {
-  const homeGoals = Number(match.score?.fullTime?.home);
-  const awayGoals = Number(match.score?.fullTime?.away);
-  if (!Number.isFinite(homeGoals) || !Number.isFinite(awayGoals)) return null;
+  const regulation = regulationScore(match);
+  if (!regulation) return null;
+  const { home: homeGoals, away: awayGoals } = regulation;
 
   return {
     fixtureId: String(match.id),
