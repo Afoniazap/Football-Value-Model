@@ -1,4 +1,5 @@
 import { errorResult, providerResult, SourceStatus } from "./providerResult.js";
+import { toRegulationMatches } from "./footballDataScore.js";
 
 function dateOnly(date) {
   return date.toISOString().slice(0, 10);
@@ -94,14 +95,22 @@ export async function fetchCompetitionContext({ request, token, code }) {
       }
     }
 
+    const regulation = toRegulationMatches(finishedMatches);
+
     return providerResult({
       status: SourceStatus.OK,
       source,
       data: {
         standings,
-        matches: finishedMatches.slice(-300)
+        matches: regulation.matches.slice(-300)
       },
-      meta: { code, historySeason, historyFallbackError }
+      meta: {
+        code,
+        historySeason,
+        historyFallbackError,
+        extraTimeAdjusted: regulation.adjusted,
+        unknownRegulationDropped: regulation.dropped
+      }
     });
   } catch (error) {
     return errorResult(source, error, { code });

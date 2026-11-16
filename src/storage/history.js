@@ -388,7 +388,7 @@ export function createHistoryStore(root, { runtimeRoot = resolveRuntimeRoot(root
     if (existing) return existing;
 
     const settlement = settleSignal(signal, result, 1);
-    if (!settlement || settlement.status === "UNSUPPORTED") return null;
+    if (!settlement || settlement.status === "UNSUPPORTED" || settlement.status === "UNSETTLED") return null;
     const closing = findClosingQuote({ signal, marketQuotes, closingWindowMinutes });
     const clv = calculateClv({ signal, closing });
     const row = {

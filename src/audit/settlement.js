@@ -95,8 +95,14 @@ export function fixedStakeProfitLoss(status, odds, stake = 1) {
   return { stake: 0, returns: 0, netUnits: 0, roi: null };
 }
 
+function isGoalCount(value) {
+  return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
+}
+
 export function settleSignal(signal, result, stake = 1) {
   if (!signal || !result) return null;
+  // Number(null) === 0: a missing score must never be graded as 0-0.
+  if (!isGoalCount(result.homeGoals) || !isGoalCount(result.awayGoals)) return null;
   const status = gradeMarket({
     market: signal.market,
     selection: signal.selection,

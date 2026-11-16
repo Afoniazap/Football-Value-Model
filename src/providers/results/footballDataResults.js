@@ -1,4 +1,5 @@
 import { errorResult, providerResult, SourceStatus } from "../providerResult.js";
+import { regulationScore } from "../footballDataScore.js";
 
 function resultFromScore(homeGoals, awayGoals) {
   if (homeGoals > awayGoals) return "H";
@@ -7,14 +8,17 @@ function resultFromScore(homeGoals, awayGoals) {
 }
 
 function normalizeFinishedResult(match) {
-  const homeGoals = Number(match.score?.fullTime?.home);
-  const awayGoals = Number(match.score?.fullTime?.away);
-  if (match.status !== "FINISHED" || !Number.isFinite(homeGoals) || !Number.isFinite(awayGoals)) return null;
+  if (match.status !== "FINISHED") return null;
+  // Markets settle on the 90-minute score; fullTime includes extra time and penalties.
+  const regulation = regulationScore(match);
+  if (!regulation) return null;
+  const { home: homeGoals, away: awayGoals } = regulation;
   return {
     fixtureId: String(match.id),
     homeGoals,
     awayGoals,
     result: resultFromScore(homeGoals, awayGoals),
+    duration: regulation.duration,
     finishedAt: match.lastUpdated || null,
     resultFetchedAt: new Date().toISOString()
   };
