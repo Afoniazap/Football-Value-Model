@@ -7,24 +7,39 @@ function lineupsConfirmed(apiFootballResult) {
 }
 
 function bookmakerOdds(event) {
-  const values = [];
+  // One row per bookmaker, keyed by outcome name so books that list
+  // outcomes in a different order are still compared like-for-like.
+  const rows = [];
   for (const book of event?.bookmakers || []) {
     const market = book.markets?.find(m => m.key === "h2h");
     if (!market) continue;
-    const prices = market.outcomes?.map(outcome => outcome.price).filter(Boolean) || [];
-    if (prices.length >= 3) values.push(prices);
+    const prices = {};
+    for (const outcome of market.outcomes || []) {
+      if (outcome?.name && Number.isFinite(outcome.price) && outcome.price > 0) prices[outcome.name] = outcome.price;
+    }
+    if (Object.keys(prices).length >= 3) rows.push(prices);
   }
-  return values;
+  return rows;
 }
 
-function marketSpread(event) {
+// Largest disagreement between bookmakers on the SAME outcome.
+// (Previously all outcomes were flattened together, so favourite vs underdog
+// prices were treated as "disagreement" and almost every multi-book market
+// was flagged.)
+export function marketSpread(event) {
   const rows = bookmakerOdds(event);
   if (rows.length < 2) return 0;
-  const flat = rows.flat();
-  return Math.max(...flat) - Math.min(...flat);
+  const names = new Set(rows.flatMap(row => Object.keys(row)));
+  let spread = 0;
+  for (const name of names) {
+    const prices = rows.map(row => row[name]).filter(Number.isFinite);
+    if (prices.length < 2) continue;
+    spread = Math.max(spread, Math.max(...prices) - Math.min(...prices));
+  }
+  return spread;
 }
 
-function modelAgreement(model) {
+export function modelAgreement(model) {
   if (!model?.components) return 100;
   const values = [
     model.components.ppgH,
@@ -35,8 +50,10 @@ function modelAgreement(model) {
     model.components.formA
   ];
   if (values.some(value => !Number.isFinite(value))) return 100;
-  const strengthPart = Math.abs((model.components.ppgH - model.components.ppgA) * 0.65 + (model.components.gdH - model.components.gdA) * 0.22);
-  const formPart = Math.abs((model.components.formH - model.components.formA) * 0.75);
+  // Signed parts: strength and form pointing at opposite teams is the
+  // strongest disagreement, not agreement (abs() previously hid the sign).
+  const strengthPart = (model.components.ppgH - model.components.ppgA) * 0.65 + (model.components.gdH - model.components.gdA) * 0.22;
+  const formPart = (model.components.formH - model.components.formA) * 0.75;
   const disagreement = Math.min(100, Math.abs(strengthPart - formPart) * 100);
   return Math.max(0, Math.round(100 - disagreement));
 }
